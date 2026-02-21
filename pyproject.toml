@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bsage"
+version = "0.1.0"
+description = "Personal AI agent that records everything in your 2nd Brain and proactively acts on it"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic-settings>=2.0.0",
+    "structlog>=23.0.0",
+    "pyyaml>=6.0",
+    "litellm>=1.0.0",
+    "apscheduler>=3.10.0",
+    "click>=8.0.0",
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+    "websockets>=12.0",
+    "httpx>=0.27.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.3.0",
+]
+
+[project.scripts]
+bsage = "bsage.cli:main"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["bsage/tests", "tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "A", "SIM"]
+
+[tool.coverage.run]
+source = ["bsage"]
+omit = ["bsage/tests/*"]

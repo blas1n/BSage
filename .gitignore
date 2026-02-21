@@ -1,0 +1,33 @@
+# Environment
+.env
+.venv/
+
+# Credentials
+.credentials/
+
+# Data (user-managed)
+vault/
+tmp/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Testing
+.pytest_cache/
+htmlcov/
+.coverage
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

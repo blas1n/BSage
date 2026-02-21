@@ -1,0 +1,9 @@
+name: sample-skill
+version: 1.0.0
+author: bslab
+category: process
+is_dangerous: false
+description: A sample skill for testing
+entrypoint: skill.py::execute
+rules:
+  - garden-writer
