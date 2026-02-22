@@ -8,6 +8,7 @@ from bsage.connectors.manager import ConnectorManager
 from bsage.core.agent_loop import AgentLoop
 from bsage.core.config import Settings
 from bsage.core.llm import LiteLLMClient
+from bsage.core.runtime_config import RuntimeConfig
 from bsage.core.safe_mode import SafeModeGuard
 from bsage.core.scheduler import Scheduler
 from bsage.core.skill_loader import SkillLoader
@@ -24,6 +25,11 @@ class AppState:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
+        # Runtime config (mutable, shared reference, persisted to JSON)
+        # Store in credentials_dir (gitignored) — NOT vault_path (may be synced)
+        persist_path = settings.credentials_dir / "runtime_config.json"
+        self.runtime_config = RuntimeConfig.from_settings(settings, persist_path=persist_path)
+
         # Garden layer
         self.vault = Vault(settings.vault_path)
         self.garden_writer = GardenWriter(self.vault)
@@ -31,15 +37,14 @@ class AppState:
         # Connectors
         self.connector_manager = ConnectorManager()
 
-        # LLM
-        self.llm_client = LiteLLMClient(
-            model=settings.llm_model,
-            api_key=settings.llm_api_key,
-            api_base=settings.llm_api_base,
-        )
+        # LLM (reads from RuntimeConfig per-call)
+        self.llm_client = LiteLLMClient(runtime_config=self.runtime_config)
 
-        # SafeMode
-        self.safe_mode_guard = SafeModeGuard(enabled=settings.safe_mode, interface=None)
+        # SafeMode (reads from RuntimeConfig per-call)
+        self.safe_mode_guard = SafeModeGuard(
+            runtime_config=self.runtime_config,
+            interface=None,
+        )
 
         # Skills
         self.skill_loader = SkillLoader(settings.skills_dir)

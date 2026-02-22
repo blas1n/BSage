@@ -60,6 +60,7 @@ class SkillRunner:
 
     async def _run_python(self, skill_meta: SkillMeta, context: SkillContext) -> dict:
         """Load and execute a Python skill module dynamically."""
+        assert skill_meta.entrypoint
         parts = skill_meta.entrypoint.split("::")
         if len(parts) != 2:  # noqa: PLR2004
             raise SkillRunError(

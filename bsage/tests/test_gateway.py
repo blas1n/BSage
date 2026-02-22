@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from bsage.core.config import Settings
+from bsage.core.runtime_config import RuntimeConfig
 from bsage.core.skill_loader import SkillMeta
 from bsage.gateway.app import create_app
 from bsage.gateway.dependencies import AppState
@@ -42,6 +43,12 @@ def mock_state():
     state.agent_loop.on_input = AsyncMock(return_value=[{"status": "ok"}])
     state.vault = MagicMock()
     state.vault.read_notes = MagicMock(return_value=[])
+    state.runtime_config = RuntimeConfig(
+        llm_model="anthropic/claude-sonnet-4-20250514",
+        llm_api_key="test-key",
+        llm_api_base=None,
+        safe_mode=True,
+    )
     return state
 
 
@@ -196,6 +203,40 @@ class TestAppState:
         state = AppState(settings)
         # Shutdown before init should be safe
         await state.shutdown()
+
+
+class TestConfigEndpoints:
+    """Test GET/PATCH /api/config."""
+
+    def test_get_config_returns_snapshot(self, client) -> None:
+        response = client.get("/api/config")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["llm_model"] == "anthropic/claude-sonnet-4-20250514"
+        assert data["safe_mode"] is True
+        assert "llm_api_key" not in data
+
+    def test_patch_config_updates_model(self, client) -> None:
+        response = client.patch("/api/config", json={"llm_model": "ollama/llama3"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["llm_model"] == "ollama/llama3"
+
+    def test_patch_config_updates_safe_mode(self, client) -> None:
+        response = client.patch("/api/config", json={"safe_mode": False})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["safe_mode"] is False
+
+    def test_patch_config_empty_model_returns_422(self, client) -> None:
+        response = client.patch("/api/config", json={"llm_model": ""})
+        assert response.status_code == 422
+
+    def test_patch_config_partial_update(self, client) -> None:
+        response = client.patch("/api/config", json={"safe_mode": False})
+        assert response.status_code == 200
+        # Model should not change
+        assert response.json()["llm_model"] == "anthropic/claude-sonnet-4-20250514"
 
 
 class TestCreateApp:

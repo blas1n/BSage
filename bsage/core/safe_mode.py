@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import structlog
 
 from bsage.core.exceptions import SafeModeError
+
+if TYPE_CHECKING:
+    from bsage.core.runtime_config import RuntimeConfig
 
 logger = structlog.get_logger(__name__)
 
@@ -32,17 +35,16 @@ class ApprovalInterface(Protocol):
 class SafeModeGuard:
     """Gate that blocks dangerous skills unless the user explicitly approves.
 
-    When *enabled* is False, all skills pass without approval.
-    When *enabled* is True and a skill has ``is_dangerous=True``,
-    the configured *interface* is asked for user consent.
+    Reads the safe_mode flag from RuntimeConfig on every check, so it
+    reflects runtime changes immediately without restart.
     """
 
     def __init__(
         self,
-        enabled: bool,
+        runtime_config: RuntimeConfig,
         interface: ApprovalInterface | None,
     ) -> None:
-        self._enabled = enabled
+        self._config = runtime_config
         self._interface = interface
 
     async def check(self, skill_meta: Any) -> bool:
@@ -53,7 +55,7 @@ class SafeModeGuard:
         * Dangerous skills require approval via the interface.
         * If no interface is configured for a dangerous skill, raises SafeModeError.
         """
-        if not self._enabled:
+        if not self._config.safe_mode:
             logger.info("safe_mode_disabled", skill=skill_meta.name)
             return True
 
