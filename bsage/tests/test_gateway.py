@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from bsage.core.config import Settings
+from bsage.core.prompt_registry import PromptRegistry
 from bsage.core.runtime_config import RuntimeConfig
 from bsage.core.skill_loader import SkillMeta
 from bsage.garden.sync import SyncManager
@@ -56,6 +57,9 @@ def mock_state():
     state.garden_writer = AsyncMock()
     state.garden_writer.read_notes = AsyncMock(return_value=[])
     state.garden_writer.write_action = AsyncMock()
+    state.prompt_registry = MagicMock(spec=PromptRegistry)
+    state.prompt_registry.get = MagicMock(return_value="You are BSage.")
+    state.prompt_registry.render = MagicMock(return_value="Chat instructions here.")
     return state
 
 
@@ -182,6 +186,7 @@ class TestAppState:
             skills_dir=tmp_path / "skills",
             tmp_dir=tmp_path / "tmp",
             credentials_dir=tmp_path / "creds",
+            prompts_dir=tmp_path / "prompts",
         )
         state = AppState(settings)
         await state.initialize()
@@ -194,6 +199,7 @@ class TestAppState:
             skills_dir=tmp_path / "skills",
             tmp_dir=tmp_path / "tmp",
             credentials_dir=tmp_path / "creds",
+            prompts_dir=tmp_path / "prompts",
         )
         state = AppState(settings)
         await state.initialize()
@@ -206,6 +212,7 @@ class TestAppState:
             skills_dir=tmp_path / "skills",
             tmp_dir=tmp_path / "tmp",
             credentials_dir=tmp_path / "creds",
+            prompts_dir=tmp_path / "prompts",
         )
         state = AppState(settings)
         # Shutdown before init should be safe
@@ -275,6 +282,7 @@ class TestCreateApp:
             skills_dir=tmp_path / "skills",
             tmp_dir=tmp_path / "tmp",
             credentials_dir=tmp_path / "creds",
+            prompts_dir=tmp_path / "prompts",
         )
         app = create_app(settings)
         assert isinstance(app, FastAPI)

@@ -3,6 +3,9 @@
 from pathlib import Path
 from unittest.mock import AsyncMock
 
+import pytest
+
+from bsage.core.prompt_registry import PromptRegistry
 from bsage.gateway.chat import (
     _MAX_CONTEXT_CHARS,
     DEFAULT_CONTEXT_PATHS,
@@ -10,6 +13,16 @@ from bsage.gateway.chat import (
     gather_vault_context,
     handle_chat,
 )
+
+
+@pytest.fixture()
+def prompt_registry(tmp_path):
+    """Create a PromptRegistry with test templates."""
+    d = tmp_path / "prompts"
+    d.mkdir()
+    (d / "system.yaml").write_text("template: |\n  You are BSage, a personal AI assistant.\n")
+    (d / "chat.yaml").write_text("template: |\n  {context_section}\n")
+    return PromptRegistry(d)
 
 
 def _make_garden_writer(notes_by_dir: dict[str, list[tuple[str, str]]] | None = None):
@@ -124,25 +137,25 @@ class TestGatherVaultContext:
 class TestBuildSystemPrompt:
     """Test build_system_prompt with/without context."""
 
-    def test_with_context(self) -> None:
-        prompt = build_system_prompt("## note.md\nSome content\n")
+    def test_with_context(self, prompt_registry) -> None:
+        prompt = build_system_prompt(prompt_registry, "## note.md\nSome content\n")
         assert "BSage" in prompt
         assert "knowledge base contains these notes" in prompt
         assert "note.md" in prompt
 
-    def test_empty_context(self) -> None:
-        prompt = build_system_prompt("")
+    def test_empty_context(self, prompt_registry) -> None:
+        prompt = build_system_prompt(prompt_registry, "")
         assert "currently empty" in prompt
 
-    def test_whitespace_context(self) -> None:
-        prompt = build_system_prompt("   \n  ")
+    def test_whitespace_context(self, prompt_registry) -> None:
+        prompt = build_system_prompt(prompt_registry, "   \n  ")
         assert "currently empty" in prompt
 
 
 class TestHandleChat:
     """Test handle_chat end-to-end orchestration."""
 
-    async def test_basic_chat(self) -> None:
+    async def test_basic_chat(self, prompt_registry) -> None:
         writer = _make_garden_writer({"garden/idea": [("note.md", "Test idea")]})
         llm = _make_llm_client("Here is my response.")
 
@@ -151,13 +164,14 @@ class TestHandleChat:
             history=[],
             llm_client=llm,
             garden_writer=writer,
+            prompt_registry=prompt_registry,
         )
 
         assert result == "Here is my response."
         llm.chat.assert_called_once()
         writer.write_action.assert_called_once()
 
-    async def test_history_passed_to_llm(self) -> None:
+    async def test_history_passed_to_llm(self, prompt_registry) -> None:
         writer = _make_garden_writer({})
         llm = _make_llm_client("Response")
 
@@ -170,6 +184,7 @@ class TestHandleChat:
             history=history,
             llm_client=llm,
             garden_writer=writer,
+            prompt_registry=prompt_registry,
         )
 
         messages = llm.chat.call_args.kwargs["messages"]
@@ -177,7 +192,7 @@ class TestHandleChat:
         assert len(messages) == 3
         assert messages[-1] == {"role": "user", "content": "Follow up"}
 
-    async def test_custom_context_paths(self) -> None:
+    async def test_custom_context_paths(self, prompt_registry) -> None:
         writer = _make_garden_writer({"custom/path": [("note.md", "Custom content")]})
         llm = _make_llm_client("Ok")
 
@@ -186,12 +201,13 @@ class TestHandleChat:
             history=[],
             llm_client=llm,
             garden_writer=writer,
+            prompt_registry=prompt_registry,
             context_paths=["custom/path"],
         )
 
         writer.read_notes.assert_called_with("custom/path")
 
-    async def test_default_context_paths_used(self) -> None:
+    async def test_default_context_paths_used(self, prompt_registry) -> None:
         writer = _make_garden_writer({})
         llm = _make_llm_client("Ok")
 
@@ -200,13 +216,14 @@ class TestHandleChat:
             history=[],
             llm_client=llm,
             garden_writer=writer,
+            prompt_registry=prompt_registry,
         )
 
         # Should call read_notes for each default path
         called_dirs = [call.args[0] for call in writer.read_notes.call_args_list]
         assert called_dirs == DEFAULT_CONTEXT_PATHS
 
-    async def test_action_logged(self) -> None:
+    async def test_action_logged(self, prompt_registry) -> None:
         writer = _make_garden_writer({})
         llm = _make_llm_client("My answer")
 
@@ -215,6 +232,7 @@ class TestHandleChat:
             history=[],
             llm_client=llm,
             garden_writer=writer,
+            prompt_registry=prompt_registry,
         )
 
         writer.write_action.assert_called_once()

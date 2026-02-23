@@ -8,6 +8,7 @@ from bsage.core.agent_loop import AgentLoop
 from bsage.core.config import Settings
 from bsage.core.credential_store import CredentialStore
 from bsage.core.llm import LiteLLMClient
+from bsage.core.prompt_registry import PromptRegistry
 from bsage.core.runtime_config import RuntimeConfig
 from bsage.core.safe_mode import SafeModeGuard
 from bsage.core.scheduler import Scheduler
@@ -50,11 +51,15 @@ class AppState:
             interface=None,
         )
 
+        # Prompts
+        self.prompt_registry = PromptRegistry(settings.prompts_dir)
+
         # Skills
         self.skill_loader = SkillLoader(settings.skills_dir)
         self.skill_runner = SkillRunner(
             skills_dir=settings.skills_dir,
             credential_store=self.credential_store,
+            prompt_registry=self.prompt_registry,
         )
 
         # Agent loop (registry populated after load_all)
@@ -72,6 +77,7 @@ class AppState:
             safe_mode_guard=self.safe_mode_guard,
             garden_writer=self.garden_writer,
             llm_client=self.llm_client,
+            prompt_registry=self.prompt_registry,
         )
 
         self.scheduler = Scheduler(

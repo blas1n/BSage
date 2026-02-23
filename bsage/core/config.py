@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     skills_dir: Path = Path("./skills")
     tmp_dir: Path = Path("./tmp")
     credentials_dir: Path = Path("./.credentials")
+    prompts_dir: Path = Path("./prompts")
 
     # Runtime
     safe_mode: bool = True

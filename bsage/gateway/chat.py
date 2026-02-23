@@ -8,27 +8,13 @@ import structlog
 
 if TYPE_CHECKING:
     from bsage.core.llm import LiteLLMClient
+    from bsage.core.prompt_registry import PromptRegistry
     from bsage.garden.writer import GardenWriter
 
 logger = structlog.get_logger(__name__)
 
 DEFAULT_CONTEXT_PATHS: list[str] = ["garden/idea", "garden/insight"]
 _MAX_CONTEXT_CHARS = 16_000
-
-_SYSTEM_PROMPT_TEMPLATE = """\
-You are BSage, a personal AI assistant that manages a 2nd Brain (Obsidian Vault).
-You help the user think, reflect, connect ideas, and find insights \
-in their knowledge base.
-
-When answering:
-- Reference relevant notes from the knowledge base when applicable.
-- Help the user see connections between their ideas.
-- Be thoughtful and concise.
-- If asked about something not in the knowledge base, say so and still help.
-
----
-
-{context_section}"""
 
 
 async def gather_vault_context(
@@ -70,13 +56,16 @@ async def gather_vault_context(
     return result
 
 
-def build_system_prompt(vault_context: str) -> str:
+def build_system_prompt(prompt_registry: PromptRegistry, vault_context: str) -> str:
     """Build the system prompt with vault context injected."""
     if vault_context.strip():
         section = f"Your knowledge base contains these notes:\n\n{vault_context}"
     else:
         section = "The knowledge base is currently empty. Help the user get started."
-    return _SYSTEM_PROMPT_TEMPLATE.format(context_section=section)
+
+    identity = prompt_registry.get("system")
+    chat_instructions = prompt_registry.render("chat", context_section=section)
+    return f"{identity}\n\n{chat_instructions}"
 
 
 async def handle_chat(
@@ -84,12 +73,13 @@ async def handle_chat(
     history: list[dict[str, Any]],
     llm_client: LiteLLMClient,
     garden_writer: GardenWriter,
+    prompt_registry: PromptRegistry,
     context_paths: list[str] | None = None,
 ) -> str:
     """Process a chat request: gather context, call LLM, log, return."""
     paths = context_paths or DEFAULT_CONTEXT_PATHS
     vault_context = await gather_vault_context(garden_writer, paths)
-    system = build_system_prompt(vault_context)
+    system = build_system_prompt(prompt_registry, vault_context)
 
     messages = [*history, {"role": "user", "content": message}]
     response = await llm_client.chat(system=system, messages=messages)

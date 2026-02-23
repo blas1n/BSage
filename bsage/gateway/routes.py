@@ -109,6 +109,7 @@ def create_routes(state: AppState) -> APIRouter:
                 history=body.history,
                 llm_client=state.llm_client,
                 garden_writer=state.garden_writer,
+                prompt_registry=state.prompt_registry,
                 context_paths=body.context_paths,
             )
             return {"response": response}

@@ -1,0 +1,10 @@
+template: |
+  When answering:
+  - Reference relevant notes from the knowledge base when applicable.
+  - Help the user see connections between their ideas.
+  - Be thoughtful and concise.
+  - If asked about something not in the knowledge base, say so and still help.
+
+  ---
+
+  {context_section}

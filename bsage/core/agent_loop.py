@@ -8,6 +8,7 @@ from typing import Any
 import structlog
 
 from bsage.core.notification import NotificationInterface
+from bsage.core.prompt_registry import PromptRegistry
 from bsage.core.safe_mode import SafeModeGuard
 from bsage.core.skill_context import LLMClient, SkillContext
 from bsage.core.skill_loader import SkillMeta
@@ -35,6 +36,7 @@ class AgentLoop:
         garden_writer: GardenWriter,
         llm_client: LLMClient,
         notification: NotificationInterface | None = None,
+        prompt_registry: PromptRegistry | None = None,
     ) -> None:
         self._registry = registry
         self._skill_runner = skill_runner
@@ -42,6 +44,7 @@ class AgentLoop:
         self._garden_writer = garden_writer
         self._llm_client = llm_client
         self._notification = notification
+        self._prompt_registry = prompt_registry
 
     async def on_input(self, skill_name: str, raw_data: dict[str, Any]) -> list[dict[str, Any]]:
         """Process input from an InputSkill and run triggered skills.
@@ -118,13 +121,15 @@ class AgentLoop:
             for m in on_demand
         )
 
-        system = (
-            "You are BSage's skill router. Given input from a skill, "
-            "decide which on-demand ProcessSkill(s) should run.\n"
-            f"Available on-demand skills:\n{skill_descriptions}\n\n"
-            "Respond with ONLY the skill name(s), one per line. "
-            "If none are appropriate, respond with 'none'."
-        )
+        if self._prompt_registry:
+            try:
+                system = self._prompt_registry.render(
+                    "router", skill_descriptions=skill_descriptions
+                )
+            except KeyError:
+                system = self._build_router_prompt_fallback(skill_descriptions)
+        else:
+            system = self._build_router_prompt_fallback(skill_descriptions)
         messages = [
             {
                 "role": "user",
@@ -147,6 +152,17 @@ class AgentLoop:
 
         logger.info("llm_on_demand_decision", selected=[m.name for m in selected])
         return selected
+
+    @staticmethod
+    def _build_router_prompt_fallback(skill_descriptions: str) -> str:
+        """Build router system prompt when PromptRegistry is unavailable."""
+        return (
+            "You are BSage's skill router. Given input from a skill, "
+            "decide which on-demand ProcessSkill(s) should run.\n"
+            f"Available on-demand skills:\n{skill_descriptions}\n\n"
+            "Respond with ONLY the skill name(s), one per line. "
+            "If none are appropriate, respond with 'none'."
+        )
 
     def get_skill(self, name: str) -> SkillMeta:
         """Look up a skill by name from the registry.

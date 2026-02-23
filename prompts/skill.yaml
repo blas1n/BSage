@@ -1,0 +1,4 @@
+template: |
+  You are executing the '{skill_name}' skill.
+  Description: {description}
+  Process the input data and return a structured result.

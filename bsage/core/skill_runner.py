@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import json
 import re
@@ -16,6 +17,7 @@ from bsage.core.skill_loader import OutputTarget
 from bsage.garden.vault import VaultPathError
 
 if TYPE_CHECKING:
+    from bsage.core.prompt_registry import PromptRegistry
     from bsage.core.skill_context import SkillContext
     from bsage.core.skill_loader import SkillMeta
 
@@ -50,9 +52,15 @@ def _strip_json_fence(text: str) -> str:
 class SkillRunner:
     """Dispatches skill execution to either Python code or LLM-based processing."""
 
-    def __init__(self, skills_dir: Path, credential_store: CredentialStore | None = None) -> None:
+    def __init__(
+        self,
+        skills_dir: Path,
+        credential_store: CredentialStore | None = None,
+        prompt_registry: PromptRegistry | None = None,
+    ) -> None:
         self._skills_dir = skills_dir
         self._credential_store = credential_store
+        self._prompt_registry = prompt_registry
 
     async def run(self, skill_meta: SkillMeta, context: SkillContext) -> dict:
         """Execute a skill and return the result dict.
@@ -204,12 +212,35 @@ class SkillRunner:
         input_data: dict | None,
     ) -> tuple[str, list[dict]]:
         """Build system prompt and user message for LLM call."""
-        # System: role/instructions (override or auto-generated)
-        system = skill_meta.system_prompt or (
-            f"You are executing the '{skill_meta.name}' skill.\n"
-            f"Description: {skill_meta.description}\n"
-            f"Process the input data and return a structured result."
-        )
+        # System: identity + skill-specific instructions
+        identity = ""
+        if self._prompt_registry:
+            with contextlib.suppress(KeyError):
+                identity = self._prompt_registry.get("system")
+
+        if skill_meta.system_prompt:
+            skill_prompt = skill_meta.system_prompt
+        elif self._prompt_registry:
+            try:
+                skill_prompt = self._prompt_registry.render(
+                    "skill",
+                    skill_name=skill_meta.name,
+                    description=skill_meta.description,
+                )
+            except KeyError:
+                skill_prompt = (
+                    f"You are executing the '{skill_meta.name}' skill.\n"
+                    f"Description: {skill_meta.description}\n"
+                    f"Process the input data and return a structured result."
+                )
+        else:
+            skill_prompt = (
+                f"You are executing the '{skill_meta.name}' skill.\n"
+                f"Description: {skill_meta.description}\n"
+                f"Process the input data and return a structured result."
+            )
+
+        system = f"{identity}\n\n{skill_prompt}".strip() if identity else skill_prompt
         if skill_meta.output_format == "json":
             system += "\nReturn your response as valid JSON."
 
