@@ -44,6 +44,15 @@ if ! grep -q "source /workspace/.venv/bin/activate" ~/.bashrc; then
     echo "[OK] Auto-activation added to bashrc"
 fi
 
+# 6. Run local-only setup (gitignored)
+LOCAL_SETUP=".devcontainer/scripts/post-start.local.sh"
+if [ -f "$LOCAL_SETUP" ]; then
+    echo ""
+    echo "Running local setup..."
+    bash "$LOCAL_SETUP"
+    echo "[OK] Local setup complete"
+fi
+
 echo ""
 echo "============================================="
 echo "[DONE] DevContainer setup complete!"

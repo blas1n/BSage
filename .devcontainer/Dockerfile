@@ -70,7 +70,7 @@ ENV PATH=/home/$USERNAME/.local/bin:$PATH
 COPY scripts/init-firewall.sh /usr/local/bin/
 USER root
 RUN chmod +x /usr/local/bin/init-firewall.sh && \
-    echo "$USERNAME ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/firewall && \
-    chmod 0440 /etc/sudoers.d/firewall
+    echo "$USERNAME ALL=(root) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME && \
+    chmod 0440 /etc/sudoers.d/$USERNAME
 
 USER $USERNAME

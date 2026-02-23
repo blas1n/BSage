@@ -28,6 +28,9 @@ htmlcov/
 *.swo
 *~
 
+# Local devcontainer overrides
+.devcontainer/scripts/post-start.local.sh
+
 # OS
 .DS_Store
 Thumbs.db
