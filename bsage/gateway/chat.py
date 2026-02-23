@@ -84,7 +84,12 @@ async def handle_chat(
     messages = [*history, {"role": "user", "content": message}]
     response = await llm_client.chat(system=system, messages=messages)
 
-    summary = f"User: {message[:80]} | Assistant: {response[:80]}"
+    # Brief one-line summary for the daily action log
+    first_line = response.split("\n", 1)[0].strip()
+    summary = f"User: {message[:80]} | Assistant: {first_line[:120]}"
     await garden_writer.write_action("chat", summary)
+
+    # Full transcript as a seed for downstream ProcessSkills
+    await garden_writer.write_seed("chat", {"user": message, "assistant": response})
 
     return response

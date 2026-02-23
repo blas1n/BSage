@@ -112,18 +112,30 @@ def _chat_repl(base_url: str) -> None:
             resp = httpx.post(
                 f"{base_url}/api/chat",
                 json={"message": user_input, "history": history},
-                timeout=60.0,
+                timeout=300.0,
             )
             resp.raise_for_status()
+            answer = resp.json().get("response", "")
         except httpx.ConnectError:
             click.echo("Error: Lost connection to Gateway.", err=True)
             return
+        except httpx.TimeoutException:
+            click.echo("Error: Request timed out. The LLM may be slow — try again.", err=True)
+            continue
         except httpx.HTTPStatusError as exc:
-            detail = exc.response.json().get("detail", "Unknown error")
+            try:
+                detail = exc.response.json().get("detail", "Unknown error")
+            except Exception:
+                detail = exc.response.text[:200]
             click.echo(f"Error: {detail}", err=True)
             continue
+        except httpx.HTTPError as exc:
+            click.echo(f"Error: {exc}", err=True)
+            continue
+        except Exception as exc:
+            click.echo(f"Error: Unexpected error — {exc}", err=True)
+            continue
 
-        answer = resp.json().get("response", "")
         click.echo(f"BSage> {answer}\n")
 
         history.append({"role": "user", "content": user_input})

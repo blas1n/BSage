@@ -170,6 +170,7 @@ class TestHandleChat:
         assert result == "Here is my response."
         llm.chat.assert_called_once()
         writer.write_action.assert_called_once()
+        writer.write_seed.assert_called_once()
 
     async def test_history_passed_to_llm(self, prompt_registry) -> None:
         writer = _make_garden_writer({})
@@ -239,3 +240,21 @@ class TestHandleChat:
         action_args = writer.write_action.call_args
         assert action_args.args[0] == "chat"
         assert "What should I do?" in action_args.args[1]
+
+    async def test_transcript_saved_as_seed(self, prompt_registry) -> None:
+        writer = _make_garden_writer({})
+        llm = _make_llm_client("Full response\nwith newlines")
+
+        await handle_chat(
+            message="Tell me something",
+            history=[],
+            llm_client=llm,
+            garden_writer=writer,
+            prompt_registry=prompt_registry,
+        )
+
+        writer.write_seed.assert_called_once()
+        seed_args = writer.write_seed.call_args
+        assert seed_args.args[0] == "chat"
+        assert seed_args.args[1]["user"] == "Tell me something"
+        assert seed_args.args[1]["assistant"] == "Full response\nwith newlines"
