@@ -5,9 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import structlog
+
+from bsage.core.protocols import ContextBuilderLike, SkillRunnerLike
+
+if TYPE_CHECKING:
+    from bsage.core.skill_loader import SkillMeta
 
 logger = structlog.get_logger(__name__)
 
@@ -52,6 +57,9 @@ class SyncManager:
 
     def __init__(self) -> None:
         self._backends: dict[str, SyncBackend] = {}
+        self._output_skills: list[SkillMeta] = []
+        self._skill_runner: SkillRunnerLike | None = None
+        self._context_builder: ContextBuilderLike | None = None
 
     def register(self, backend: SyncBackend) -> None:
         """Register a sync backend."""
@@ -71,6 +79,35 @@ class SyncManager:
         """Return names of all registered backends."""
         return list(self._backends.keys())
 
+    def register_output_skills(
+        self,
+        skills: list[SkillMeta],
+        skill_runner: SkillRunnerLike,
+        context_builder: ContextBuilderLike,
+    ) -> None:
+        """Register output skills for execution on write events.
+
+        Replaces any previously registered output skills.
+
+        Args:
+            skills: List of output category SkillMeta.
+            skill_runner: SkillRunner instance to execute skills.
+            context_builder: Callable(input_data=dict) -> SkillContext.
+        """
+        self._output_skills = []
+        self._skill_runner = skill_runner
+        self._context_builder = context_builder
+        for s in skills:
+            if s.category != "output":
+                logger.warning(
+                    "non_output_skill_rejected",
+                    name=s.name,
+                    category=s.category,
+                )
+                continue
+            self._output_skills.append(s)
+            logger.info("output_skill_registered", name=s.name)
+
     async def notify(self, event: WriteEvent) -> None:
         """Notify all registered backends of a write event.
 
@@ -88,3 +125,22 @@ class SyncManager:
                     path=str(event.path),
                     exc_info=True,
                 )
+
+        # Execute output skills
+        if self._skill_runner and self._context_builder:
+            event_data = {
+                "event_type": event.event_type.value,
+                "path": str(event.path),
+                "source": event.source,
+            }
+            for meta in self._output_skills:
+                try:
+                    context = self._context_builder(input_data=event_data)
+                    await self._skill_runner.run(meta, context)
+                    logger.debug("output_skill_executed", skill=meta.name)
+                except Exception:
+                    logger.warning(
+                        "output_skill_failed",
+                        skill=meta.name,
+                        exc_info=True,
+                    )

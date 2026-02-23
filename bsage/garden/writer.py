@@ -58,6 +58,9 @@ def _build_frontmatter(metadata: dict) -> str:
     return f"---\n{dumped}\n---\n"
 
 
+_MAX_ACTION_SUMMARY = 200
+
+
 class GardenWriter:
     """Writes seeds, garden notes, and action logs to the vault.
 
@@ -166,6 +169,7 @@ class GardenWriter:
 
         Creates or appends to actions/{YYYY-MM-DD}.md with a timestamped
         entry including the skill name and summary.
+        Summaries longer than _MAX_ACTION_SUMMARY characters are truncated.
 
         Args:
             skill_name: Name of the skill that performed the action.
@@ -178,8 +182,12 @@ class GardenWriter:
         actions_dir = self._vault.resolve_path("actions")
         actions_dir.mkdir(parents=True, exist_ok=True)
 
+        if len(summary) > _MAX_ACTION_SUMMARY:
+            truncated = summary[:_MAX_ACTION_SUMMARY] + "…"
+        else:
+            truncated = summary
         log_path = actions_dir / f"{date_str}.md"
-        entry = f"- **{time_str}** | `{skill_name}` | {summary}\n"
+        entry = f"- **{time_str}** | `{skill_name}` | {truncated}\n"
 
         if log_path.exists():
             with log_path.open("a", encoding="utf-8") as f:
@@ -202,7 +210,20 @@ class GardenWriter:
         Returns:
             Sorted list of .md file paths.
         """
-        return self._vault.read_notes(subdir)
+        return await self._vault.read_notes(subdir)
+
+    async def read_note_content(self, path: Path) -> str:
+        """Read the text content of a note file asynchronously.
+
+        Delegates to the vault's read_note_content method.
+
+        Args:
+            path: Absolute path to the note file.
+
+        Returns:
+            The text content of the note.
+        """
+        return await self._vault.read_note_content(path)
 
     async def _notify_sync(self, event_type_str: str, path: Path, source: str) -> None:
         """Notify sync manager of a write event, if configured."""

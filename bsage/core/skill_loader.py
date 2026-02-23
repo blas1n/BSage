@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 
 import structlog
@@ -14,19 +15,37 @@ logger = structlog.get_logger(__name__)
 _REQUIRED_FIELDS = {"name", "version", "category", "is_dangerous", "description"}
 
 
+_VALID_CATEGORIES = {"input", "process", "output"}
+
+
+class OutputTarget(Enum):
+    """Valid output targets for YAML-only skills."""
+
+    GARDEN = "garden"
+    SEEDS = "seeds"
+
+
 @dataclass
 class SkillMeta:
     """Metadata for a single Skill, parsed from skill.yaml."""
 
     name: str
     version: str
-    category: str  # input / process / output / meta
+    category: str  # input / process / output
     is_dangerous: bool
     description: str
     author: str = ""
     entrypoint: str | None = None
     trigger: dict | None = None
-    rules: list[str] = field(default_factory=list)
+    credentials: dict | None = None
+    notification_entrypoint: str | None = None
+
+    # YAML-only skill fields (used when entrypoint is None)
+    read_context: list[str] = field(default_factory=list)
+    output_target: OutputTarget | None = None
+    output_note_type: str = "idea"
+    system_prompt: str | None = None
+    output_format: str | None = None
 
 
 class SkillLoader:
@@ -95,6 +114,27 @@ class SkillLoader:
             raise SkillLoadError(
                 f"Invalid skill name '{name}' in {path}. Use lowercase alphanumeric with hyphens."
             )
+
+        category = data.get("category", "")
+        if category not in _VALID_CATEGORIES:
+            valid = ", ".join(sorted(_VALID_CATEGORIES))
+            hint = (
+                " ('meta' is removed — use 'input', 'process', or 'output')"
+                if category == "meta"
+                else ""
+            )
+            raise SkillLoadError(f"Invalid category '{category}' in {path}.{hint} Must be: {valid}")
+
+        # Validate and convert output_target to enum
+        raw_target = data.get("output_target")
+        if raw_target is not None:
+            try:
+                data["output_target"] = OutputTarget(raw_target)
+            except ValueError:
+                valid = ", ".join(t.value for t in OutputTarget)
+                raise SkillLoadError(
+                    f"Invalid output_target '{raw_target}' in {path}. Must be: {valid}"
+                ) from None
 
         known_fields = {f.name for f in SkillMeta.__dataclass_fields__.values()}
         filtered = {k: v for k, v in data.items() if k in known_fields}

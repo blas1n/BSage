@@ -5,5 +5,5 @@ category: process
 is_dangerous: false
 description: Formats input data into structured Obsidian markdown notes
 entrypoint: skill.py::execute
-rules:
-  - insight-linker
+trigger:
+  type: on_input

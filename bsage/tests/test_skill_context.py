@@ -1,7 +1,8 @@
 """Tests for bsage.core.skill_context — SkillContext."""
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
+from bsage.core.notification import NotificationInterface
 from bsage.core.skill_context import SkillContext
 
 
@@ -10,18 +11,18 @@ class TestSkillContext:
 
     def test_context_creation(self) -> None:
         context = SkillContext(
-            credentials=MagicMock(),
             garden=MagicMock(),
             llm=MagicMock(),
             config={"key": "value"},
             logger=MagicMock(),
         )
         assert context.config == {"key": "value"}
+        assert context.credentials == {}
         assert context.input_data is None
+        assert context.notify is None
 
     def test_context_with_input_data(self) -> None:
         context = SkillContext(
-            credentials=MagicMock(),
             garden=MagicMock(),
             llm=MagicMock(),
             config={},
@@ -29,3 +30,24 @@ class TestSkillContext:
             input_data={"events": [1, 2, 3]},
         )
         assert context.input_data == {"events": [1, 2, 3]}
+
+    def test_context_with_credentials(self) -> None:
+        context = SkillContext(
+            garden=MagicMock(),
+            llm=MagicMock(),
+            config={},
+            logger=MagicMock(),
+            credentials={"api_key": "secret"},
+        )
+        assert context.credentials == {"api_key": "secret"}
+
+    def test_context_with_notification(self) -> None:
+        mock_notify = AsyncMock(spec=NotificationInterface)
+        context = SkillContext(
+            garden=MagicMock(),
+            llm=MagicMock(),
+            config={},
+            logger=MagicMock(),
+            notify=mock_notify,
+        )
+        assert context.notify is mock_notify

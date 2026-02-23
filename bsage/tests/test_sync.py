@@ -1,10 +1,11 @@
 """Tests for bsage.garden.sync — SyncManager and WriteEvent."""
 
 from pathlib import Path
-from unittest.mock import AsyncMock, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 
+from bsage.core.skill_loader import SkillMeta
 from bsage.garden.sync import SyncBackend, SyncManager, WriteEvent, WriteEventType
 
 
@@ -132,6 +133,78 @@ class TestSyncManagerNotify:
         # Both should be called
         failing.sync.assert_called_once()
         healthy.sync.assert_called_once()
+
+
+def _make_skill_meta(name: str) -> SkillMeta:
+    return SkillMeta(
+        name=name,
+        version="1.0.0",
+        category="output",
+        is_dangerous=False,
+        description=f"Test output skill {name}",
+    )
+
+
+class TestSyncManagerOutputSkills:
+    """Test output skill execution on write events."""
+
+    async def test_output_skill_executed_on_notify(self) -> None:
+        mgr = SyncManager()
+        meta = _make_skill_meta("s3-output")
+        runner = MagicMock()
+        runner.run = AsyncMock(return_value={"status": "ok"})
+        ctx = MagicMock()
+        builder = MagicMock(return_value=ctx)
+
+        mgr.register_output_skills([meta], runner, builder)
+
+        event = _make_event()
+        await mgr.notify(event)
+
+        builder.assert_called_once()
+        call_kwargs = builder.call_args
+        assert "event_type" in call_kwargs.kwargs.get(
+            "input_data", call_kwargs.args[0] if call_kwargs.args else {}
+        )
+        runner.run.assert_called_once_with(meta, ctx)
+
+    async def test_output_skill_failure_does_not_propagate(self) -> None:
+        mgr = SyncManager()
+        meta = _make_skill_meta("broken-output")
+        runner = MagicMock()
+        runner.run = AsyncMock(side_effect=RuntimeError("fail"))
+        builder = MagicMock(return_value=MagicMock())
+
+        mgr.register_output_skills([meta], runner, builder)
+
+        event = _make_event()
+        await mgr.notify(event)  # Should not raise
+
+    async def test_no_output_skills_is_noop(self) -> None:
+        mgr = SyncManager()
+        event = _make_event()
+        await mgr.notify(event)  # No output skills registered, should not raise
+
+    def test_register_warns_on_non_output_category(self) -> None:
+        mgr = SyncManager()
+        process_meta = SkillMeta(
+            name="wrong-category",
+            version="1.0.0",
+            category="process",
+            is_dangerous=False,
+            description="Not an output skill",
+        )
+        runner = MagicMock()
+        builder = MagicMock()
+
+        with patch("bsage.garden.sync.logger") as mock_logger:
+            mgr.register_output_skills([process_meta], runner, builder)
+            mock_logger.warning.assert_called_once()
+            call_kwargs = mock_logger.warning.call_args
+            assert call_kwargs.args[0] == "non_output_skill_rejected"
+
+        # Rejected — not registered
+        assert len(mgr._output_skills) == 0
 
 
 class TestSyncBackendProtocol:

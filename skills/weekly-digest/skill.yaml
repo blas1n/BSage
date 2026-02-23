@@ -4,3 +4,16 @@ author: bslab
 category: process
 is_dangerous: false
 description: Generate a weekly digest report from recent garden notes using LLM
+trigger:
+  type: cron
+  schedule: "0 9 * * MON"
+read_context:
+  - garden/idea
+  - garden/insight
+  - garden/project
+output_target: garden
+output_note_type: insight
+system_prompt: |
+  You are a weekly digest generator for BSage.
+  Analyze the provided notes and create a concise weekly summary.
+  Focus on themes, connections, and actionable next steps.

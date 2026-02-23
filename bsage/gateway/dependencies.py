@@ -52,7 +52,10 @@ class AppState:
 
         # Skills
         self.skill_loader = SkillLoader(settings.skills_dir)
-        self.skill_runner = SkillRunner(skills_dir=settings.skills_dir)
+        self.skill_runner = SkillRunner(
+            skills_dir=settings.skills_dir,
+            credential_store=self.credential_store,
+        )
 
         # Agent loop (registry populated after load_all)
         self.agent_loop: AgentLoop | None = None
@@ -69,12 +72,12 @@ class AppState:
             safe_mode_guard=self.safe_mode_guard,
             garden_writer=self.garden_writer,
             llm_client=self.llm_client,
-            credential_store=self.credential_store,
         )
 
         self.scheduler = Scheduler(
             agent_loop=self.agent_loop,
             skill_runner=self.skill_runner,
+            safe_mode_guard=self.safe_mode_guard,
         )
         self.scheduler.register_triggers(registry)
         self.scheduler.start()

@@ -47,11 +47,12 @@ logger.info("credential_loaded", service=name)
 logger.info(f"Authenticated with token: {token}")  # NO!
 ```
 
-**Service credentials stored in `.credentials/` directory (gitignored) via CredentialStore:**
+**Service credentials stored in `.credentials/` directory (gitignored) via CredentialStore.
+SkillRunner auto-injects resolved credentials into `context.credentials` dict:**
 
 ```python
-# Correct - CredentialStore manages .credentials/{name}.json
-creds = await context.credentials.get("google-calendar")
+# Correct - credentials auto-injected as dict by SkillRunner
+creds = context.credentials  # dict[str, Any]
 
 # Wrong - store tokens in plain text
 with open("tokens.txt", "w") as f:

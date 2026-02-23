@@ -235,6 +235,22 @@ class TestWriteAction:
         assert "skill-b" in content
         assert "Second action" in content
 
+    @pytest.mark.asyncio
+    async def test_write_action_truncates_long_summary(self, tmp_path: Path) -> None:
+        """Long summaries should be truncated to _MAX_ACTION_SUMMARY chars."""
+        vault = Vault(tmp_path)
+        vault.ensure_dirs()
+        writer = GardenWriter(vault)
+
+        long_summary = "x" * 500
+        await writer.write_action("test-skill", long_summary)
+
+        actions_dir = tmp_path / "actions"
+        content = list(actions_dir.glob("*.md"))[0].read_text()
+        # The entry line should contain at most 200 x's + ellipsis, not 500
+        assert "x" * 200 + "…" in content
+        assert "x" * 201 not in content
+
 
 class TestReadNotes:
     """Test GardenWriter.read_notes delegates to vault."""

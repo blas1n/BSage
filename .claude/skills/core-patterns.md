@@ -8,210 +8,173 @@ description: BSage Core Engine 구현 패턴 및 데이터 흐름
 ## 실행 흐름
 
 ```
-Scheduler (cron/webhook/event)
-        ↓
-InputSkill.execute(context)
-        ↓
+Scheduler (cron) ─── input skill ──→ AgentLoop.on_input(raw_data)
+                 └── process skill → 직접 실행 + action 로그
+
 AgentLoop.on_input(raw_data)
         ↓
 GardenWriter → /seeds 저장
         ↓
-rules 확인 or LLM 판단 → ProcessSkill 목록 결정
+trigger 매칭 → on_input process skill 목록 결정
+        ↓
+LLM 판단 → on_demand process skill 추가
         ↓
 SafeModeGuard.check()
         ↓ (승인)
-ProcessSkill.execute(context)
+SkillRunner.run(meta, context)
         ↓
-GardenWriter → /garden + /actions 저장
+GardenWriter → /actions 저장
         ↓
-OutputSkill → Vault 동기화
+SyncManager.notify() → output skill 실행
 ```
 
-## SkillLoader 패턴
+## SkillMeta (skill_loader.py)
 
 ```python
-from dataclasses import dataclass, field
-from pathlib import Path
-
-import structlog
-import yaml
-
-logger = structlog.get_logger(__name__)
-
-
 @dataclass
 class SkillMeta:
     name: str
     version: str
-    category: str              # input / process / output / meta
+    category: str              # input / process / output
     is_dangerous: bool
     description: str
     author: str = ""
     entrypoint: str | None = None
     trigger: dict | None = None
-    rules: list[str] = field(default_factory=list)
+    credentials: dict | None = None
+    notification_entrypoint: str | None = None  # 양방향 채널
 
-
-class SkillLoader:
-    def __init__(self, skills_dir: Path) -> None:
-        self._skills_dir = skills_dir
-        self._registry: dict[str, SkillMeta] = {}
-
-    async def load_all(self) -> dict[str, SkillMeta]:
-        """skills/ 디렉토리를 스캔하여 모든 Skill 메타데이터를 로드."""
-        for skill_dir in self._skills_dir.iterdir():
-            if not skill_dir.is_dir():
-                continue
-            yaml_path = skill_dir / "skill.yaml"
-            if not yaml_path.exists():
-                logger.warning("skill_missing_yaml", path=str(skill_dir))
-                continue
-            meta = self._parse_yaml(yaml_path)
-            self._registry[meta.name] = meta
-            logger.info("skill_loaded", name=meta.name, category=meta.category)
-        return self._registry
-
-    def _parse_yaml(self, path: Path) -> SkillMeta:
-        with open(path) as f:
-            data = yaml.safe_load(f)
-        return SkillMeta(**{k: v for k, v in data.items() if k in SkillMeta.__dataclass_fields__})
-```
-
-## SkillRunner 패턴
-
-```python
-import importlib.util
-from pathlib import Path
-
-import structlog
-
-logger = structlog.get_logger(__name__)
-
-
-class SkillRunner:
-    async def run(self, skill_meta: SkillMeta, context: SkillContext) -> dict:
-        """Skill을 실행하고 결과를 반환."""
-        logger.info("skill_run_start", name=skill_meta.name, category=skill_meta.category)
-
-        if skill_meta.entrypoint:
-            # py 실행
-            module_name, func_name = skill_meta.entrypoint.split("::")
-            skill_dir = self._skills_dir / skill_meta.name
-            result = await self._run_python(skill_dir / module_name, func_name, context)
-        else:
-            # yaml only — LLM 기반 처리
-            result = await self._run_llm(skill_meta, context)
-
-        logger.info("skill_run_complete", name=skill_meta.name)
-        return result
-
-    async def _run_python(self, module_path: Path, func_name: str, context: SkillContext) -> dict:
-        spec = importlib.util.spec_from_file_location("skill_module", module_path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        func = getattr(module, func_name)
-        return await func(context)
-
-    async def _run_llm(self, skill_meta: SkillMeta, context: SkillContext) -> dict:
-        # LLM에게 skill.yaml의 description을 기반으로 처리 지시
-        response = await context.llm.chat(
-            system=f"You are executing the '{skill_meta.name}' skill: {skill_meta.description}",
-            messages=[{"role": "user", "content": str(context.input_data)}],
-        )
-        return {"llm_response": response}
+    # YAML-only skill fields
+    read_context: list[str] = field(default_factory=list)
+    output_target: OutputTarget | None = None  # OutputTarget enum (GARDEN, SEEDS)
+    output_note_type: str = "idea"
+    system_prompt: str | None = None
+    output_format: str | None = None
 ```
 
 ## AgentLoop 패턴
 
 ```python
 class AgentLoop:
-    async def on_input(self, skill_name: str, raw_data: dict) -> None:
-        """InputSkill 결과 수신 → ProcessSkill 체인 결정 → 실행."""
+    async def on_input(self, skill_name: str, raw_data: dict) -> list[dict]:
+        """InputSkill 결과 수신 → trigger 매칭 → 실행."""
         # 1. seeds에 원시 데이터 저장
         await self._garden_writer.write_seed(skill_name, raw_data)
 
-        # 2. rules 확인 (yaml 기반 우선)
-        input_meta = self._registry[skill_name]
-        if input_meta.rules:
-            process_skills = input_meta.rules
+        # 2. trigger.type == on_input인 process skill 필터
+        triggered = self._find_triggered_skills(skill_name)
+
+        # 3. on_demand skill 중 LLM 판단
+        on_demand = await self._decide_on_demand_skills(skill_name, raw_data)
+
+        # 4. 실행 (SafeMode 체크 포함)
+        for meta in triggered + on_demand:
+            approved = await self._safe_mode_guard.check(meta)
+            if not approved:
+                continue
+            context = self.build_context(input_data=raw_data)
+            result = await self._skill_runner.run(meta, context)
+            summary = json.dumps(result, default=str)
+            await self._garden_writer.write_action(meta.name, summary)
+
+    def _find_triggered_skills(self, source_name: str) -> list[SkillMeta]:
+        """trigger.type == on_input이고 sources 조건에 맞는 process skill."""
+        result = []
+        for meta in self._registry.values():
+            if meta.category != "process" or not meta.trigger:
+                continue
+            if meta.trigger.get("type") != "on_input":
+                continue
+            sources = meta.trigger.get("sources")
+            if sources is None or source_name in sources:
+                result.append(meta)
+        return result
+```
+
+## SkillRunner 패턴
+
+```python
+class SkillRunner:
+    async def run(self, skill_meta: SkillMeta, context: SkillContext) -> dict:
+        # 1. credential 자동 주입
+        await self._auto_inject_credentials(skill_meta.name, context)
+
+        # 2. entrypoint 유무에 따라 실행
+        if skill_meta.entrypoint:
+            return await self._run_python(...)
         else:
-            # 3. LLM fallback
-            process_skills = await self._decide_with_llm(skill_name, raw_data)
+            return await self._run_llm(skill_meta, context)
 
-        # 4. ProcessSkill 체인 실행
-        for ps_name in process_skills:
-            ps_meta = self._registry[ps_name]
+    async def run_notify(self, skill_meta, context) -> dict:
+        """notification_entrypoint 실행 (양방향 채널)."""
+        return await self._run_entrypoint(
+            skill_meta.name, skill_meta.notification_entrypoint, context
+        )
 
-            # SafeModeGuard 체크
-            if ps_meta.is_dangerous:
-                approved = await self._safe_mode.request_approval(ps_meta)
-                if not approved:
-                    logger.warning("skill_rejected", name=ps_name)
-                    continue
+    async def _run_entrypoint(self, skill_name, entrypoint, context) -> dict:
+        """공통 entrypoint 로딩 + 실행 (run, run_notify 공유)."""
+        module_file, func_name = entrypoint.split("::")
+        module = load_module(self._skills_dir / skill_name / module_file)
+        return await getattr(module, func_name)(context)
 
-            await self._skill_runner.run(ps_meta, context)
+    async def _run_llm(self, skill_meta, context) -> dict:
+        """YAML-only 3단계 파이프라인: GATHER → LLM → APPLY."""
+        vault_context = await self._gather_vault_context(skill_meta.read_context, context)
+        system, messages = self._build_messages(skill_meta, vault_context, context.input_data)
+        response = await context.llm.chat(system=system, messages=messages)
+        return await self._apply_output(skill_meta, context, response)
 ```
 
-## SafeModeGuard 패턴
+## Scheduler 패턴
 
 ```python
-class SafeModeGuard:
-    async def check(self, skill_meta: SkillMeta) -> bool:
-        """is_dangerous=True Skill에 대해 사용자 승인을 요청."""
-        if not skill_meta.is_dangerous:
-            return True
-
-        logger.info("safe_mode_approval_required",
-                     skill=skill_meta.name,
-                     description=skill_meta.description)
-
-        # Interface 레이어로 승인 요청 위임
-        return await self._interface.request_approval(
-            skill_name=skill_meta.name,
-            description=skill_meta.description,
-            action_summary=f"[{skill_meta.category}] {skill_meta.description}",
-        )
+class Scheduler:
+    def register_triggers(self, registry: dict[str, SkillMeta]) -> None:
+        """input, process 모두 cron trigger 등록 가능."""
+        for name, meta in registry.items():
+            if not meta.trigger or meta.trigger.get("type") != "cron":
+                continue
+            if meta.category == "input":
+                callback = self._on_input_trigger   # run → on_input
+            elif meta.category == "process":
+                callback = self._on_process_trigger  # run → write_action
+            else:
+                continue
+            self._scheduler.add_job(callback, CronTrigger(...), args=[name])
 ```
 
-## GardenWriter 패턴
+## NotificationRouter (양방향 채널)
 
 ```python
-from datetime import datetime
-from pathlib import Path
+class NotificationRouter:
+    """input skill의 notification_entrypoint를 통해 알림 전달."""
 
-import structlog
+    def setup(self, registry, skill_runner, context_builder):
+        """registry에서 notification_entrypoint 있는 skill 자동 발견."""
+        self._skills = [m for m in registry.values() if m.notification_entrypoint]
 
-logger = structlog.get_logger(__name__)
+    async def send(self, message: str, level: str = "info"):
+        for meta in self._skills:
+            ctx = self._context_builder(input_data={"message": message, "level": level})
+            ctx.notify = None  # 재귀 방지
+            await self._skill_runner.run_notify(meta, ctx)
+```
 
+## SyncManager + Output Skill
 
-class GardenWriter:
-    def __init__(self, vault_path: Path) -> None:
-        self._vault = vault_path
+```python
+class SyncManager:
+    def register_output_skills(self, skills, skill_runner, context_builder):
+        """output 카테고리 skill 등록."""
 
-    async def write_seed(self, source: str, data: dict) -> Path:
-        """InputSkill 결과를 seeds/에 저장."""
-        dest = self._vault / "seeds" / source
-        dest.mkdir(parents=True, exist_ok=True)
-        note_path = dest / f"{datetime.now():%Y-%m-%d_%H%M}.md"
-        content = self._format_seed(source, data)
-        note_path.write_text(content, encoding="utf-8")
-        logger.info("seed_written", path=str(note_path))
-        return note_path
-
-    async def write_action(self, skill_name: str, summary: str) -> None:
-        """에이전트 행동 로그를 actions/에 기록."""
-        today = self._vault / "actions" / f"{datetime.now():%Y-%m-%d}.md"
-        today.parent.mkdir(parents=True, exist_ok=True)
-        entry = f"\n## {datetime.now():%H:%M} — {skill_name}\n{summary}\n"
-        with open(today, "a", encoding="utf-8") as f:
-            f.write(entry)
-
-    def _format_seed(self, source: str, data: dict) -> str:
-        return (
-            f"---\ntype: seed\nsource: {source}\n"
-            f"captured_at: {datetime.now():%Y-%m-%d}\n---\n\n"
-            f"{data}\n"
-        )
+    async def notify(self, event: WriteEvent) -> None:
+        # 1. 기존 SyncBackend 호출 (하위 호환)
+        for backend in self._backends.values():
+            await backend.sync(event)
+        # 2. output skill 실행
+        for meta in self._output_skills:
+            context = self._context_builder(input_data=event_data)
+            await self._skill_runner.run(meta, context)
 ```
 
 ## CredentialStore 패턴
@@ -219,9 +182,6 @@ class GardenWriter:
 ```python
 class CredentialStore:
     """JSON 파일 기반 credential 저장/로드."""
-
-    def __init__(self, credentials_dir: Path) -> None:
-        self._dir = credentials_dir
 
     async def get(self, name: str) -> dict[str, Any]:
         """name.json에서 credential 로드. 없으면 CredentialNotFoundError."""
@@ -233,44 +193,11 @@ class CredentialStore:
         """저장된 credential 목록 반환."""
 ```
 
-## Scheduler 패턴
-
-```python
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
-class Scheduler:
-    def __init__(self) -> None:
-        self._scheduler = AsyncIOScheduler()
-
-    async def register_triggers(self, registry: dict[str, SkillMeta]) -> None:
-        """InputSkill의 trigger를 스케줄러에 등록."""
-        for name, meta in registry.items():
-            if meta.category != "input" or not meta.trigger:
-                continue
-
-            match meta.trigger["type"]:
-                case "cron":
-                    self._scheduler.add_job(
-                        self._run_input_skill,
-                        "cron",
-                        args=[name],
-                        **self._parse_cron(meta.trigger["schedule"]),
-                    )
-                case "webhook":
-                    await self._register_webhook(name, meta.trigger)
-                case "event":
-                    await self._register_event(name, meta.trigger)
-
-            logger.info("trigger_registered", skill=name, type=meta.trigger["type"])
-
-    def start(self) -> None:
-        self._scheduler.start()
-```
-
 ## Critical Rules
 
-1. **Skill은 Core 내부 구조를 몰라도 된다** — `context` 객체만 사용
-2. **규칙 기반 실행이 LLM 판단보다 우선** — 예측 가능성 + 비용 절감
+1. **Skill은 자기 완결적 플러그인** — 직접 의존 없음, trigger로 반응 선언
+2. **trigger 매칭이 실행을 결정** — rules 없음, 각 skill이 자기 trigger 선언
 3. **is_dangerous 체크는 건너뛸 수 없다** — SafeModeGuard 우회 금지
-4. **Vault 밖으로 데이터 유출 없음** — GardenWriter만 Vault에 쓰기
-5. **외부 서비스 연결은 Skill이 자체 처리** — credential은 context.credentials로 로드
+4. **Vault 밖으로 데이터 유출 없음** — OutputSkill을 통한 의도적 동기화만 허용
+5. **외부 서비스 연결은 Skill이 자체 처리** — credential은 자동 주입
+6. **유저 알림은 context.notify 경유** — input skill의 역방향(notification_entrypoint)으로 전달

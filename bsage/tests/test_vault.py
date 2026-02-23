@@ -60,7 +60,8 @@ class TestVaultResolvePath:
 class TestVaultReadNotes:
     """Test Vault.read_notes returns markdown files sorted by name."""
 
-    def test_read_notes_returns_md_files_sorted(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_read_notes_returns_md_files_sorted(self, tmp_path: Path) -> None:
         """read_notes should return only .md files, sorted by name."""
         vault = Vault(tmp_path)
         notes_dir = tmp_path / "garden" / "ideas"
@@ -71,27 +72,60 @@ class TestVaultReadNotes:
         (notes_dir / "gamma.md").write_text("# Gamma")
         (notes_dir / "readme.txt").write_text("not a note")
 
-        result = vault.read_notes("garden/ideas")
+        result = await vault.read_notes("garden/ideas")
 
         assert len(result) == 3
         assert result[0].name == "alpha.md"
         assert result[1].name == "beta.md"
         assert result[2].name == "gamma.md"
 
-    def test_read_notes_empty_dir(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_read_notes_empty_dir(self, tmp_path: Path) -> None:
         """read_notes should return an empty list for an empty directory."""
         vault = Vault(tmp_path)
         empty_dir = tmp_path / "garden" / "empty"
         empty_dir.mkdir(parents=True)
 
-        result = vault.read_notes("garden/empty")
+        result = await vault.read_notes("garden/empty")
 
         assert result == []
 
-    def test_read_notes_nonexistent_dir(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_read_notes_nonexistent_dir(self, tmp_path: Path) -> None:
         """read_notes should return an empty list for a nonexistent directory."""
         vault = Vault(tmp_path)
 
-        result = vault.read_notes("garden/nonexistent")
+        result = await vault.read_notes("garden/nonexistent")
 
         assert result == []
+
+
+class TestVaultReadNoteContent:
+    """Test Vault.read_note_content reads file content asynchronously."""
+
+    @pytest.mark.asyncio
+    async def test_read_note_content_returns_text(self, tmp_path: Path) -> None:
+        vault = Vault(tmp_path)
+        note = tmp_path / "test.md"
+        note.write_text("# Hello\nContent here", encoding="utf-8")
+
+        content = await vault.read_note_content(note)
+
+        assert content == "# Hello\nContent here"
+
+    @pytest.mark.asyncio
+    async def test_read_note_content_blocks_traversal(self, tmp_path: Path) -> None:
+        vault = Vault(tmp_path)
+        outside = tmp_path.parent / "secret.md"
+        outside.write_text("secret", encoding="utf-8")
+
+        with pytest.raises(VaultPathError, match="traversal"):
+            await vault.read_note_content(outside)
+
+    @pytest.mark.asyncio
+    async def test_read_note_content_raises_on_missing_file(self, tmp_path: Path) -> None:
+        vault = Vault(tmp_path)
+        missing = tmp_path / "nonexistent.md"
+
+        with pytest.raises(OSError):
+            await vault.read_note_content(missing)

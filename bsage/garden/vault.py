@@ -1,5 +1,8 @@
 """Vault — secure path management and file access for the 2nd Brain."""
 
+from __future__ import annotations
+
+import asyncio
 from pathlib import Path
 
 import structlog
@@ -57,7 +60,7 @@ class Vault:
             raise VaultPathError(f"Path traversal detected: '{subpath}' resolves outside the vault")
         return resolved
 
-    def read_notes(self, subdir: str) -> list[Path]:
+    async def read_notes(self, subdir: str) -> list[Path]:
         """Return sorted list of .md files in a vault subdirectory.
 
         Args:
@@ -68,10 +71,37 @@ class Vault:
             Returns an empty list if the directory doesn't exist.
         """
         target = self.resolve_path(subdir)
-        if not target.is_dir():
-            logger.debug("vault_read_notes_no_dir", subdir=subdir)
-            return []
 
-        md_files = sorted(target.glob("*.md"), key=lambda p: p.name)
-        logger.debug("vault_read_notes", subdir=subdir, count=len(md_files))
+        def _read() -> tuple[list[Path], bool]:
+            if not target.is_dir():
+                return [], False
+            return sorted(target.glob("*.md"), key=lambda p: p.name), True
+
+        md_files, dir_exists = await asyncio.to_thread(_read)
+        if md_files:
+            logger.debug("vault_read_notes", subdir=subdir, count=len(md_files))
+        elif dir_exists:
+            logger.debug("vault_read_notes_empty", subdir=subdir)
+        else:
+            logger.debug("vault_read_notes_no_dir", subdir=subdir)
         return md_files
+
+    async def read_note_content(self, path: Path) -> str:
+        """Read the text content of a note file asynchronously.
+
+        The path must be within the vault boundary.
+
+        Args:
+            path: Absolute path to the note file.
+
+        Returns:
+            The text content of the note.
+
+        Raises:
+            VaultPathError: If the path is outside the vault boundary.
+            OSError: If the file cannot be read.
+        """
+        resolved = path.resolve()
+        if not resolved.is_relative_to(self._root):
+            raise VaultPathError(f"Path traversal detected: '{path}' resolves outside the vault")
+        return await asyncio.to_thread(resolved.read_text, encoding="utf-8")

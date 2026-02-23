@@ -3,7 +3,7 @@
 import pytest
 
 from bsage.core.exceptions import SkillLoadError
-from bsage.core.skill_loader import SkillLoader, SkillMeta
+from bsage.core.skill_loader import OutputTarget, SkillLoader, SkillMeta
 
 
 class TestSkillMeta:
@@ -34,7 +34,12 @@ class TestSkillMeta:
         assert meta.author == ""
         assert meta.entrypoint is None
         assert meta.trigger is None
-        assert meta.rules == []
+        assert meta.credentials is None
+        assert meta.read_context == []
+        assert meta.output_target is None
+        assert meta.output_note_type == "idea"
+        assert meta.system_prompt is None
+        assert meta.output_format is None
 
     def test_all_fields(self) -> None:
         meta = SkillMeta(
@@ -46,11 +51,30 @@ class TestSkillMeta:
             author="bslab",
             entrypoint="skill.py::execute",
             trigger={"type": "cron", "schedule": "*/15 * * * *"},
-            rules=["garden-writer"],
+            credentials={"fields": [{"name": "api_key", "required": True}]},
         )
         assert meta.entrypoint == "skill.py::execute"
         assert meta.trigger == {"type": "cron", "schedule": "*/15 * * * *"}
-        assert meta.rules == ["garden-writer"]
+        assert meta.credentials == {"fields": [{"name": "api_key", "required": True}]}
+
+    def test_yaml_only_fields(self) -> None:
+        meta = SkillMeta(
+            name="weekly-digest",
+            version="1.0.0",
+            category="process",
+            is_dangerous=False,
+            description="Weekly digest",
+            read_context=["garden/idea", "garden/insight"],
+            output_target=OutputTarget.GARDEN,
+            output_note_type="insight",
+            system_prompt="You are a digest generator.",
+            output_format="json",
+        )
+        assert meta.read_context == ["garden/idea", "garden/insight"]
+        assert meta.output_target is OutputTarget.GARDEN
+        assert meta.output_note_type == "insight"
+        assert meta.system_prompt == "You are a digest generator."
+        assert meta.output_format == "json"
 
 
 class TestSkillLoader:
@@ -68,8 +92,8 @@ class TestSkillLoader:
             "category: process\n"
             "is_dangerous: false\n"
             "description: Write garden notes\n"
-            "rules:\n"
-            "  - insight-linker\n"
+            "trigger:\n"
+            "  type: on_input\n"
         )
 
         # Valid input skill
@@ -103,7 +127,7 @@ class TestSkillLoader:
         assert isinstance(meta, SkillMeta)
         assert meta.category == "process"
         assert meta.is_dangerous is False
-        assert meta.rules == ["insight-linker"]
+        assert meta.trigger == {"type": "on_input"}
 
     async def test_load_all_parses_input_skill(self, skills_dir) -> None:
         loader = SkillLoader(skills_dir)
@@ -167,6 +191,82 @@ class TestSkillLoader:
         loader = SkillLoader(tmp_path)
         registry = await loader.load_all()
         assert "Bad_Name!" not in registry
+
+    async def test_load_all_rejects_invalid_category(self, tmp_path) -> None:
+        skill_dir = tmp_path / "meta-skill"
+        skill_dir.mkdir()
+        (skill_dir / "skill.yaml").write_text(
+            "name: meta-skill\n"
+            "version: 1.0.0\n"
+            "category: meta\n"
+            "is_dangerous: false\n"
+            "description: Old meta category\n"
+        )
+        loader = SkillLoader(tmp_path)
+        registry = await loader.load_all()
+        assert "meta-skill" not in registry
+
+    async def test_load_all_parses_yaml_only_fields(self, tmp_path) -> None:
+        skill_dir = tmp_path / "weekly-digest"
+        skill_dir.mkdir()
+        (skill_dir / "skill.yaml").write_text(
+            "name: weekly-digest\n"
+            "version: 1.0.0\n"
+            "category: process\n"
+            "is_dangerous: false\n"
+            "description: Weekly digest\n"
+            "read_context:\n"
+            "  - garden/idea\n"
+            "  - garden/insight\n"
+            "output_target: garden\n"
+            "output_note_type: insight\n"
+            "output_format: json\n"
+            "system_prompt: You are a digest generator.\n"
+        )
+        loader = SkillLoader(tmp_path)
+        registry = await loader.load_all()
+        meta = registry["weekly-digest"]
+        assert meta.read_context == ["garden/idea", "garden/insight"]
+        assert meta.output_target is OutputTarget.GARDEN
+        assert meta.output_note_type == "insight"
+        assert meta.output_format == "json"
+        assert meta.system_prompt == "You are a digest generator."
+
+    async def test_load_all_parses_credentials(self, tmp_path) -> None:
+        skill_dir = tmp_path / "telegram-input"
+        skill_dir.mkdir()
+        (skill_dir / "skill.yaml").write_text(
+            "name: telegram-input\n"
+            "version: 1.0.0\n"
+            "category: input\n"
+            "is_dangerous: false\n"
+            "description: Telegram messages\n"
+            "credentials:\n"
+            "  fields:\n"
+            "    - name: bot_token\n"
+            "      description: Bot API token\n"
+            "      required: true\n"
+        )
+        loader = SkillLoader(tmp_path)
+        registry = await loader.load_all()
+        meta = registry["telegram-input"]
+        assert meta.credentials is not None
+        assert meta.credentials["fields"][0]["name"] == "bot_token"
+
+    async def test_load_all_rejects_invalid_output_target(self, tmp_path) -> None:
+        skill_dir = tmp_path / "bad-target"
+        skill_dir.mkdir()
+        (skill_dir / "skill.yaml").write_text(
+            "name: bad-target\n"
+            "version: 1.0.0\n"
+            "category: process\n"
+            "is_dangerous: false\n"
+            "description: Invalid output target\n"
+            "output_target: invalid\n"
+        )
+        loader = SkillLoader(tmp_path)
+        registry = await loader.load_all()
+        assert "bad-target" not in registry
 
     async def test_load_all_nonexistent_dir(self, tmp_path) -> None:
         loader = SkillLoader(tmp_path / "does-not-exist")
