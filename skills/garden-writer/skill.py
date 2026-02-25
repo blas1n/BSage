@@ -1,5 +1,6 @@
 """Garden Writer — formats collected data into Obsidian notes."""
 
+import json
 from typing import Any
 
 
@@ -8,6 +9,8 @@ async def execute(context: Any) -> dict[str, Any]:
     input_data = context.input_data or {}
     source = input_data.get("source", "unknown")
     items = input_data.get("items", [])
+    if isinstance(items, str):
+        items = json.loads(items)
 
     notes_written = 0
     for item in items:
