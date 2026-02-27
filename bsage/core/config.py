@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     credentials_dir: Path = Path("./.credentials")
     prompts_dir: Path = Path("./prompts")
 
+    # Embedding / RAG
+    embedding_model: str = ""
+    embedding_api_key: str = ""
+    embedding_api_base: str | None = None
+    rag_index_path: Path | None = None
+
     # Runtime
     safe_mode: bool = True
     gateway_host: str = "127.0.0.1"

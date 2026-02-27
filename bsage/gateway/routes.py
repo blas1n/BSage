@@ -168,6 +168,7 @@ def create_routes(state: AppState) -> APIRouter:
                 garden_writer=state.garden_writer,
                 prompt_registry=state.prompt_registry,
                 context_paths=body.context_paths,
+                retriever=state.retriever,
             )
             return {"response": response}
         except Exception as exc:

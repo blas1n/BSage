@@ -9,6 +9,7 @@ import structlog
 if TYPE_CHECKING:
     from bsage.core.agent_loop import AgentLoop
     from bsage.core.prompt_registry import PromptRegistry
+    from bsage.garden.retriever import VaultRetriever
     from bsage.garden.writer import GardenWriter
 
 logger = structlog.get_logger(__name__)
@@ -21,11 +22,25 @@ async def gather_vault_context(
     garden_writer: GardenWriter,
     context_paths: list[str],
     max_chars: int = _MAX_CONTEXT_CHARS,
+    retriever: VaultRetriever | None = None,
+    query: str = "",
 ) -> str:
-    """Read recent vault notes and concatenate them up to *max_chars*.
+    """Read relevant vault notes and concatenate them up to *max_chars*.
 
-    Notes are read most-recent-first (reversed filename sort).
+    Uses RAG-based semantic search when *retriever* is available and a
+    *query* is provided.  Falls back to recency-based reading otherwise.
     """
+    if retriever and retriever.rag_available and query:
+        try:
+            return await retriever.retrieve(
+                query=query,
+                context_dirs=context_paths,
+                max_chars=max_chars,
+            )
+        except Exception:
+            logger.warning("chat_rag_fallback", exc_info=True)
+
+    # Original recency-based fallback
     segments: list[str] = []
     total = 0
 
@@ -75,10 +90,13 @@ async def handle_chat(
     garden_writer: GardenWriter,
     prompt_registry: PromptRegistry,
     context_paths: list[str] | None = None,
+    retriever: VaultRetriever | None = None,
 ) -> str:
     """Process a chat request via AgentLoop with skill tool use."""
     paths = context_paths or DEFAULT_CONTEXT_PATHS
-    vault_context = await gather_vault_context(garden_writer, paths)
+    vault_context = await gather_vault_context(
+        garden_writer, paths, retriever=retriever, query=message
+    )
     system = build_system_prompt(prompt_registry, vault_context)
 
     messages = [*history, {"role": "user", "content": message}]

@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from bsage.core.prompt_registry import PromptRegistry
     from bsage.core.skill_context import SkillContext
     from bsage.core.skill_loader import SkillMeta
+    from bsage.garden.retriever import VaultRetriever
 
 # Maximum number of notes to read per vault subdirectory during GATHER phase.
 _MAX_NOTES_PER_DIR = 20
@@ -50,9 +51,11 @@ class SkillRunner:
         self,
         prompt_registry: PromptRegistry | None = None,
         event_bus: EventBus | None = None,
+        retriever: VaultRetriever | None = None,
     ) -> None:
         self._prompt_registry = prompt_registry
         self._event_bus = event_bus
+        self._retriever = retriever
 
     async def run(self, skill_meta: SkillMeta, context: SkillContext) -> dict:
         """Execute a Skill via the 3-phase LLM pipeline and return the result dict.
@@ -132,9 +135,30 @@ class SkillRunner:
         return result
 
     async def _gather_vault_context(self, read_dirs: list[str], context: SkillContext) -> str:
-        """Read vault notes and build a context string for LLM."""
+        """Read vault notes and build a context string for LLM.
+
+        Uses RAG-based semantic retrieval when a retriever is available,
+        falling back to the original sequential read on failure or when
+        the retriever is not configured.
+        """
         if not read_dirs:
             return ""
+
+        if self._retriever and self._retriever.rag_available:
+            query = ""
+            if context.input_data:
+                query = str(context.input_data)[:500]
+            if not query:
+                query = " ".join(read_dirs)
+            try:
+                return await self._retriever.retrieve(
+                    query=query,
+                    context_dirs=read_dirs,
+                    max_chars=_MAX_CONTEXT_CHARS,
+                    top_k=_MAX_NOTES_PER_DIR,
+                )
+            except Exception:
+                logger.warning("rag_gather_failed_fallback", exc_info=True)
 
         parts: list[str] = []
         total_chars = 0

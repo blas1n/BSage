@@ -64,6 +64,8 @@ def mock_state():
     state.prompt_registry.get = MagicMock(return_value="You are BSage.")
     state.prompt_registry.render = MagicMock(return_value="Chat instructions here.")
     state.danger_map = {}
+    state.retriever = MagicMock()
+    state.retriever.rag_available = False
     return state
 
 

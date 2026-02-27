@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import structlog
 
 from bsage.core.agent_loop import AgentLoop
@@ -20,8 +22,11 @@ from bsage.core.safe_mode import SafeModeGuard
 from bsage.core.scheduler import Scheduler
 from bsage.core.skill_loader import SkillLoader
 from bsage.core.skill_runner import SkillRunner
+from bsage.garden.embeddings import EmbeddingClient
+from bsage.garden.retriever import VaultRetriever
 from bsage.garden.sync import SyncManager
 from bsage.garden.vault import Vault
+from bsage.garden.vector_store import VectorStore
 from bsage.garden.writer import GardenWriter
 from bsage.gateway.event_broadcaster import WebSocketEventBroadcaster
 from bsage.gateway.ws import manager as ws_manager
@@ -100,10 +105,27 @@ class AppState:
             credential_store=self.credential_store, event_bus=self.event_bus
         )
 
+        # RAG components (optional — active when embedding_model is configured)
+        self.embedding_client: EmbeddingClient | None = None
+        self.vector_store: VectorStore | None = None
+
+        if self.runtime_config.embedding_model:
+            self.embedding_client = EmbeddingClient(runtime_config=self.runtime_config)
+            rag_path = settings.rag_index_path or (settings.vault_path / ".rag" / "index.db")
+            self.vector_store = VectorStore(rag_path)
+
+        self.retriever = VaultRetriever(
+            vault=self.vault,
+            vector_store=self.vector_store,
+            embedding_client=self.embedding_client,
+        )
+
         # Skills
         self.skill_loader = SkillLoader(settings.skills_dir)
         self.skill_runner = SkillRunner(
-            prompt_registry=self.prompt_registry, event_bus=self.event_bus
+            prompt_registry=self.prompt_registry,
+            event_bus=self.event_bus,
+            retriever=self.retriever,
         )
 
         # Unified runner dispatcher
@@ -123,6 +145,21 @@ class AppState:
 
     async def initialize(self) -> None:
         """Load plugins and skills, create AgentLoop, register triggers, start scheduler."""
+        # Initialize vector store for RAG
+        if self.vector_store:
+            await self.vector_store.initialize()
+
+        # Subscribe index subscriber to EventBus for write-time indexing
+        if self.retriever.rag_available:
+            from bsage.garden.index_subscriber import IndexSubscriber
+
+            index_sub = IndexSubscriber(self.retriever, self.vault)
+            self.event_bus.subscribe(index_sub)
+
+        # Background reindex to pick up manual vault edits (Obsidian, etc.)
+        if self.retriever.rag_available:
+            self._reindex_task = asyncio.create_task(self._background_reindex())
+
         plugin_registry = await self.plugin_loader.load_all()
         skill_registry = await self.skill_loader.load_all()
 
@@ -173,8 +210,26 @@ class AppState:
         self.scheduler.start()
         logger.info("gateway_initialized")
 
+    async def _background_reindex(self) -> None:
+        """Reconcile index with vault contents on startup.
+
+        Runs in the background so it doesn't block server startup.
+        Content-hash dedup ensures only new/changed notes are re-embedded.
+        """
+        try:
+            count = await self.retriever.reindex_all()
+            logger.info("startup_reindex_complete", indexed=count)
+        except Exception:
+            logger.warning("startup_reindex_failed", exc_info=True)
+
     async def shutdown(self) -> None:
         """Stop scheduler and clean up resources."""
         if self.scheduler:
             self.scheduler.stop()
+        # Cancel background reindex if still running
+        task = getattr(self, "_reindex_task", None)
+        if task and not task.done():
+            task.cancel()
+        if self.vector_store:
+            await self.vector_store.close()
         logger.info("gateway_shutdown")
