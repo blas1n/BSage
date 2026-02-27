@@ -158,8 +158,13 @@ class GardenWriter:
         Creates a file at seeds/{source}/{YYYY-MM-DD_HHMM}.md with
         YAML frontmatter containing type, source, and captured_at.
 
+        When *data* contains ``title`` and/or ``tags``, they are promoted
+        to frontmatter for fast RAG indexing. If ``title`` and ``content``
+        are both present, the body is written as plain markdown instead of
+        a YAML dump.
+
         Args:
-            source: Name of the data source (e.g. "calendar", "google-calendar").
+            source: Name of the data source (e.g. "calendar", "idea").
             data: Dictionary of collected data to serialize.
 
         Returns:
@@ -174,16 +179,23 @@ class GardenWriter:
 
         file_path = source_dir / filename
 
-        frontmatter = _build_frontmatter(
-            {
-                "type": "seed",
-                "source": source,
-                "captured_at": date_str,
-            }
-        )
+        metadata: dict = {
+            "type": "seed",
+            "source": source,
+            "captured_at": date_str,
+        }
+        if "title" in data:
+            metadata["title"] = data["title"]
+        if "tags" in data:
+            metadata["tags"] = data["tags"]
 
-        body = yaml.dump(data, default_flow_style=False, allow_unicode=True)
-        content = f"{frontmatter}\n{body}"
+        frontmatter = _build_frontmatter(metadata)
+
+        if "title" in data and "content" in data:
+            body = data["content"]
+        else:
+            body = yaml.dump(data, default_flow_style=False, allow_unicode=True)
+        content = f"{frontmatter}\n{body}\n"
 
         await asyncio.to_thread(file_path.write_text, content, encoding="utf-8")
         logger.info("seed_written", source=source, path=str(file_path))
