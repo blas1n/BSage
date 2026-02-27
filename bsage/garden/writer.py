@@ -98,6 +98,24 @@ WRITE_NOTE_TOOL: dict[str, Any] = {
     },
 }
 
+WRITE_SEED_TOOL: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "write-seed",
+        "description": (
+            "Save raw data as a seed note. Use for unprocessed data that needs further analysis."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "Data source name"},
+                "data": {"type": "object", "description": "Raw data to store"},
+            },
+            "required": ["source", "data"],
+        },
+    },
+}
+
 
 class GardenWriter:
     """Writes seeds, garden notes, and action logs to the vault.
@@ -253,35 +271,6 @@ class GardenWriter:
             self._event_bus, "ACTION_LOGGED", {"path": str(log_path), "source": skill_name}
         )
 
-    async def write_from_items(self, source: str, items: list[dict]) -> list[Path]:
-        """Convert a list of input items into garden notes.
-
-        This is the built-in equivalent of the former garden-writer skill.
-        Called automatically by AgentLoop.on_input() when raw_data contains
-        an ``items`` list.
-
-        Args:
-            source: Plugin name or data source identifier.
-            items: List of dicts with ``title``, ``content``, and optional ``tags``.
-
-        Returns:
-            List of paths to the created garden note files.
-        """
-        paths = []
-        for item in items:
-            path = await self.write_garden(
-                {
-                    "title": item.get("title", "Untitled"),
-                    "content": item.get("content", ""),
-                    "note_type": "idea",
-                    "source": source,
-                    "tags": item.get("tags", []),
-                }
-            )
-            paths.append(path)
-        logger.info("items_written", source=source, count=len(paths))
-        return paths
-
     async def handle_write_note(self, args: dict[str, Any]) -> dict[str, Any]:
         """Handle a write-note tool call from the LLM.
 
@@ -312,6 +301,22 @@ class GardenWriter:
             }
         )
         return {"status": "saved", "title": title, "note_type": note_type, "path": str(path)}
+
+    async def handle_write_seed(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Handle a write-seed tool call from the LLM.
+
+        Validates args, writes raw data as a seed, and returns a result dict.
+
+        Args:
+            args: Tool call arguments with source and data.
+
+        Returns:
+            Dict with status, source, and path of the created seed.
+        """
+        source = args.get("source", "llm")
+        data = args.get("data", {})
+        path = await self.write_seed(source, data)
+        return {"status": "saved", "source": source, "path": str(path)}
 
     async def read_notes(self, subdir: str) -> list[Path]:
         """Read notes from a vault subdirectory.

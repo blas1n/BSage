@@ -69,7 +69,6 @@ def mock_deps():
     garden_writer = MagicMock()
     garden_writer.write_seed = AsyncMock()
     garden_writer.write_action = AsyncMock()
-    garden_writer.write_from_items = AsyncMock()
     llm_client = MagicMock()
     llm_client.chat = AsyncMock(return_value="none")
     return {
@@ -100,18 +99,6 @@ class TestAgentLoopOnInput:
         mock_deps["garden_writer"].write_seed.assert_called_once_with(
             "calendar-input", {"events": [1, 2]}
         )
-
-    async def test_write_from_items_called_when_items_present(self, mock_deps) -> None:
-        loop = _make_loop(mock_deps)
-        await loop.on_input("calendar-input", {"items": [{"title": "A", "content": "B"}]})
-        mock_deps["garden_writer"].write_from_items.assert_called_once_with(
-            "calendar-input", [{"title": "A", "content": "B"}]
-        )
-
-    async def test_write_from_items_skipped_when_no_items(self, mock_deps) -> None:
-        loop = _make_loop(mock_deps)
-        await loop.on_input("calendar-input", {"events": [1, 2]})
-        mock_deps["garden_writer"].write_from_items.assert_not_called()
 
     async def test_on_input_triggers_matching_process_entries(self, mock_deps) -> None:
         loop = _make_loop(mock_deps)
@@ -293,8 +280,10 @@ class TestBuildTools:
         mock_deps["registry"] = {}
         loop = _make_loop(mock_deps)
         tools = loop._build_tools()
-        assert len(tools) == 1
-        assert tools[0]["function"]["name"] == "write-note"
+        assert len(tools) == 2
+        tool_names = [t["function"]["name"] for t in tools]
+        assert "write-note" in tool_names
+        assert "write-seed" in tool_names
 
     async def test_includes_plugins_with_input_schema(self, mock_deps) -> None:
         loop = _make_loop(mock_deps)
@@ -382,6 +371,30 @@ class TestHandleToolCall:
         mock_deps["garden_writer"].write_action.assert_called_once()
         call_args = mock_deps["garden_writer"].write_action.call_args
         assert call_args.args[0] == "write-note"
+
+    async def test_write_seed_routes_to_garden_writer(self, mock_deps) -> None:
+        mock_deps["garden_writer"].handle_write_seed = AsyncMock(
+            return_value={"status": "saved", "source": "api", "path": "/vault/seeds/test.md"}
+        )
+        loop = _make_loop(mock_deps)
+        result = await loop._handle_tool_call(
+            "tc1", "write-seed", {"source": "api", "data": {"key": "val"}}
+        )
+        mock_deps["garden_writer"].handle_write_seed.assert_called_once_with(
+            {"source": "api", "data": {"key": "val"}}
+        )
+        assert "saved" in result
+        mock_deps["runner"].run.assert_not_called()
+
+    async def test_write_seed_logs_action(self, mock_deps) -> None:
+        mock_deps["garden_writer"].handle_write_seed = AsyncMock(
+            return_value={"status": "saved", "source": "s", "path": "/p"}
+        )
+        loop = _make_loop(mock_deps)
+        await loop._handle_tool_call("tc1", "write-seed", {"source": "s", "data": {}})
+        mock_deps["garden_writer"].write_action.assert_called_once()
+        call_args = mock_deps["garden_writer"].write_action.call_args
+        assert call_args.args[0] == "write-seed"
 
 
 class TestAgentLoopBuildContext:

@@ -13,7 +13,7 @@ from bsage.core.prompt_registry import PromptRegistry
 from bsage.core.runner import Runner
 from bsage.core.safe_mode import SafeModeGuard
 from bsage.core.skill_context import LLMClient, SkillContext
-from bsage.garden.writer import WRITE_NOTE_TOOL, GardenWriter
+from bsage.garden.writer import WRITE_NOTE_TOOL, WRITE_SEED_TOOL, GardenWriter
 
 if TYPE_CHECKING:
     from bsage.core.events import EventBus
@@ -73,9 +73,8 @@ class AgentLoop:
         """Process input from a Plugin and run triggered entries.
 
         1. Write raw data to seeds.
-        2. Auto-write items to garden via write_from_items (if present).
-        3. Run deterministic on_input-triggered plugins/skills.
-        4. Let LLM decide and execute on-demand plugins via tool use.
+        2. Run deterministic on_input-triggered plugins/skills.
+        3. Let LLM decide and execute on-demand plugins via tool use.
         """
         logger.info("agent_loop_input", plugin_name=plugin_name)
         await emit_event(self._event_bus, "INPUT_RECEIVED", {"plugin_name": plugin_name})
@@ -83,12 +82,7 @@ class AgentLoop:
         # 1. Write raw data to seeds
         await self._garden_writer.write_seed(plugin_name, raw_data)
 
-        # 2. Auto-write items to garden (embeds former garden-writer plugin)
-        items = raw_data.get("items", [])
-        if items:
-            await self._garden_writer.write_from_items(plugin_name, items)
-
-        # 3. Run deterministic on_input-triggered plugins/skills
+        # 2. Run deterministic on_input-triggered plugins/skills
         triggered = self._find_triggered(plugin_name)
         results: list[dict] = []
         for meta in triggered:
@@ -102,7 +96,7 @@ class AgentLoop:
             summary = json.dumps(result, default=str)
             await self._garden_writer.write_action(meta.name, summary)
 
-        # 4. Let LLM decide and execute on-demand plugins via tool use
+        # 3. Let LLM decide and execute on-demand plugins via tool use
         on_demand_results = await self._decide_on_demand(plugin_name, raw_data)
         results.extend(on_demand_results)
 
@@ -143,7 +137,7 @@ class AgentLoop:
         """Build OpenAI-format tool definitions including built-in and plugin tools."""
         from bsage.core.plugin_loader import PluginMeta
 
-        tools: list[dict] = [WRITE_NOTE_TOOL]
+        tools: list[dict] = [WRITE_NOTE_TOOL, WRITE_SEED_TOOL]
         for meta in self._registry.values():
             if isinstance(meta, PluginMeta) and meta.category == "process" and meta.input_schema:
                 tools.append(
@@ -161,7 +155,7 @@ class AgentLoop:
     async def _handle_tool_call(self, tool_call_id: str, name: str, args: dict[str, Any]) -> str:
         """Execute an entry triggered by an LLM tool call.
 
-        Built-in tools (write-note) are handled directly.
+        Built-in tools (write-note, write-seed) are handled directly.
         Plugin tools go through SafeMode → Runner.run() → action log.
         """
         await emit_event(
@@ -181,6 +175,21 @@ class AgentLoop:
                 return json.dumps(result, default=str)
             except Exception as exc:
                 logger.exception("write_note_failed")
+                return json.dumps({"error": str(exc)})
+
+        if name == "write-seed":
+            try:
+                result = await self._garden_writer.handle_write_seed(args)
+                summary = json.dumps(result, default=str)[:200]
+                await self._garden_writer.write_action("write-seed", summary)
+                await emit_event(
+                    self._event_bus,
+                    "TOOL_CALL_COMPLETE",
+                    {"tool_call_id": tool_call_id, "name": name},
+                )
+                return json.dumps(result, default=str)
+            except Exception as exc:
+                logger.exception("write_seed_failed")
                 return json.dumps({"error": str(exc)})
 
         meta = self._registry.get(name)
