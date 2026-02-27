@@ -340,3 +340,64 @@ class TestSchedulerProcessTrigger:
         mock_safe_mode_guard.check.assert_called_once()
         mock_runner.run.assert_not_called()
         mock_agent_loop.write_action.assert_not_called()
+
+
+class TestSchedulerEvents:
+    """Test EventBus emission from Scheduler."""
+
+    async def test_input_trigger_emits_trigger_fired(
+        self, mock_agent_loop, mock_runner, mock_safe_mode_guard
+    ) -> None:
+        from bsage.core.events import EventBus, EventType
+
+        event_bus = EventBus()
+        sub = AsyncMock()
+        event_bus.subscribe(sub)
+
+        scheduler = Scheduler(
+            agent_loop=mock_agent_loop,
+            runner=mock_runner,
+            safe_mode_guard=mock_safe_mode_guard,
+            event_bus=event_bus,
+        )
+        await scheduler._on_input_trigger("calendar-input")
+
+        events = [c.args[0] for c in sub.on_event.call_args_list]
+        assert any(
+            e.event_type == EventType.TRIGGER_FIRED and e.payload["category"] == "input"
+            for e in events
+        )
+
+    async def test_process_trigger_emits_trigger_fired(
+        self, mock_agent_loop, mock_runner, mock_safe_mode_guard
+    ) -> None:
+        from bsage.core.events import EventBus, EventType
+
+        event_bus = EventBus()
+        sub = AsyncMock()
+        event_bus.subscribe(sub)
+
+        scheduler = Scheduler(
+            agent_loop=mock_agent_loop,
+            runner=mock_runner,
+            safe_mode_guard=mock_safe_mode_guard,
+            event_bus=event_bus,
+        )
+        await scheduler._on_process_trigger("weekly-digest")
+
+        events = [c.args[0] for c in sub.on_event.call_args_list]
+        assert any(
+            e.event_type == EventType.TRIGGER_FIRED and e.payload["category"] == "process"
+            for e in events
+        )
+
+    async def test_no_events_when_event_bus_is_none(
+        self, mock_agent_loop, mock_runner, mock_safe_mode_guard
+    ) -> None:
+        scheduler = Scheduler(
+            agent_loop=mock_agent_loop,
+            runner=mock_runner,
+            safe_mode_guard=mock_safe_mode_guard,
+        )
+        # Should not raise
+        await scheduler._on_input_trigger("calendar-input")

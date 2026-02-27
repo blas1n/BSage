@@ -8,6 +8,7 @@ from bsage.core.agent_loop import AgentLoop
 from bsage.core.config import Settings
 from bsage.core.credential_store import CredentialStore
 from bsage.core.danger_analyzer import DangerAnalyzer
+from bsage.core.events import EventBus
 from bsage.core.llm import LiteLLMClient
 from bsage.core.notification import NotificationRouter
 from bsage.core.plugin_loader import PluginLoader
@@ -22,6 +23,7 @@ from bsage.core.skill_runner import SkillRunner
 from bsage.garden.sync import SyncManager
 from bsage.garden.vault import Vault
 from bsage.garden.writer import GardenWriter
+from bsage.gateway.event_broadcaster import WebSocketEventBroadcaster
 from bsage.gateway.ws import manager as ws_manager
 from bsage.interface.ws_interface import WebSocketApprovalInterface
 
@@ -39,12 +41,19 @@ class AppState:
         persist_path = settings.credentials_dir / "runtime_config.json"
         self.runtime_config = RuntimeConfig.from_settings(settings, persist_path=persist_path)
 
+        # EventBus + WebSocket broadcaster
+        self.event_bus = EventBus()
+        self._ws_broadcaster = WebSocketEventBroadcaster(manager=ws_manager)
+        self.event_bus.subscribe(self._ws_broadcaster)
+
         # Sync manager (backends registered later by OutputPlugins)
         self.sync_manager = SyncManager()
 
         # Garden layer
         self.vault = Vault(settings.vault_path)
-        self.garden_writer = GardenWriter(self.vault, sync_manager=self.sync_manager)
+        self.garden_writer = GardenWriter(
+            self.vault, sync_manager=self.sync_manager, event_bus=self.event_bus
+        )
 
         # Credentials
         self.credential_store = CredentialStore(settings.credentials_dir)
@@ -87,11 +96,15 @@ class AppState:
             settings.plugins_dir,
             danger_analyzer=self.danger_analyzer,
         )
-        self.plugin_runner = PluginRunner(credential_store=self.credential_store)
+        self.plugin_runner = PluginRunner(
+            credential_store=self.credential_store, event_bus=self.event_bus
+        )
 
         # Skills
         self.skill_loader = SkillLoader(settings.skills_dir)
-        self.skill_runner = SkillRunner(prompt_registry=self.prompt_registry)
+        self.skill_runner = SkillRunner(
+            prompt_registry=self.prompt_registry, event_bus=self.event_bus
+        )
 
         # Unified runner dispatcher
         self.runner = Runner(
@@ -134,6 +147,7 @@ class AppState:
             llm_client=self.llm_client,
             prompt_registry=self.prompt_registry,
             notification=notification_router,
+            event_bus=self.event_bus,
         )
 
         notification_router.setup(
@@ -153,6 +167,7 @@ class AppState:
             agent_loop=self.agent_loop,
             runner=self.runner,
             safe_mode_guard=self.safe_mode_guard,
+            event_bus=self.event_bus,
         )
         self.scheduler.register_triggers(registry)
         self.scheduler.start()

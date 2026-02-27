@@ -398,3 +398,33 @@ class TestAgentLoopBuildContext:
         loop = _make_loop(mock_deps)
         context = loop.build_context(input_data=None)
         assert context.input_data is None
+
+
+class TestAgentLoopEvents:
+    """Test EventBus emission from AgentLoop."""
+
+    async def test_on_input_emits_start_and_complete(self, mock_deps) -> None:
+        from bsage.core.events import EventBus, EventType
+
+        event_bus = EventBus()
+        sub = AsyncMock()
+        event_bus.subscribe(sub)
+
+        loop = AgentLoop(
+            registry=mock_deps["registry"],
+            runner=mock_deps["runner"],
+            safe_mode_guard=mock_deps["safe_mode_guard"],
+            garden_writer=mock_deps["garden_writer"],
+            llm_client=mock_deps["llm_client"],
+            event_bus=event_bus,
+        )
+        await loop.on_input("calendar-input", {"events": []})
+
+        types = [c.args[0].event_type for c in sub.on_event.call_args_list]
+        assert EventType.INPUT_RECEIVED in types
+        assert EventType.INPUT_COMPLETE in types
+
+    async def test_no_events_when_event_bus_is_none(self, mock_deps) -> None:
+        loop = _make_loop(mock_deps)  # no event_bus
+        results = await loop.on_input("calendar-input", {"events": []})
+        assert isinstance(results, list)

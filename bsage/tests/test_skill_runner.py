@@ -274,3 +274,62 @@ class TestSkillRunnerPipeline:
 
         call_arg = mock_context.garden.write_garden.call_args.args[0]
         assert call_arg["content"] == '{"key": "val"}'
+
+
+class TestSkillRunnerEvents:
+    """Test EventBus emission from SkillRunner."""
+
+    async def test_emits_start_and_complete_events(self, mock_context) -> None:
+        from bsage.core.events import EventBus, EventType
+
+        event_bus = EventBus()
+        sub = AsyncMock()
+        event_bus.subscribe(sub)
+
+        meta = _make_meta(name="event-skill")
+        runner = SkillRunner(event_bus=event_bus)
+        await runner.run(meta, mock_context)
+
+        types = [c.args[0].event_type for c in sub.on_event.call_args_list]
+        assert EventType.SKILL_RUN_START in types
+        assert EventType.SKILL_GATHER_COMPLETE in types
+        assert EventType.SKILL_LLM_RESPONSE in types
+        assert EventType.SKILL_APPLY_COMPLETE in types
+        assert EventType.SKILL_RUN_COMPLETE in types
+
+    async def test_all_events_share_correlation_id(self, mock_context) -> None:
+        from bsage.core.events import EventBus
+
+        event_bus = EventBus()
+        sub = AsyncMock()
+        event_bus.subscribe(sub)
+
+        meta = _make_meta(name="corr-test")
+        runner = SkillRunner(event_bus=event_bus)
+        await runner.run(meta, mock_context)
+
+        ids = {c.args[0].correlation_id for c in sub.on_event.call_args_list}
+        assert len(ids) == 1  # all events share the same correlation_id
+
+    async def test_emits_error_event_on_failure(self, mock_context) -> None:
+        from bsage.core.events import EventBus, EventType
+
+        event_bus = EventBus()
+        sub = AsyncMock()
+        event_bus.subscribe(sub)
+
+        mock_context.llm.chat = AsyncMock(side_effect=RuntimeError("LLM down"))
+        meta = _make_meta(name="fail-skill")
+        runner = SkillRunner(event_bus=event_bus)
+
+        with pytest.raises(SkillRunError):
+            await runner.run(meta, mock_context)
+
+        types = [c.args[0].event_type for c in sub.on_event.call_args_list]
+        assert EventType.SKILL_RUN_ERROR in types
+
+    async def test_no_events_when_event_bus_is_none(self, mock_context) -> None:
+        meta = _make_meta()
+        runner = SkillRunner()  # no event_bus
+        result = await runner.run(meta, mock_context)
+        assert "llm_response" in result

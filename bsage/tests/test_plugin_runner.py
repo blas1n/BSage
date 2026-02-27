@@ -150,3 +150,52 @@ class TestPluginRunnerCredentials:
         await runner.run(meta, mock_context)
 
         assert captured_creds == {"token": "abc123"}
+
+
+class TestPluginRunnerEvents:
+    """Test EventBus emission from PluginRunner."""
+
+    async def test_emits_start_and_complete_events(self, mock_context) -> None:
+        from bsage.core.events import EventBus, EventType
+
+        event_bus = EventBus()
+        sub = AsyncMock()
+        event_bus.subscribe(sub)
+
+        meta = _make_plugin_meta()
+        meta._execute_fn = AsyncMock(return_value={"ok": True})
+        runner = PluginRunner(event_bus=event_bus)
+        await runner.run(meta, mock_context)
+
+        assert sub.on_event.call_count == 2
+        start_event = sub.on_event.call_args_list[0].args[0]
+        complete_event = sub.on_event.call_args_list[1].args[0]
+        assert start_event.event_type == EventType.PLUGIN_RUN_START
+        assert complete_event.event_type == EventType.PLUGIN_RUN_COMPLETE
+        assert start_event.correlation_id == complete_event.correlation_id
+
+    async def test_emits_error_event_on_failure(self, mock_context) -> None:
+        from bsage.core.events import EventBus, EventType
+
+        event_bus = EventBus()
+        sub = AsyncMock()
+        event_bus.subscribe(sub)
+
+        meta = _make_plugin_meta()
+        meta._execute_fn = AsyncMock(side_effect=RuntimeError("fail"))
+        runner = PluginRunner(event_bus=event_bus)
+
+        with pytest.raises(PluginRunError):
+            await runner.run(meta, mock_context)
+
+        events = [c.args[0] for c in sub.on_event.call_args_list]
+        types = [e.event_type for e in events]
+        assert EventType.PLUGIN_RUN_START in types
+        assert EventType.PLUGIN_RUN_ERROR in types
+
+    async def test_no_events_when_event_bus_is_none(self, mock_context) -> None:
+        meta = _make_plugin_meta()
+        meta._execute_fn = AsyncMock(return_value={"ok": True})
+        runner = PluginRunner()  # no event_bus
+        result = await runner.run(meta, mock_context)
+        assert result == {"ok": True}

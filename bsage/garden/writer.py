@@ -12,9 +12,11 @@ from typing import TYPE_CHECKING, Any
 import structlog
 import yaml
 
+from bsage.core.events import emit_event
 from bsage.garden.vault import Vault
 
 if TYPE_CHECKING:
+    from bsage.core.events import EventBus
     from bsage.garden.sync import SyncManager
 
 logger = structlog.get_logger(__name__)
@@ -107,9 +109,15 @@ class GardenWriter:
         vault: The Vault instance for path resolution and file access.
     """
 
-    def __init__(self, vault: Vault, sync_manager: SyncManager | None = None) -> None:
+    def __init__(
+        self,
+        vault: Vault,
+        sync_manager: SyncManager | None = None,
+        event_bus: EventBus | None = None,
+    ) -> None:
         self._vault = vault
         self._sync_manager = sync_manager
+        self._event_bus = event_bus
 
     async def write_seed(self, source: str, data: dict) -> Path:
         """Write raw collected data as a seed note.
@@ -147,6 +155,9 @@ class GardenWriter:
         await asyncio.to_thread(file_path.write_text, content, encoding="utf-8")
         logger.info("seed_written", source=source, path=str(file_path))
         await self._notify_sync("seed", file_path, source)
+        await emit_event(
+            self._event_bus, "SEED_WRITTEN", {"path": str(file_path), "source": source}
+        )
         return file_path
 
     async def write_garden(self, note: GardenNote | dict) -> Path:
@@ -198,6 +209,9 @@ class GardenWriter:
             path=str(file_path),
         )
         await self._notify_sync("garden", file_path, note.source)
+        await emit_event(
+            self._event_bus, "GARDEN_WRITTEN", {"path": str(file_path), "source": note.source}
+        )
         return file_path
 
     async def write_action(self, skill_name: str, summary: str) -> None:
@@ -235,6 +249,9 @@ class GardenWriter:
         await asyncio.to_thread(_write)
         logger.info("action_logged", skill_name=skill_name, path=str(log_path))
         await self._notify_sync("action", log_path, skill_name)
+        await emit_event(
+            self._event_bus, "ACTION_LOGGED", {"path": str(log_path), "source": skill_name}
+        )
 
     async def write_from_items(self, source: str, items: list[dict]) -> list[Path]:
         """Convert a list of input items into garden notes.

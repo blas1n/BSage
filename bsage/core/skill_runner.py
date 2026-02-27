@@ -5,15 +5,18 @@ from __future__ import annotations
 import contextlib
 import json
 import re
+import uuid
 from typing import TYPE_CHECKING
 
 import structlog
 
+from bsage.core.events import emit_event
 from bsage.core.exceptions import SkillRunError
 from bsage.core.skill_loader import OutputTarget
 from bsage.garden.vault import VaultPathError
 
 if TYPE_CHECKING:
+    from bsage.core.events import EventBus
     from bsage.core.prompt_registry import PromptRegistry
     from bsage.core.skill_context import SkillContext
     from bsage.core.skill_loader import SkillMeta
@@ -46,8 +49,10 @@ class SkillRunner:
     def __init__(
         self,
         prompt_registry: PromptRegistry | None = None,
+        event_bus: EventBus | None = None,
     ) -> None:
         self._prompt_registry = prompt_registry
+        self._event_bus = event_bus
 
     async def run(self, skill_meta: SkillMeta, context: SkillContext) -> dict:
         """Execute a Skill via the 3-phase LLM pipeline and return the result dict.
@@ -56,28 +61,75 @@ class SkillRunner:
             SkillRunError: On execution failure.
         """
         logger.info("skill_run_start", name=skill_meta.name, category=skill_meta.category)
+        correlation_id = str(uuid.uuid4())
+
+        await emit_event(
+            self._event_bus,
+            "SKILL_RUN_START",
+            {"name": skill_meta.name, "category": skill_meta.category},
+            correlation_id=correlation_id,
+        )
 
         try:
-            result = await self._run_llm(skill_meta, context)
+            result = await self._run_llm(skill_meta, context, correlation_id)
         except SkillRunError:
+            await emit_event(
+                self._event_bus,
+                "SKILL_RUN_ERROR",
+                {"name": skill_meta.name, "error": "execution failed"},
+                correlation_id=correlation_id,
+            )
             raise
         except Exception as exc:
+            await emit_event(
+                self._event_bus,
+                "SKILL_RUN_ERROR",
+                {"name": skill_meta.name, "error": str(exc)},
+                correlation_id=correlation_id,
+            )
             raise SkillRunError(f"Skill '{skill_meta.name}' execution failed: {exc}") from exc
 
         logger.info("skill_run_complete", name=skill_meta.name)
+        await emit_event(
+            self._event_bus,
+            "SKILL_RUN_COMPLETE",
+            {"name": skill_meta.name},
+            correlation_id=correlation_id,
+        )
         return result
 
-    async def _run_llm(self, skill_meta: SkillMeta, context: SkillContext) -> dict:
+    async def _run_llm(
+        self, skill_meta: SkillMeta, context: SkillContext, correlation_id: str = ""
+    ) -> dict:
         """Execute a Skill via 3-phase pipeline: GATHER → LLM → APPLY."""
         # Phase 1: GATHER — read vault notes if read_context is defined
         vault_context = await self._gather_vault_context(skill_meta.read_context, context)
+        await emit_event(
+            self._event_bus,
+            "SKILL_GATHER_COMPLETE",
+            {"name": skill_meta.name, "context_length": len(vault_context)},
+            correlation_id=correlation_id,
+        )
 
         # Phase 2: LLM CALL — build messages and call LLM
         system, messages = self._build_messages(skill_meta, vault_context, context.input_data)
         response = await context.llm.chat(system=system, messages=messages)
+        await emit_event(
+            self._event_bus,
+            "SKILL_LLM_RESPONSE",
+            {"name": skill_meta.name, "response_length": len(response)},
+            correlation_id=correlation_id,
+        )
 
         # Phase 3: APPLY — write output to vault if output_target is defined
-        return await self._apply_output(skill_meta, context, response)
+        result = await self._apply_output(skill_meta, context, response)
+        await emit_event(
+            self._event_bus,
+            "SKILL_APPLY_COMPLETE",
+            {"name": skill_meta.name, "has_output": "output_path" in result},
+            correlation_id=correlation_id,
+        )
+        return result
 
     async def _gather_vault_context(self, read_dirs: list[str], context: SkillContext) -> str:
         """Read vault notes and build a context string for LLM."""

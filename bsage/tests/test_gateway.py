@@ -262,6 +262,22 @@ class TestAppState:
         assert state.agent_loop is not None
         assert state.scheduler is not None
 
+    async def test_event_bus_created_with_broadcaster(self, tmp_path) -> None:
+        from bsage.core.events import EventBus
+        from bsage.gateway.event_broadcaster import WebSocketEventBroadcaster
+
+        settings = Settings(
+            vault_path=tmp_path / "vault",
+            skills_dir=tmp_path / "skills",
+            tmp_dir=tmp_path / "tmp",
+            credentials_dir=tmp_path / "creds",
+            prompts_dir=tmp_path / "prompts",
+        )
+        state = AppState(settings)
+        assert isinstance(state.event_bus, EventBus)
+        assert isinstance(state._ws_broadcaster, WebSocketEventBroadcaster)
+        assert state._ws_broadcaster in state.event_bus._subscribers
+
     async def test_shutdown_stops_scheduler(self, tmp_path) -> None:
         settings = Settings(
             vault_path=tmp_path / "vault",

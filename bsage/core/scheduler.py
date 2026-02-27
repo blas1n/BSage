@@ -9,7 +9,10 @@ import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from bsage.core.events import emit_event
+
 if TYPE_CHECKING:
+    from bsage.core.events import EventBus
     from bsage.core.protocols import SchedulerSupport
     from bsage.core.runner import Runner
     from bsage.core.safe_mode import SafeModeGuard
@@ -27,10 +30,12 @@ class Scheduler:
         agent_loop: SchedulerSupport,
         runner: Runner,
         safe_mode_guard: SafeModeGuard,
+        event_bus: EventBus | None = None,
     ) -> None:
         self._agent_loop = agent_loop
         self._runner = runner
         self._safe_mode_guard = safe_mode_guard
+        self._event_bus = event_bus
         self._scheduler = AsyncIOScheduler()
         self._jobs: dict[str, str] = {}  # name -> job_id
 
@@ -105,6 +110,7 @@ class Scheduler:
         Runs the plugin and feeds results into AgentLoop via on_input.
         """
         logger.info("trigger_fired", name=name, category="input")
+        await emit_event(self._event_bus, "TRIGGER_FIRED", {"name": name, "category": "input"})
         try:
             context = self._agent_loop.build_context()
             meta = self._agent_loop.get_entry(name)
@@ -120,6 +126,7 @@ class Scheduler:
         SafeModeGuard check is performed before execution.
         """
         logger.info("trigger_fired", name=name, category="process")
+        await emit_event(self._event_bus, "TRIGGER_FIRED", {"name": name, "category": "process"})
         try:
             meta = self._agent_loop.get_entry(name)
 

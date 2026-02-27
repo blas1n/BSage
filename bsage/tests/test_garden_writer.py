@@ -536,3 +536,61 @@ class TestHandleWriteNote:
 
         assert result["title"] == "Untitled"
         assert result["status"] == "saved"
+
+
+class TestGardenWriterEvents:
+    """Test EventBus emission from GardenWriter."""
+
+    async def test_write_seed_emits_seed_written(self, tmp_path: Path) -> None:
+        from bsage.core.events import EventBus, EventType
+
+        event_bus = EventBus()
+        sub = AsyncMock()
+        event_bus.subscribe(sub)
+
+        vault = Vault(tmp_path)
+        vault.ensure_dirs()
+        writer = GardenWriter(vault, event_bus=event_bus)
+        await writer.write_seed("test-source", {"data": "hello"})
+
+        events = [c.args[0] for c in sub.on_event.call_args_list]
+        assert any(e.event_type == EventType.SEED_WRITTEN for e in events)
+
+    async def test_write_garden_emits_garden_written(self, tmp_path: Path) -> None:
+        from bsage.core.events import EventBus, EventType
+
+        event_bus = EventBus()
+        sub = AsyncMock()
+        event_bus.subscribe(sub)
+
+        vault = Vault(tmp_path)
+        vault.ensure_dirs()
+        writer = GardenWriter(vault, event_bus=event_bus)
+        await writer.write_garden(
+            {"title": "Test Note", "content": "body", "note_type": "idea", "source": "test"}
+        )
+
+        events = [c.args[0] for c in sub.on_event.call_args_list]
+        assert any(e.event_type == EventType.GARDEN_WRITTEN for e in events)
+
+    async def test_write_action_emits_action_logged(self, tmp_path: Path) -> None:
+        from bsage.core.events import EventBus, EventType
+
+        event_bus = EventBus()
+        sub = AsyncMock()
+        event_bus.subscribe(sub)
+
+        vault = Vault(tmp_path)
+        vault.ensure_dirs()
+        writer = GardenWriter(vault, event_bus=event_bus)
+        await writer.write_action("test-skill", "did something")
+
+        events = [c.args[0] for c in sub.on_event.call_args_list]
+        assert any(e.event_type == EventType.ACTION_LOGGED for e in events)
+
+    async def test_no_events_when_event_bus_is_none(self, tmp_path: Path) -> None:
+        vault = Vault(tmp_path)
+        vault.ensure_dirs()
+        writer = GardenWriter(vault)  # no event_bus
+        path = await writer.write_seed("src", {"x": 1})
+        assert path.exists()

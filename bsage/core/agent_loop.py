@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from bsage.core.events import emit_event
 from bsage.core.notification import NotificationInterface
 from bsage.core.prompt_registry import PromptRegistry
 from bsage.core.runner import Runner
@@ -15,6 +16,7 @@ from bsage.core.skill_context import LLMClient, SkillContext
 from bsage.garden.writer import WRITE_NOTE_TOOL, GardenWriter
 
 if TYPE_CHECKING:
+    from bsage.core.events import EventBus
     from bsage.core.plugin_loader import PluginMeta
     from bsage.core.skill_loader import SkillMeta
 
@@ -38,6 +40,7 @@ class AgentLoop:
         llm_client: LLMClient,
         notification: NotificationInterface | None = None,
         prompt_registry: PromptRegistry | None = None,
+        event_bus: EventBus | None = None,
     ) -> None:
         self._registry = registry
         self._runner = runner
@@ -46,6 +49,7 @@ class AgentLoop:
         self._llm_client = llm_client
         self._notification = notification
         self._prompt_registry = prompt_registry
+        self._event_bus = event_bus
 
     # ------------------------------------------------------------------
     # Public API
@@ -74,6 +78,7 @@ class AgentLoop:
         4. Let LLM decide and execute on-demand plugins via tool use.
         """
         logger.info("agent_loop_input", plugin_name=plugin_name)
+        await emit_event(self._event_bus, "INPUT_RECEIVED", {"plugin_name": plugin_name})
 
         # 1. Write raw data to seeds
         await self._garden_writer.write_seed(plugin_name, raw_data)
@@ -105,6 +110,11 @@ class AgentLoop:
             "agent_loop_complete",
             plugin_name=plugin_name,
             entries_run=len(results),
+        )
+        await emit_event(
+            self._event_bus,
+            "INPUT_COMPLETE",
+            {"plugin_name": plugin_name, "entries_run": len(results)},
         )
         return results
 
@@ -154,11 +164,20 @@ class AgentLoop:
         Built-in tools (write-note) are handled directly.
         Plugin tools go through SafeMode → Runner.run() → action log.
         """
+        await emit_event(
+            self._event_bus, "TOOL_CALL_START", {"tool_call_id": tool_call_id, "name": name}
+        )
+
         if name == "write-note":
             try:
                 result = await self._garden_writer.handle_write_note(args)
                 summary = json.dumps(result, default=str)[:200]
                 await self._garden_writer.write_action("write-note", summary)
+                await emit_event(
+                    self._event_bus,
+                    "TOOL_CALL_COMPLETE",
+                    {"tool_call_id": tool_call_id, "name": name},
+                )
                 return json.dumps(result, default=str)
             except Exception as exc:
                 logger.exception("write_note_failed")
@@ -178,6 +197,11 @@ class AgentLoop:
             result = await self._runner.run(meta, context)
             summary = json.dumps(result, default=str)[:200]
             await self._garden_writer.write_action(name, summary)
+            await emit_event(
+                self._event_bus,
+                "TOOL_CALL_COMPLETE",
+                {"tool_call_id": tool_call_id, "name": name},
+            )
             return json.dumps(result, default=str)
         except Exception as exc:
             logger.exception("tool_call_failed", name=name)
