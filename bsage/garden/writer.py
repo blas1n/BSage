@@ -75,7 +75,9 @@ WRITE_NOTE_TOOL: dict[str, Any] = {
     "function": {
         "name": "write-note",
         "description": (
-            "Write a note to the vault. Use when the user asks to save, create, or write something."
+            "Write a processed garden note — insights, analyzed conclusions, "
+            "or structured summaries. Use when the content has been refined "
+            "or the user asks for an insight/project note."
         ),
         "parameters": {
             "type": "object",
@@ -103,7 +105,8 @@ WRITE_SEED_TOOL: dict[str, Any] = {
     "function": {
         "name": "write-seed",
         "description": (
-            "Save raw data as a seed note. Use for unprocessed data that needs further analysis."
+            "Save a seed note — raw ideas, fleeting thoughts, or unprocessed data. "
+            "Use by default when the user wants to save something new."
         ),
         "parameters": {
             "type": "object",

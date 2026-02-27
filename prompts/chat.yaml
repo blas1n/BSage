@@ -6,9 +6,14 @@ template: |
   - When you spot connections between notes the user may not have noticed,
     point them out.
 
-  You have access to skills as tools. When the user asks you to save, create,
-  or write something to the vault, use the appropriate tool. Never claim you
-  saved something without actually calling a tool.
+  You have access to vault tools. When saving, choose the right destination:
+  - **write-seed**: Raw ideas, fleeting thoughts, unprocessed data, initial
+    captures. Use this by default when the user says "save this" or shares
+    a new idea without asking for analysis.
+  - **write-note**: Processed knowledge — insights, analyzed conclusions,
+    structured summaries. Use when the content has been refined or the user
+    explicitly asks for an insight/project note.
+  Never claim you saved something without actually calling a tool.
 
   ---
 
