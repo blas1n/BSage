@@ -374,24 +374,24 @@ class TestHandleToolCall:
 
     async def test_write_seed_routes_to_garden_writer(self, mock_deps) -> None:
         mock_deps["garden_writer"].handle_write_seed = AsyncMock(
-            return_value={"status": "saved", "source": "api", "path": "/vault/seeds/test.md"}
+            return_value={"status": "saved", "title": "Idea", "path": "/vault/seeds/idea/t.md"}
         )
         loop = _make_loop(mock_deps)
         result = await loop._handle_tool_call(
-            "tc1", "write-seed", {"source": "api", "data": {"key": "val"}}
+            "tc1", "write-seed", {"title": "Idea", "content": "Body"}
         )
         mock_deps["garden_writer"].handle_write_seed.assert_called_once_with(
-            {"source": "api", "data": {"key": "val"}}
+            {"title": "Idea", "content": "Body"}
         )
         assert "saved" in result
         mock_deps["runner"].run.assert_not_called()
 
     async def test_write_seed_logs_action(self, mock_deps) -> None:
         mock_deps["garden_writer"].handle_write_seed = AsyncMock(
-            return_value={"status": "saved", "source": "s", "path": "/p"}
+            return_value={"status": "saved", "title": "T", "path": "/p"}
         )
         loop = _make_loop(mock_deps)
-        await loop._handle_tool_call("tc1", "write-seed", {"source": "s", "data": {}})
+        await loop._handle_tool_call("tc1", "write-seed", {"title": "T", "content": "C"})
         mock_deps["garden_writer"].write_action.assert_called_once()
         call_args = mock_deps["garden_writer"].write_action.call_args
         assert call_args.args[0] == "write-seed"

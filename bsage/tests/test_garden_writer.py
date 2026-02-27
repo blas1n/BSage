@@ -476,44 +476,51 @@ class TestHandleWriteSeed:
     """Test GardenWriter.handle_write_seed — LLM tool handler."""
 
     @pytest.mark.asyncio
-    async def test_handle_write_seed_calls_write_seed(self, tmp_path: Path) -> None:
-        """handle_write_seed should write a seed and return result."""
+    async def test_handle_write_seed_creates_seed(self, tmp_path: Path) -> None:
+        """handle_write_seed should write a seed with title/content."""
         vault = Vault(tmp_path)
         vault.ensure_dirs()
         writer = GardenWriter(vault)
 
-        result = await writer.handle_write_seed({"source": "api-call", "data": {"key": "value"}})
+        result = await writer.handle_write_seed({"title": "My Idea", "content": "Some raw thought"})
 
         assert result["status"] == "saved"
-        assert result["source"] == "api-call"
+        assert result["title"] == "My Idea"
         assert "path" in result
-        assert Path(result["path"]).exists()
-
-    @pytest.mark.asyncio
-    async def test_handle_write_seed_default_source(self, tmp_path: Path) -> None:
-        """Omitting source should default to 'llm'."""
-        vault = Vault(tmp_path)
-        vault.ensure_dirs()
-        writer = GardenWriter(vault)
-
-        result = await writer.handle_write_seed({"data": {"x": 1}})
-
-        assert result["source"] == "llm"
-
-    @pytest.mark.asyncio
-    async def test_handle_write_seed_returns_path(self, tmp_path: Path) -> None:
-        """Result path should point to an existing seed file."""
-        vault = Vault(tmp_path)
-        vault.ensure_dirs()
-        writer = GardenWriter(vault)
-
-        result = await writer.handle_write_seed({"source": "test", "data": {"hello": "world"}})
-
         path = Path(result["path"])
         assert path.exists()
-        content = path.read_text()
-        assert "type: seed" in content
-        assert "source: test" in content
+        text = path.read_text()
+        assert "type: seed" in text
+        assert "source: idea" in text
+        assert "My Idea" in text
+
+    @pytest.mark.asyncio
+    async def test_handle_write_seed_saves_to_idea_source(self, tmp_path: Path) -> None:
+        """Source should always be 'idea' for LLM tool calls."""
+        vault = Vault(tmp_path)
+        vault.ensure_dirs()
+        writer = GardenWriter(vault)
+
+        result = await writer.handle_write_seed({"title": "Test", "content": "Body"})
+
+        path = Path(result["path"])
+        assert "seeds/idea" in str(path)
+
+    @pytest.mark.asyncio
+    async def test_handle_write_seed_includes_tags(self, tmp_path: Path) -> None:
+        """Tags should be included in the seed data."""
+        vault = Vault(tmp_path)
+        vault.ensure_dirs()
+        writer = GardenWriter(vault)
+
+        result = await writer.handle_write_seed(
+            {"title": "Tagged", "content": "Body", "tags": ["ai", "tool"]}
+        )
+
+        path = Path(result["path"])
+        text = path.read_text()
+        assert "ai" in text
+        assert "tool" in text
 
 
 class TestGardenWriterEvents:

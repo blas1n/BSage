@@ -105,16 +105,28 @@ WRITE_SEED_TOOL: dict[str, Any] = {
     "function": {
         "name": "write-seed",
         "description": (
-            "Save a seed note — raw ideas, fleeting thoughts, or unprocessed data. "
-            "Use by default when the user wants to save something new."
+            "Save a seed note — raw ideas, fleeting thoughts, or "
+            "unprocessed data. Use by default when the user wants "
+            "to save something new."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "source": {"type": "string", "description": "Data source name"},
-                "data": {"type": "object", "description": "Raw data to store"},
+                "title": {
+                    "type": "string",
+                    "description": "Short title for the seed",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Body text of the idea or data",
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional tags for categorization",
+                },
             },
-            "required": ["source", "data"],
+            "required": ["title", "content"],
         },
     },
 }
@@ -308,18 +320,23 @@ class GardenWriter:
     async def handle_write_seed(self, args: dict[str, Any]) -> dict[str, Any]:
         """Handle a write-seed tool call from the LLM.
 
-        Validates args, writes raw data as a seed, and returns a result dict.
+        Writes a structured seed with title/content. Source is always
+        ``"idea"`` to separate user ideas from automatic data captures.
 
         Args:
-            args: Tool call arguments with source and data.
+            args: Tool call arguments with title, content, and optional tags.
 
         Returns:
-            Dict with status, source, and path of the created seed.
+            Dict with status, title, and path of the created seed.
         """
-        source = args.get("source", "llm")
-        data = args.get("data", {})
-        path = await self.write_seed(source, data)
-        return {"status": "saved", "source": source, "path": str(path)}
+        title = args.get("title", "Untitled")
+        content = args.get("content", "")
+        tags = args.get("tags", [])
+        data: dict[str, Any] = {"title": title, "content": content}
+        if tags:
+            data["tags"] = tags
+        path = await self.write_seed("idea", data)
+        return {"status": "saved", "title": title, "path": str(path)}
 
     async def read_notes(self, subdir: str) -> list[Path]:
         """Read notes from a vault subdirectory.
