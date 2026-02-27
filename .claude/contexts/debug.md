@@ -236,7 +236,7 @@ start = time.time()
 response = await context.llm.chat(...)
 latency_s = time.time() - start
 
-logger.info("llm_perf", latency_s=latency_s, provider=settings.llm_provider)
+logger.info("llm_perf", latency_s=latency_s, model=settings.llm_model)
 ```
 
 ## Issue Resolution Pattern

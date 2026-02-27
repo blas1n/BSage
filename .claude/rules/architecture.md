@@ -21,7 +21,7 @@ dependencies = [
     "pydantic-settings>=2.0.0",
     "structlog>=23.0.0",
     "pyyaml>=6.0",
-    "anthropic>=0.30.0",
+    "litellm>=1.0.0",
     "apscheduler>=3.10.0",
     "click>=8.0.0",
 ]
@@ -52,19 +52,20 @@ async def load_skill(skill_dir):  # NO!
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
-    anthropic_api_key: str
-    vault_path: Path
-    skills_dir: Path = Path("skills")
+    llm_model: str = "anthropic/claude-sonnet-4-20250514"  # litellm provider/model format
+    llm_api_key: str = ""
+    llm_api_base: str | None = None       # e.g. http://localhost:11434 for Ollama
+    vault_path: Path = Path("./vault")
+    skills_dir: Path = Path("./skills")
     safe_mode: bool = True
-    llm_provider: str = "claude"          # claude / ollama
 
-    model_config = SettingsConfig(env_file=".env")
+    model_config = SettingsConfigDict(env_file=".env")
 
 settings = Settings()  # Auto-validates at startup
 
 # Wrong
 import os
-api_key = os.getenv('ANTHROPIC_API_KEY')  # No validation, no type safety
+api_key = os.getenv('LLM_API_KEY')  # No validation, no type safety
 ```
 
 ### 4. structlog for Logging

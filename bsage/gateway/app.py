@@ -47,6 +47,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Register routes
     app.include_router(create_routes(state))
-    app.include_router(create_ws_routes())
+    app.include_router(create_ws_routes(approval_interface=state.ws_approval_interface))
 
     return app

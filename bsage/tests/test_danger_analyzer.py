@@ -188,9 +188,7 @@ class TestDangerAnalyzer:
         assert result_v2[0] is True
 
     async def test_llm_fallback_on_ast_failure(self, cache_path: Path) -> None:
-        llm_fn = AsyncMock(
-            return_value='{"is_dangerous": true, "reason": "calls external API"}'
-        )
+        llm_fn = AsyncMock(return_value='{"is_dangerous": true, "reason": "calls external API"}')
         analyzer = DangerAnalyzer(cache_path, llm_fn=llm_fn)
         broken_code = "def broken(:\n    pass\n"
 
@@ -219,9 +217,7 @@ class TestDangerAnalyzer:
         assert is_dangerous is True
 
     async def test_llm_response_strips_markdown_fence(self, cache_path: Path) -> None:
-        llm_fn = AsyncMock(
-            return_value='```json\n{"is_dangerous": false, "reason": "safe"}\n```'
-        )
+        llm_fn = AsyncMock(return_value='```json\n{"is_dangerous": false, "reason": "safe"}\n```')
         analyzer = DangerAnalyzer(cache_path, llm_fn=llm_fn)
         broken_code = "def broken(:\n    pass\n"
 

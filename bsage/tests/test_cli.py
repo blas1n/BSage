@@ -241,7 +241,7 @@ class TestRunSkillCommand:
         assert result.exit_code == 0
         assert "executed successfully" in result.output
         mock_httpx.post.assert_called_once_with(
-            "http://127.0.0.1:8000/api/plugins/garden-writer/run", timeout=30.0
+            "http://127.0.0.1:8000/api/run/garden-writer", timeout=30.0
         )
 
     @patch("bsage.cli.httpx")

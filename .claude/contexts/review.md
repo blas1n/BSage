@@ -157,11 +157,11 @@ Cannot approve until resolved.
 1. **Raw os.getenv**:
    ```python
    # Bad
-   api_key = os.getenv("ANTHROPIC_API_KEY")
+   api_key = os.getenv("LLM_API_KEY")
 
    # Good
    from bsage.core.config import settings
-   api_key = settings.anthropic_api_key
+   api_key = settings.llm_api_key
    ```
 
 2. **bsage import in skill.py**:

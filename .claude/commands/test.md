@@ -58,7 +58,7 @@ Ensure all external APIs are mocked:
 
 ```bash
 # Check for unmocked API calls (should be empty in production code)
-grep -r "anthropic\.Anthropic()" bsage/ | grep -v "test"
+grep -r "litellm\.acompletion\b" bsage/ | grep -v "test\|llm.py"
 grep -r "AsyncIOScheduler()" bsage/ | grep -v "scheduler.py\|test"
 ```
 

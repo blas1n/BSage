@@ -191,7 +191,7 @@ def run_skill(name: str, host: str | None, port: int | None) -> None:
     base_url = f"http://{host or settings.gateway_host}:{port or settings.gateway_port}"
 
     try:
-        response = httpx.post(f"{base_url}/api/plugins/{name}/run", timeout=30.0)
+        response = httpx.post(f"{base_url}/api/run/{name}", timeout=30.0)
         response.raise_for_status()
     except httpx.ConnectError:
         click.echo("Error: Cannot connect to Gateway. Is it running?", err=True)

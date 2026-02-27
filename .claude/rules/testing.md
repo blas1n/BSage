@@ -40,7 +40,7 @@ async def test_load_skill_parses_yaml(tmp_path):
 ### Mock External APIs
 
 **ALWAYS mock**:
-- Claude API (Anthropic) — `unittest.mock.patch("anthropic.Anthropic")`
+- LLM API (litellm) — `unittest.mock.patch("bsage.core.llm.litellm")`
 - External APIs — `unittest.mock.AsyncMock`
 - APScheduler — `unittest.mock.MagicMock`
 - File system (Vault) — `tmp_path` fixture
@@ -52,10 +52,12 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 @pytest.fixture
 def mock_llm():
-    with patch("bsage.core.skill_runner.anthropic.Anthropic") as mock:
-        mock.return_value.messages.create.return_value = MagicMock(
-            content=[MagicMock(text="Processed response")]
-        )
+    with patch("bsage.core.llm.litellm") as mock:
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "Processed response"
+        mock_response.choices[0].message.tool_calls = None
+        mock.acompletion = AsyncMock(return_value=mock_response)
         yield mock
 
 @pytest.fixture

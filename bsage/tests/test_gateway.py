@@ -63,7 +63,7 @@ def mock_state():
     state.prompt_registry = MagicMock(spec=PromptRegistry)
     state.prompt_registry.get = MagicMock(return_value="You are BSage.")
     state.prompt_registry.render = MagicMock(return_value="Chat instructions here.")
-    state._danger_map = {}
+    state.danger_map = {}
     return state
 
 
@@ -197,6 +197,16 @@ class TestConnectionManager:
         mgr.disconnect(ws)
         assert len(mgr._connections) == 0
 
+    async def test_has_connections_false_when_empty(self) -> None:
+        mgr = ConnectionManager()
+        assert mgr.has_connections() is False
+
+    async def test_has_connections_true_when_connected(self) -> None:
+        mgr = ConnectionManager()
+        ws = AsyncMock()
+        await mgr.connect(ws)
+        assert mgr.has_connections() is True
+
     async def test_broadcast_sends_to_all(self) -> None:
         mgr = ConnectionManager()
         ws1 = AsyncMock()
@@ -206,6 +216,34 @@ class TestConnectionManager:
         await mgr.broadcast({"type": "test"})
         ws1.send_text.assert_called_once()
         ws2.send_text.assert_called_once()
+
+
+class TestRunEntryEndpoint:
+    """Test POST /api/run/{name} (unified plugin/skill runner)."""
+
+    def test_run_entry_returns_results(self, client, mock_state) -> None:
+        mock_state.agent_loop.get_entry = MagicMock(return_value=_make_meta(name="garden-writer"))
+        response = client.post("/api/run/garden-writer")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "garden-writer"
+        assert len(data["results"]) == 1
+
+    def test_run_unknown_entry_returns_404(self, client, mock_state) -> None:
+        mock_state.agent_loop.get_entry = MagicMock(side_effect=KeyError("not found"))
+        response = client.post("/api/run/nonexistent")
+        assert response.status_code == 404
+
+    def test_run_entry_uninit_returns_503(self, client, mock_state) -> None:
+        mock_state.agent_loop = None
+        response = client.post("/api/run/garden-writer")
+        assert response.status_code == 503
+
+    def test_run_entry_error_returns_500(self, client, mock_state) -> None:
+        mock_state.agent_loop.get_entry = MagicMock(return_value=_make_meta(name="garden-writer"))
+        mock_state.agent_loop.on_input = AsyncMock(side_effect=RuntimeError("boom"))
+        response = client.post("/api/run/garden-writer")
+        assert response.status_code == 500
 
 
 class TestAppState:

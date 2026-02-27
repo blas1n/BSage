@@ -58,13 +58,13 @@ def create_routes(state: AppState) -> APIRouter:
     async def list_plugins() -> list[dict[str, Any]]:
         """List all loaded Plugins (code-based)."""
         registry = await state.plugin_loader.load_all()
-        return [_meta_to_dict(meta, state._danger_map) for meta in registry.values()]
+        return [_meta_to_dict(meta, state.danger_map) for meta in registry.values()]
 
     @api_router.get("/skills")
     async def list_skills() -> list[dict[str, Any]]:
         """List all loaded Skills (LLM-based)."""
         registry = await state.skill_loader.load_all()
-        return [_meta_to_dict(meta, state._danger_map) for meta in registry.values()]
+        return [_meta_to_dict(meta, state.danger_map) for meta in registry.values()]
 
     @api_router.post("/plugins/{name}/run")
     async def run_plugin(name: str) -> dict[str, Any]:
@@ -105,6 +105,28 @@ def create_routes(state: AppState) -> APIRouter:
             return {"plugin": name, "results": results}
         except Exception as exc:
             logger.exception("webhook_plugin_failed", plugin=name)
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @api_router.post("/run/{name}")
+    async def run_entry(name: str) -> dict[str, Any]:
+        """Run a plugin or skill by name via unified registry.
+
+        Unlike ``/plugins/{name}/run``, this endpoint checks both plugins
+        and skills in the unified AgentLoop registry.
+        """
+        if state.agent_loop is None:
+            raise HTTPException(status_code=503, detail="Gateway not initialized")
+
+        try:
+            state.agent_loop.get_entry(name)
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"'{name}' not found in registry") from None
+
+        try:
+            results = await state.agent_loop.on_input(name, {})
+            return {"name": name, "results": results}
+        except Exception as exc:
+            logger.exception("run_entry_failed", name=name)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     @api_router.get("/vault/actions")

@@ -22,6 +22,8 @@ from bsage.core.skill_runner import SkillRunner
 from bsage.garden.sync import SyncManager
 from bsage.garden.vault import Vault
 from bsage.garden.writer import GardenWriter
+from bsage.gateway.ws import manager as ws_manager
+from bsage.interface.ws_interface import WebSocketApprovalInterface
 
 logger = structlog.get_logger(__name__)
 
@@ -53,10 +55,13 @@ class AppState:
         # danger_map populated in initialize() after plugin load_all()
         self._danger_map: dict[str, bool] = {}
 
+        # WebSocket approval interface for SafeMode in Gateway context
+        self.ws_approval_interface = WebSocketApprovalInterface(manager=ws_manager)
+
         # SafeMode — danger_fn reads _danger_map (closure; populated post-load)
         self.safe_mode_guard = SafeModeGuard(
             runtime_config=self.runtime_config,
-            interface=None,
+            interface=self.ws_approval_interface,
             danger_fn=lambda name: self._danger_map.get(name, False),
         )
 
@@ -97,6 +102,11 @@ class AppState:
         # Agent loop (registry populated after load_all)
         self.agent_loop: AgentLoop | None = None
         self.scheduler: Scheduler | None = None
+
+    @property
+    def danger_map(self) -> dict[str, bool]:
+        """Public accessor for the danger classification map."""
+        return self._danger_map
 
     async def initialize(self) -> None:
         """Load plugins and skills, create AgentLoop, register triggers, start scheduler."""

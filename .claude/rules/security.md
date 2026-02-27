@@ -15,7 +15,7 @@ description: Security rules for BSage
 ```python
 # Correct
 from bsage.core.config import settings
-# settings.anthropic_api_key is auto-loaded from .env via pydantic-settings
+# settings.llm_api_key is auto-loaded from .env via pydantic-settings
 
 # Wrong
 API_KEY = "sk-ant-..."  # NEVER hardcode credentials!
@@ -25,14 +25,15 @@ API_KEY = "sk-ant-..."  # NEVER hardcode credentials!
 
 ```bash
 # .env.example (committed)
-ANTHROPIC_API_KEY=sk-ant-...
+LLM_MODEL=anthropic/claude-sonnet-4-20250514
+LLM_API_KEY=
+LLM_API_BASE=
 VAULT_PATH=./vault
 SKILLS_DIR=./skills
 SAFE_MODE=true
-LLM_PROVIDER=claude
 
 # .env (gitignored, actual secrets)
-ANTHROPIC_API_KEY=sk-ant-real-key-here
+LLM_API_KEY=sk-ant-real-key-here
 ```
 
 ### 2. Service Credentials
@@ -65,10 +66,10 @@ with open("tokens.txt", "w") as f:
 
 ```python
 # Correct
-logger.info("llm_call", provider=settings.llm_provider, model="claude-sonnet-4-20250514")
+logger.info("llm_call", model=settings.llm_model)
 
 # Wrong
-logger.info(f"Using API key: {settings.anthropic_api_key}")  # NO!
+logger.info(f"Using API key: {settings.llm_api_key}")  # NO!
 ```
 
 ### 4. Safe Mode
