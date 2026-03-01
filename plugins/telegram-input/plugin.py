@@ -23,6 +23,27 @@ async def execute(context):
     return {"collected": len(messages)}
 
 
+@execute.setup
+async def setup(cred_store):
+    """Configure Telegram bot credentials with token validation."""
+    import click
+    import httpx
+
+    click.echo("Telegram Bot Setup")
+    bot_token = click.prompt("  Bot token (from @BotFather)")
+    chat_id = click.prompt("  Chat ID")
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"https://api.telegram.org/bot{bot_token}/getMe", timeout=10.0)
+        if resp.status_code != 200:
+            click.echo(f"Error: Invalid bot token (HTTP {resp.status_code})", err=True)
+            raise SystemExit(1)
+        bot_name = resp.json().get("result", {}).get("username", "unknown")
+        click.echo(f"  Verified bot: @{bot_name}")
+
+    await cred_store.store("telegram-input", {"bot_token": bot_token, "chat_id": chat_id})
+
+
 @execute.notify
 async def notify(context):
     """Send a message back to the Telegram chat via Bot API."""

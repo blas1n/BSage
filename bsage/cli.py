@@ -6,6 +6,7 @@ import asyncio
 import importlib.util
 import inspect
 import re
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -229,11 +230,21 @@ def setup(name: str) -> None:
         )
         raise SystemExit(1)
 
-    if meta.credentials is None:
-        click.echo(f"Skill '{name}' does not declare any credentials.")
+    cred_store = CredentialStore(settings.credentials_dir)
+
+    # Plugin with @execute.setup decorator — run the custom setup function
+    if isinstance(meta, PluginMeta) and meta._setup_fn is not None:
+        click.echo(f"[BSage] Running custom setup for plugin '{name}'")
+        if inspect.iscoroutinefunction(meta._setup_fn):
+            asyncio.run(meta._setup_fn(cred_store))
+        else:
+            meta._setup_fn(cred_store)
+        click.echo(f"[BSage] Setup complete for '{name}'.")
         return
 
-    cred_store = CredentialStore(settings.credentials_dir)
+    if meta.credentials is None:
+        click.echo(f"'{name}' does not declare any credentials.")
+        return
 
     # PluginMeta.credentials is list[dict] (the fields list directly).
     # SkillMeta.credentials is dict with optional "setup_entrypoint" and "fields" keys.
@@ -307,6 +318,35 @@ def _run_credential_setup(
         asyncio.run(func(cred_store))
     else:
         func(cred_store)
+
+
+@main.command()
+@click.argument("name")
+def install(name: str) -> None:
+    """Install dependencies for a plugin from its requirements.txt."""
+    _validate_skill_name(name)
+    settings = get_settings()
+    plugin_dir = settings.plugins_dir / name
+    if not plugin_dir.is_dir():
+        click.echo(f"Error: Plugin directory not found: {plugin_dir}", err=True)
+        raise SystemExit(1)
+
+    req_file = plugin_dir / "requirements.txt"
+    if not req_file.exists():
+        click.echo(f"Plugin '{name}' has no requirements.txt — no dependencies to install.")
+        return
+
+    click.echo(f"Installing dependencies for '{name}' from {req_file}")
+    result = subprocess.run(
+        ["uv", "pip", "install", "-r", str(req_file)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        click.echo(f"Dependencies installed for '{name}'.")
+    else:
+        click.echo(f"Error installing dependencies:\n{result.stderr}", err=True)
+        raise SystemExit(1)
 
 
 @main.command()
