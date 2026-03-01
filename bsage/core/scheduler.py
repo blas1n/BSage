@@ -74,6 +74,48 @@ class Scheduler:
             self._jobs[name] = job.id
             logger.info("trigger_registered", name=name, schedule=schedule)
 
+    def register_new_triggers(self, new_entries: dict[str, Any]) -> None:
+        """Register cron triggers for newly discovered entries only.
+
+        Unlike ``register_triggers()``, this method skips entries
+        that already have a registered job, making it safe to call
+        repeatedly with incremental additions.
+        """
+        for name, meta in new_entries.items():
+            if name in self._jobs:
+                continue
+            if not meta.trigger or meta.trigger.get("type") != "cron":
+                continue
+
+            if meta.category == "input":
+                callback = self._on_input_trigger
+            elif meta.category == "process":
+                callback = self._on_process_trigger
+            else:
+                continue
+
+            schedule = meta.trigger.get("schedule", "")
+            try:
+                cron_kwargs = self._parse_cron(schedule)
+            except ValueError:
+                logger.warning(
+                    "invalid_cron_schedule",
+                    name=name,
+                    schedule=schedule,
+                )
+                continue
+
+            trigger = CronTrigger(**cron_kwargs)
+            job = self._scheduler.add_job(
+                callback,
+                trigger=trigger,
+                args=[name],
+                id=f"bsage-{name}",
+                name=f"BSage: {name}",
+            )
+            self._jobs[name] = job.id
+            logger.info("trigger_hot_registered", name=name, schedule=schedule)
+
     def start(self) -> None:
         """Start the AsyncIO scheduler."""
         if not self._scheduler.running:

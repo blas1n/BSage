@@ -104,6 +104,41 @@ class SkillLoader:
 
         return self._registry
 
+    async def scan_new(self) -> dict[str, SkillMeta]:
+        """Scan for skills not yet in the registry. Only loads new entries.
+
+        Unlike ``load_all()``, this method does NOT clear the registry.
+        It only discovers and loads ``.md`` files whose stem is not
+        already present, making it safe and cheap to call on every request.
+
+        Returns:
+            Dict of newly loaded skill name → SkillMeta (empty if nothing new).
+        """
+        new_entries: dict[str, SkillMeta] = {}
+        if not self._skills_dir.is_dir():
+            return new_entries
+
+        for md_path in sorted(self._skills_dir.glob("*.md")):
+            if not md_path.is_file():
+                continue
+
+            # Skip files whose stem is already registered
+            if md_path.stem in self._registry:
+                continue
+
+            try:
+                meta = self._parse_md(md_path)
+                if meta.name in self._registry:
+                    continue  # name registered under a different file
+
+                self._registry[meta.name] = meta
+                new_entries[meta.name] = meta
+                logger.info("skill_hot_loaded", name=meta.name, category=meta.category)
+            except Exception as exc:
+                logger.warning("skill_hot_load_failed", path=str(md_path), error=str(exc))
+
+        return new_entries
+
     def get(self, name: str) -> SkillMeta:
         """Retrieve a loaded SkillMeta by name.
 

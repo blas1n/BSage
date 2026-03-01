@@ -176,6 +176,8 @@ class AppState:
 
         notification_router = NotificationRouter()
 
+        self._notification_router = notification_router
+
         self.agent_loop = AgentLoop(
             registry=registry,
             runner=self.runner,
@@ -185,6 +187,7 @@ class AppState:
             prompt_registry=self.prompt_registry,
             notification=notification_router,
             event_bus=self.event_bus,
+            on_refresh=self._refresh_registry,
         )
 
         notification_router.setup(
@@ -221,6 +224,58 @@ class AppState:
             logger.info("startup_reindex_complete", indexed=count)
         except Exception:
             logger.warning("startup_reindex_failed", exc_info=True)
+
+    async def _refresh_registry(self) -> None:
+        """Scan for new plugins/skills and integrate them into the live registry.
+
+        Called automatically before each AgentLoop operation (on_input / chat).
+        Returns immediately when nothing new is found (fast path).
+        """
+        if self.agent_loop is None:
+            return
+
+        new_plugins = await self.plugin_loader.scan_new()
+        new_skills = await self.skill_loader.scan_new()
+
+        if not new_plugins and not new_skills:
+            return
+
+        all_new = {**new_plugins, **new_skills}
+
+        # Merge into AgentLoop's registry (same dict reference)
+        self.agent_loop._registry.update(all_new)
+
+        # Update danger map
+        self._danger_map.update(self.plugin_loader.danger_map)
+
+        # Register new cron triggers
+        if self.scheduler:
+            self.scheduler.register_new_triggers(all_new)
+
+        # Register new output plugins with SyncManager
+        new_output_plugins = [m for m in new_plugins.values() if m.category == "output"]
+        if new_output_plugins:
+            self.sync_manager.register_output_plugins(
+                new_output_plugins, self.runner, self.agent_loop.build_context
+            )
+
+        # Append new output skills (don't replace existing ones)
+        new_output_skills = [m for m in new_skills.values() if m.category == "output"]
+        for s in new_output_skills:
+            self.sync_manager._output_skills.append(s)
+
+        # Re-scan for notification plugins
+        self._notification_router.setup(
+            registry=self.agent_loop._registry,
+            runner=self.runner,
+            context_builder=self.agent_loop.build_context,
+        )
+
+        logger.info(
+            "registry_refreshed",
+            new_plugins=list(new_plugins.keys()),
+            new_skills=list(new_skills.keys()),
+        )
 
     async def shutdown(self) -> None:
         """Stop scheduler and clean up resources."""
