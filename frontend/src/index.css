@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+/* Custom scrollbar */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+.dark .scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+
+/* Markdown prose inside chat bubbles */
+.prose pre {
+  border-radius: 0.5rem;
+  overflow-x: auto;
+}
+.prose code:not(pre code) {
+  background: #f1f5f9;
+  padding: 0.1em 0.3em;
+  border-radius: 0.25rem;
+  font-size: 0.875em;
+}
+.dark .prose code:not(pre code) {
+  background: #334155;
+}

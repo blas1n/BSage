@@ -54,6 +54,21 @@
             "cwd": "${workspaceFolder}",
             "envFile": "${workspaceFolder}/.env",
             "justMyCode": false
+        },
+        {
+            "name": "Frontend: Dev Server",
+            "type": "node",
+            "request": "launch",
+            "runtimeExecutable": "npx",
+            "runtimeArgs": ["vite"],
+            "cwd": "${workspaceFolder}/frontend",
+            "console": "integratedTerminal"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "BSage: Full Stack",
+            "configurations": ["BSage: Gateway Server", "Frontend: Dev Server"]
         }
     ],
     "inputs": [

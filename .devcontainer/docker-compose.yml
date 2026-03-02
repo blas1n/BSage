@@ -25,6 +25,8 @@ services:
     tty: true
     command: >
       sh -c "zsh && sudo /usr/local/bin/init-firewall.sh"
+    ports:
+      - 5173:5173
     networks:
       - bsage-network
 
