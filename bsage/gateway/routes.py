@@ -191,52 +191,18 @@ def create_routes(state: AppState) -> APIRouter:
         meta = _find_entry(state, name)
 
         if isinstance(meta, PluginMeta):
-            if meta._setup_fn is not None:
-                return {
-                    "name": name,
-                    "gui_setup": False,
-                    "message": (f"This plugin requires CLI setup: bsage setup {name}"),
-                    "fields": [],
-                }
-            fields = meta.credentials or []
-            return {"name": name, "gui_setup": True, "message": None, "fields": fields}
+            return {"name": name, "fields": meta.credentials or []}
 
         # SkillMeta
-        if meta.credentials is None:
-            return {"name": name, "gui_setup": True, "message": None, "fields": []}
-
         if isinstance(meta.credentials, dict):
-            if meta.credentials.get("setup_entrypoint"):
-                return {
-                    "name": name,
-                    "gui_setup": False,
-                    "message": (f"This skill requires CLI setup: bsage setup {name}"),
-                    "fields": [],
-                }
-            fields = meta.credentials.get("fields", [])
-            return {"name": name, "gui_setup": True, "message": None, "fields": fields}
+            return {"name": name, "fields": meta.credentials.get("fields", [])}
 
-        return {"name": name, "gui_setup": True, "message": None, "fields": []}
+        return {"name": name, "fields": []}
 
     @api_router.post("/entries/{name}/credentials")
     async def store_credentials(name: str, body: CredentialStoreRequest) -> dict[str, Any]:
         """Store credentials for a plugin or skill via the GUI."""
-        meta = _find_entry(state, name)
-
-        if isinstance(meta, PluginMeta) and meta._setup_fn is not None:
-            raise HTTPException(
-                status_code=400,
-                detail="GUI setup not supported — use CLI: bsage setup " + name,
-            )
-        if (
-            isinstance(meta, SkillMeta)
-            and isinstance(meta.credentials, dict)
-            and meta.credentials.get("setup_entrypoint")
-        ):
-            raise HTTPException(
-                status_code=400,
-                detail="GUI setup not supported — use CLI: bsage setup " + name,
-            )
+        _find_entry(state, name)  # 404 if not found
 
         await state.credential_store.store(name, body.credentials)
         logger.info("credentials_stored_via_gui", name=name)

@@ -503,7 +503,6 @@ class TestCredentialFieldsEndpoint:
         response = client.get("/api/entries/email-input/credentials/fields")
         assert response.status_code == 200
         data = response.json()
-        assert data["gui_setup"] is True
         assert len(data["fields"]) == 2
         assert data["fields"][0]["name"] == "email"
 
@@ -513,6 +512,9 @@ class TestCredentialFieldsEndpoint:
             version="1.0.0",
             category="input",
             description="OAuth plugin",
+            credentials=[
+                {"name": "api_key", "description": "API key", "required": True},
+            ],
             _setup_fn=lambda store: None,
         )
         mock_state.plugin_loader.get = MagicMock(return_value=meta)
@@ -520,8 +522,8 @@ class TestCredentialFieldsEndpoint:
         response = client.get("/api/entries/oauth-plugin/credentials/fields")
         assert response.status_code == 200
         data = response.json()
-        assert data["gui_setup"] is False
-        assert "CLI" in data["message"]
+        assert len(data["fields"]) == 1
+        assert data["fields"][0]["name"] == "api_key"
 
     def test_skill_with_fields(self, client, mock_state) -> None:
         from bsage.core.exceptions import PluginLoadError
@@ -540,7 +542,6 @@ class TestCredentialFieldsEndpoint:
         response = client.get("/api/entries/custom-skill/credentials/fields")
         assert response.status_code == 200
         data = response.json()
-        assert data["gui_setup"] is True
         assert len(data["fields"]) == 1
 
     def test_skill_with_setup_entrypoint(self, client, mock_state) -> None:
@@ -549,14 +550,20 @@ class TestCredentialFieldsEndpoint:
         mock_state.plugin_loader.get = MagicMock(side_effect=PluginLoadError("nope"))
         meta = _make_meta(
             name="setup-skill",
-            credentials={"setup_entrypoint": "setup.py::run"},
+            credentials={
+                "setup_entrypoint": "setup.py::run",
+                "fields": [
+                    {"name": "token", "description": "API token", "required": True},
+                ],
+            },
         )
         mock_state.skill_loader.get = MagicMock(return_value=meta)
 
         response = client.get("/api/entries/setup-skill/credentials/fields")
         assert response.status_code == 200
         data = response.json()
-        assert data["gui_setup"] is False
+        assert len(data["fields"]) == 1
+        assert data["fields"][0]["name"] == "token"
 
     def test_unknown_entry_returns_404(self, client, mock_state) -> None:
         from bsage.core.exceptions import PluginLoadError, SkillLoadError
@@ -580,7 +587,6 @@ class TestCredentialFieldsEndpoint:
         response = client.get("/api/entries/simple-plugin/credentials/fields")
         assert response.status_code == 200
         data = response.json()
-        assert data["gui_setup"] is True
         assert data["fields"] == []
 
 
@@ -620,21 +626,29 @@ class TestStoreCredentialsEndpoint:
         )
         assert response.status_code == 404
 
-    def test_store_credentials_setup_fn_plugin_400(self, client, mock_state) -> None:
+    def test_store_credentials_setup_fn_plugin_succeeds(self, client, mock_state) -> None:
         meta = PluginMeta(
             name="oauth-plugin",
             version="1.0.0",
             category="input",
             description="OAuth",
+            credentials=[
+                {"name": "api_key", "description": "API key", "required": True},
+            ],
             _setup_fn=lambda store: None,
         )
         mock_state.plugin_loader.get = MagicMock(return_value=meta)
+        mock_state.credential_store.store = AsyncMock()
 
         response = client.post(
             "/api/entries/oauth-plugin/credentials",
-            json={"credentials": {"x": "y"}},
+            json={"credentials": {"api_key": "test123"}},
         )
-        assert response.status_code == 400
+        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
+        mock_state.credential_store.store.assert_called_once_with(
+            "oauth-plugin", {"api_key": "test123"}
+        )
 
 
 class TestToggleEndpoint:

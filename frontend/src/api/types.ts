@@ -51,8 +51,6 @@ export interface ConfigUpdate {
 /** GET /api/entries/{name}/credentials/fields response. */
 export interface CredentialFieldsResponse {
   name: string;
-  gui_setup: boolean;
-  message: string | null;
   fields: CredentialField[];
 }
 

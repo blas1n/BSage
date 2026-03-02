@@ -12,8 +12,6 @@ interface SetupModalProps {
 export function SetupModal({ entryName, onClose, onSuccess }: SetupModalProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [guiSetup, setGuiSetup] = useState(true);
-  const [message, setMessage] = useState<string | null>(null);
   const [fields, setFields] = useState<CredentialField[]>([]);
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -22,8 +20,6 @@ export function SetupModal({ entryName, onClose, onSuccess }: SetupModalProps) {
     api
       .credentialFields(entryName)
       .then((res) => {
-        setGuiSetup(res.gui_setup);
-        setMessage(res.message);
         setFields(res.fields);
         const initial: Record<string, string> = {};
         for (const f of res.fields) {
@@ -86,26 +82,7 @@ export function SetupModal({ entryName, onClose, onSuccess }: SetupModalProps) {
           <p className="text-sm text-gray-400 py-4 text-center">Loading...</p>
         )}
 
-        {!loading && !guiSetup && (
-          <div>
-            <p className="text-sm text-gray-700 dark:text-gray-300 mb-4">{message}</p>
-            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 mb-4">
-              <code className="text-xs text-amber-600 dark:text-amber-400">
-                bsage setup {entryName}
-              </code>
-            </div>
-            <div className="flex justify-end">
-              <button
-                onClick={onClose}
-                className="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        )}
-
-        {!loading && guiSetup && fields.length === 0 && (
+        {!loading && fields.length === 0 && (
           <div>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
               This entry has no credential fields to configure.
@@ -121,7 +98,7 @@ export function SetupModal({ entryName, onClose, onSuccess }: SetupModalProps) {
           </div>
         )}
 
-        {!loading && guiSetup && fields.length > 0 && (
+        {!loading && fields.length > 0 && (
           <form onSubmit={handleSubmit}>
             <div className="space-y-3 mb-4">
               {fields.map((field) => (
