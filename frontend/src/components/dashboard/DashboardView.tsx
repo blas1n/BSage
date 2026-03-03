@@ -126,9 +126,7 @@ function EntryCard({
 
   return (
     <div
-      className={`border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800/50 transition-opacity ${
-        disabled ? "opacity-50" : ""
-      }`}
+      className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800/50"
     >
       <div className="flex items-start justify-between mb-2">
         <div className="min-w-0 flex-1">
@@ -173,11 +171,13 @@ function EntryCard({
             </button>
           )}
         </div>
-        <Toggle
-          checked={entry.enabled}
-          onChange={() => onToggle(entry.name)}
-          label=""
-        />
+        {!needsSetup && (
+          <Toggle
+            checked={entry.enabled}
+            onChange={() => onToggle(entry.name)}
+            label=""
+          />
+        )}
       </div>
     </div>
   );

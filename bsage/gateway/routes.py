@@ -74,6 +74,14 @@ def _meta_to_dict(
         has_credentials = bool(creds.get("fields"))
     else:
         has_credentials = False
+    credentials_configured = (
+        meta.name in (configured_services or []) if has_credentials else True
+    )
+    # Entries that need credentials but haven't been set up default to disabled.
+    if has_credentials and not credentials_configured:
+        enabled = False
+    else:
+        enabled = meta.name not in (disabled_entries or [])
     return {
         "name": meta.name,
         "version": meta.version,
@@ -81,10 +89,8 @@ def _meta_to_dict(
         "is_dangerous": (danger_map or {}).get(meta.name, False),
         "description": meta.description,
         "has_credentials": has_credentials,
-        "credentials_configured": (
-            meta.name in (configured_services or []) if has_credentials else True
-        ),
-        "enabled": meta.name not in (disabled_entries or []),
+        "credentials_configured": credentials_configured,
+        "enabled": enabled,
     }
 
 

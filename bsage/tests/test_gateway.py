@@ -147,6 +147,7 @@ class TestCredentialStatusInMeta:
         plugin = response.json()[0]
         assert plugin["has_credentials"] is True
         assert plugin["credentials_configured"] is False
+        assert plugin["enabled"] is False
 
     def test_plugin_with_credentials_configured(self, client, mock_state) -> None:
         from bsage.core.plugin_loader import PluginMeta
@@ -167,6 +168,7 @@ class TestCredentialStatusInMeta:
         plugin = response.json()[0]
         assert plugin["has_credentials"] is True
         assert plugin["credentials_configured"] is True
+        assert plugin["enabled"] is True
 
     def test_skill_with_dict_credentials_fields(self, client, mock_state) -> None:
         meta = _make_meta(
@@ -182,6 +184,7 @@ class TestCredentialStatusInMeta:
         skill = response.json()[0]
         assert skill["has_credentials"] is True
         assert skill["credentials_configured"] is False
+        assert skill["enabled"] is False
 
 
 class TestRunSkillEndpoint:
