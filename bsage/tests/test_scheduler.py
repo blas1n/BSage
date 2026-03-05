@@ -1,6 +1,7 @@
 """Tests for bsage.core.scheduler — trigger registration and cron scheduling."""
 
 import asyncio
+import contextlib
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -487,3 +488,137 @@ class TestSchedulerEvents:
         )
         # Should not raise
         await scheduler._on_input_trigger("calendar-input")
+
+
+class TestSchedulerPollingTrigger:
+    """Test polling trigger registration and lifecycle."""
+
+    async def test_register_polling_trigger_creates_task(
+        self, mock_agent_loop, mock_runner, mock_safe_mode_guard
+    ) -> None:
+        scheduler = Scheduler(
+            agent_loop=mock_agent_loop,
+            runner=mock_runner,
+            safe_mode_guard=mock_safe_mode_guard,
+        )
+        registry = {
+            "telegram-input": _make_plugin_meta(
+                name="telegram-input",
+                trigger={"type": "polling"},
+            ),
+        }
+        scheduler.register_triggers(registry)
+        assert "telegram-input" in scheduler._polling_tasks
+        assert not scheduler._polling_tasks["telegram-input"].done()
+        # Cleanup
+        scheduler.stop()
+
+    async def test_register_polling_does_not_create_cron_job(
+        self, mock_agent_loop, mock_runner, mock_safe_mode_guard
+    ) -> None:
+        scheduler = Scheduler(
+            agent_loop=mock_agent_loop,
+            runner=mock_runner,
+            safe_mode_guard=mock_safe_mode_guard,
+        )
+        registry = {
+            "telegram-input": _make_plugin_meta(
+                name="telegram-input",
+                trigger={"type": "polling"},
+            ),
+        }
+        scheduler.register_triggers(registry)
+        assert "telegram-input" not in scheduler._jobs
+        scheduler.stop()
+
+    async def test_stop_cancels_polling_tasks(
+        self, mock_agent_loop, mock_runner, mock_safe_mode_guard
+    ) -> None:
+        scheduler = Scheduler(
+            agent_loop=mock_agent_loop,
+            runner=mock_runner,
+            safe_mode_guard=mock_safe_mode_guard,
+        )
+        registry = {
+            "telegram-input": _make_plugin_meta(
+                name="telegram-input",
+                trigger={"type": "polling"},
+            ),
+        }
+        scheduler.register_triggers(registry)
+        task = scheduler._polling_tasks["telegram-input"]
+        scheduler.stop()
+        await asyncio.sleep(0.05)
+        assert task.cancelled() or task.done()
+        assert len(scheduler._polling_tasks) == 0
+
+    async def test_polling_loop_calls_on_input_trigger(
+        self, mock_agent_loop, mock_runner, mock_safe_mode_guard
+    ) -> None:
+        call_count = 0
+        original_on_input = mock_agent_loop.on_input
+
+        async def counting_on_input(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                raise asyncio.CancelledError  # Stop after 2 iterations
+            return await original_on_input(*args, **kwargs)
+
+        mock_agent_loop.on_input = AsyncMock(side_effect=counting_on_input)
+
+        scheduler = Scheduler(
+            agent_loop=mock_agent_loop,
+            runner=mock_runner,
+            safe_mode_guard=mock_safe_mode_guard,
+        )
+        meta = _make_plugin_meta(
+            name="calendar-input",
+            trigger={"type": "polling"},
+        )
+        scheduler._register_polling("calendar-input", meta)
+        with contextlib.suppress(asyncio.CancelledError, TimeoutError):
+            await asyncio.wait_for(
+                scheduler._polling_tasks["calendar-input"], timeout=2.0
+            )
+
+        assert call_count >= 1
+        scheduler.stop()
+
+    async def test_register_new_polling_trigger(
+        self, mock_agent_loop, mock_runner, mock_safe_mode_guard
+    ) -> None:
+        scheduler = Scheduler(
+            agent_loop=mock_agent_loop,
+            runner=mock_runner,
+            safe_mode_guard=mock_safe_mode_guard,
+        )
+        new_entries = {
+            "telegram-input": _make_plugin_meta(
+                name="telegram-input",
+                trigger={"type": "polling"},
+            ),
+        }
+        scheduler.register_new_triggers(new_entries)
+        assert "telegram-input" in scheduler._polling_tasks
+        scheduler.stop()
+
+    async def test_register_new_polling_skips_existing(
+        self, mock_agent_loop, mock_runner, mock_safe_mode_guard
+    ) -> None:
+        scheduler = Scheduler(
+            agent_loop=mock_agent_loop,
+            runner=mock_runner,
+            safe_mode_guard=mock_safe_mode_guard,
+        )
+        meta = _make_plugin_meta(
+            name="telegram-input",
+            trigger={"type": "polling"},
+        )
+        scheduler.register_triggers({"telegram-input": meta})
+        first_task = scheduler._polling_tasks["telegram-input"]
+
+        # Re-registering should not create a new task
+        scheduler.register_new_triggers({"telegram-input": meta})
+        assert scheduler._polling_tasks["telegram-input"] is first_task
+        scheduler.stop()

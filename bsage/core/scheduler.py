@@ -140,6 +140,43 @@ class Scheduler:
             self._jobs[name] = job.id
             logger.info("trigger_hot_registered", name=name, schedule=schedule)
 
+    def _register_polling(self, name: str, meta: Any) -> None:
+        """Register a polling trigger as a background asyncio task."""
+        if name in self._polling_tasks:
+            return
+        task = asyncio.create_task(self._polling_loop(name, meta))
+        self._polling_tasks[name] = task
+        logger.info("polling_trigger_registered", name=name)
+
+    async def _polling_loop(self, name: str, meta: Any) -> None:
+        """Continuous polling loop with exponential backoff on errors."""
+        backoff = _POLLING_BACKOFF_INITIAL
+        while True:
+            try:
+                await self._on_input_trigger(name)
+                backoff = _POLLING_BACKOFF_INITIAL  # reset on success
+                await asyncio.sleep(0)  # yield control between iterations
+            except MissingCredentialError:
+                logger.warning(
+                    "polling_skipped_missing_credentials",
+                    name=name,
+                    hint=f"Run: bsage setup {name}",
+                )
+                await emit_event(
+                    self._event_bus,
+                    "CREDENTIAL_SETUP_REQUIRED",
+                    {"name": name, "category": "input"},
+                )
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * _POLLING_BACKOFF_FACTOR, _POLLING_BACKOFF_MAX)
+            except asyncio.CancelledError:
+                logger.info("polling_stopped", name=name)
+                return
+            except Exception:
+                logger.exception("polling_error", name=name, backoff_s=backoff)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * _POLLING_BACKOFF_FACTOR, _POLLING_BACKOFF_MAX)
+
     def start(self) -> None:
         """Start the AsyncIO scheduler."""
         if not self._scheduler.running:
@@ -147,7 +184,11 @@ class Scheduler:
             logger.info("scheduler_started")
 
     def stop(self) -> None:
-        """Stop the AsyncIO scheduler."""
+        """Stop the AsyncIO scheduler and cancel polling tasks."""
+        for name, task in self._polling_tasks.items():
+            task.cancel()
+            logger.debug("polling_task_cancelled", name=name)
+        self._polling_tasks.clear()
         if self._scheduler.running:
             self._scheduler.shutdown()
             logger.info("scheduler_stopped")
