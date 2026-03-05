@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from bsage.core.plugin_loader import PluginMeta
+    from bsage.core.runtime_config import RuntimeConfig
 
 import structlog
 
@@ -86,11 +87,12 @@ class SyncManager:
     succeed regardless of sync backend status.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, runtime_config: RuntimeConfig | None = None) -> None:
         self._backends: dict[str, SyncBackend] = {}
         self._output_skills: list[Any] = []
         self._skill_runner: RunnerLike | None = None
         self._context_builder: ContextBuilderLike | None = None
+        self._runtime_config = runtime_config
 
     def register(self, backend: SyncBackend) -> None:
         """Register a sync backend."""
@@ -171,8 +173,15 @@ class SyncManager:
 
         Each backend is called independently. Failures are logged
         but never propagated — the local write has already succeeded.
+        Only backends/skills present in ``runtime_config.enabled_entries``
+        are executed (when a runtime_config is set).
         """
+        enabled = self._runtime_config.enabled_entries if self._runtime_config else None
+
         for name, backend in self._backends.items():
+            if enabled is not None and name not in enabled:
+                logger.debug("sync_backend_skipped_not_enabled", backend=name)
+                continue
             try:
                 await backend.sync(event)
                 logger.debug("sync_backend_notified", backend=name, path=str(event.path))
@@ -192,6 +201,9 @@ class SyncManager:
                 "source": event.source,
             }
             for meta in self._output_skills:
+                if enabled is not None and meta.name not in enabled:
+                    logger.debug("output_skill_skipped_not_enabled", skill=meta.name)
+                    continue
                 try:
                     context = self._context_builder(input_data=event_data)
                     await self._skill_runner.run(meta, context)

@@ -52,7 +52,7 @@ class AppState:
         self.event_bus.subscribe(self._ws_broadcaster)
 
         # Sync manager (backends registered later by OutputPlugins)
-        self.sync_manager = SyncManager()
+        self.sync_manager = SyncManager(runtime_config=self.runtime_config)
 
         # Garden layer
         self.vault = Vault(settings.vault_path)

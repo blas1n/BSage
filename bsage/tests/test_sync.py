@@ -297,6 +297,68 @@ class TestSyncManagerOutputPlugins:
         runner.run.assert_called_once()
 
 
+class TestSyncManagerEnabledFiltering:
+    """Test that notify() skips backends/skills not in enabled_entries."""
+
+    def _make_runtime_config(self, enabled: set[str]) -> MagicMock:
+        rc = MagicMock()
+        type(rc).enabled_entries = PropertyMock(return_value=enabled)
+        return rc
+
+    async def test_notify_skips_disabled_backend(self) -> None:
+        rc = self._make_runtime_config({"other-output"})
+        mgr = SyncManager(runtime_config=rc)
+        backend = _make_backend("notion-output")
+        mgr.register(backend)
+
+        await mgr.notify(_make_event())
+        backend.sync.assert_not_called()
+
+    async def test_notify_runs_enabled_backend(self) -> None:
+        rc = self._make_runtime_config({"s3-output"})
+        mgr = SyncManager(runtime_config=rc)
+        backend = _make_backend("s3-output")
+        mgr.register(backend)
+
+        event = _make_event()
+        await mgr.notify(event)
+        backend.sync.assert_called_once_with(event)
+
+    async def test_notify_skips_disabled_output_skill(self) -> None:
+        rc = self._make_runtime_config(set())
+        mgr = SyncManager(runtime_config=rc)
+        meta = _make_skill_meta("notion-output")
+        runner = MagicMock()
+        runner.run = AsyncMock()
+        builder = MagicMock(return_value=MagicMock())
+        mgr.register_output_skills([meta], runner, builder)
+
+        await mgr.notify(_make_event())
+        runner.run.assert_not_called()
+
+    async def test_notify_runs_enabled_output_skill(self) -> None:
+        rc = self._make_runtime_config({"s3-output"})
+        mgr = SyncManager(runtime_config=rc)
+        meta = _make_skill_meta("s3-output")
+        runner = MagicMock()
+        runner.run = AsyncMock(return_value={"ok": True})
+        ctx = MagicMock()
+        builder = MagicMock(return_value=ctx)
+        mgr.register_output_skills([meta], runner, builder)
+
+        await mgr.notify(_make_event())
+        runner.run.assert_called_once_with(meta, ctx)
+
+    async def test_no_runtime_config_runs_all(self) -> None:
+        mgr = SyncManager()  # no runtime_config
+        backend = _make_backend("s3-output")
+        mgr.register(backend)
+
+        event = _make_event()
+        await mgr.notify(event)
+        backend.sync.assert_called_once_with(event)
+
+
 class TestSyncBackendProtocol:
     """Test that SyncBackend is a runtime-checkable protocol."""
 
