@@ -7,12 +7,12 @@ import asyncio
 import structlog
 
 from bsage.core.agent_loop import AgentLoop
+from bsage.core.chat_bridge import ChatBridge
 from bsage.core.config import Settings
 from bsage.core.credential_store import CredentialStore
 from bsage.core.danger_analyzer import DangerAnalyzer
 from bsage.core.events import EventBus
 from bsage.core.llm import LiteLLMClient
-from bsage.core.notification import NotificationRouter
 from bsage.core.plugin_loader import PluginLoader
 from bsage.core.plugin_runner import PluginRunner
 from bsage.core.prompt_registry import PromptRegistry
@@ -136,6 +136,7 @@ class AppState:
 
         # Agent loop (registry populated after load_all)
         self.agent_loop: AgentLoop | None = None
+        self.chat_bridge: ChatBridge | None = None
         self.scheduler: Scheduler | None = None
 
     @property
@@ -174,10 +175,6 @@ class AppState:
             skills=len(skill_registry),
         )
 
-        notification_router = NotificationRouter()
-
-        self._notification_router = notification_router
-
         self.agent_loop = AgentLoop(
             registry=registry,
             runner=self.runner,
@@ -185,19 +182,21 @@ class AppState:
             garden_writer=self.garden_writer,
             llm_client=self.llm_client,
             prompt_registry=self.prompt_registry,
-            notification=notification_router,
             event_bus=self.event_bus,
             on_refresh=self._refresh_registry,
             runtime_config=self.runtime_config,
+            retriever=self.retriever,
+        )
+
+        self.chat_bridge = ChatBridge(
+            agent_loop=self.agent_loop,
+            garden_writer=self.garden_writer,
+            prompt_registry=self.prompt_registry,
+            retriever=self.retriever,
+            reply_fn=None,
         )
 
         self.runtime_config.rebuild_enabled(registry, self.credential_store)
-
-        notification_router.setup(
-            registry=registry,
-            runner=self.runner,
-            context_builder=self.agent_loop.build_context,
-        )
 
         # Register output skills so they run on vault write events
         output_skills = [v for v in registry.values() if v.category == "output"]
@@ -267,16 +266,7 @@ class AppState:
         for s in new_output_skills:
             self.sync_manager._output_skills.append(s)
 
-        # Re-scan for notification plugins
-        self._notification_router.setup(
-            registry=self.agent_loop._registry,
-            runner=self.runner,
-            context_builder=self.agent_loop.build_context,
-        )
-
-        self.runtime_config.rebuild_enabled(
-            self.agent_loop._registry, self.credential_store
-        )
+        self.runtime_config.rebuild_enabled(self.agent_loop._registry, self.credential_store)
 
         logger.info(
             "registry_refreshed",

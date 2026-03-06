@@ -169,11 +169,14 @@ Focus on recurring themes, unfinished items, and key insights.
 
 | Category | Role | Trigger examples |
 |---|---|---|
-| **input** | Receive external data → write to Vault seeds | cron, webhook |
-| **process** | Judgment + action (analysis, transformation, sending messages, etc.) | on_input, cron, on_demand |
-| **output** | Vault → external mechanical sync | write_event |
+| **input** | Active/passive user input collection — external data → Vault seeds | cron, webhook |
+| **process** | Tool functionality — analysis, transformation, messaging, tool execution, etc. | on_input, cron, on_demand |
+| **output** | Vault sync — Vault → external storage backends | write_event |
 
-- The three categories are **independent** — not a sequential pipeline
+- The three categories are **independent and non-sequential** — they are NOT a pipeline (input → process → output)
+- `input` = anything that brings user data in (active messages, passive polling, webhooks)
+- `process` = anything that acts as a tool (LLM analysis, formatting, sending replies, running actions)
+- `output` = mechanical Vault sync to external storage (git, S3, etc.)
 - Process can run independently without input (cron, on_demand)
 - **There is no `meta` category.** Meta functionality (e.g. SkillBuilder) is implemented as a `process` Plugin
 

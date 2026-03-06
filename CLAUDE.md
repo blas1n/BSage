@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-BSage is a personal AI agent that manages a 2nd Brain (Obsidian Vault). It collects data via input Plugins, processes it via process Plugins/Skills, and stores everything as Markdown in the Vault.
+BSage is a personal AI agent that manages a 2nd Brain (Obsidian Vault). It collects user data (active/passive) via input Plugins, provides tool functionality via process Plugins/Skills, and syncs the Vault to external storage via output Plugins. All data is stored as Markdown in the Vault.
 
 ## Key Commands
 

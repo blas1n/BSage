@@ -98,6 +98,16 @@ async def execute(context) -> dict:
     if messages:
         await context.garden.write_seed("telegram", {"messages": messages})
 
+        # Auto-reply via ChatBridge (vault-aware, same system prompt as CLI/GUI)
+        user_texts = [m["text"] for m in messages if m.get("text")]
+        if user_texts and context.chat:
+            combined = "\n".join(user_texts)
+            reply = await context.chat.chat(message=combined)
+            if reply and reply.strip():
+                context.logger.info("auto_reply_sent", length=len(reply))
+            else:
+                context.logger.warning("auto_reply_empty")
+
     if highest_update_id is not None:
         _save_offset(state_file, highest_update_id)
 

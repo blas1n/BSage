@@ -26,9 +26,12 @@ def _mock_settings() -> MagicMock:
 class TestRunCommand:
     """Test `bsage run` command."""
 
+    @patch("bsage.gateway.app.create_app", return_value=MagicMock())
     @patch("bsage.cli.uvicorn")
     @patch("bsage.cli.get_settings")
-    def test_run_no_chat_starts_server_blocking(self, mock_settings, mock_uvicorn, runner) -> None:
+    def test_run_no_chat_starts_server_blocking(
+        self, mock_settings, mock_uvicorn, mock_create_app, runner
+    ) -> None:
         mock_settings.return_value = _mock_settings()
         mock_server = MagicMock()
         mock_uvicorn.Server.return_value = mock_server
@@ -51,17 +54,53 @@ class TestRunCommand:
         mock_uvicorn.Server.return_value = mock_server
         mock_uvicorn.Config.return_value = MagicMock()
 
-        result = runner.invoke(main, ["run"])
+        # Mock the app returned by create_app with app.state.bsage
+        mock_state = MagicMock()
+        mock_state.chat_bridge = MagicMock()
+        mock_state.agent_loop = MagicMock()
+        mock_state.garden_writer = MagicMock()
+        mock_state.prompt_registry = MagicMock()
+        mock_state.retriever = MagicMock()
+
+        mock_app = MagicMock()
+        mock_app.state.bsage = mock_state
+
+        # Patch threading.Thread to run its target synchronously (sets server_loop)
+        mock_loop = MagicMock()
+
+        class _FakeThread:
+            def __init__(self, *, target=None, daemon=False):
+                self._target = target
+
+            def start(self):
+                if self._target:
+                    with (
+                        patch("asyncio.new_event_loop", return_value=mock_loop),
+                        patch("asyncio.set_event_loop"),
+                    ):
+                        mock_loop.run_until_complete = MagicMock()
+                        self._target()
+
+            def join(self, timeout=None):
+                pass
+
+        with (
+            patch("bsage.cli.threading.Thread", _FakeThread),
+            patch("bsage.gateway.app.create_app", return_value=mock_app),
+        ):
+            result = runner.invoke(main, ["run"])
+
         assert result.exit_code == 0
         mock_wait.assert_called_once()
         mock_repl.assert_called_once()
         assert mock_server.should_exit is True
 
+    @patch("bsage.gateway.app.create_app", return_value=MagicMock())
     @patch("bsage.cli._wait_for_server", return_value=False)
     @patch("bsage.cli.uvicorn")
     @patch("bsage.cli.get_settings")
     def test_run_exits_if_server_fails(
-        self, mock_settings, mock_uvicorn, mock_wait, runner
+        self, mock_settings, mock_uvicorn, mock_wait, mock_create_app, runner
     ) -> None:
         mock_settings.return_value = _mock_settings()
         mock_server = MagicMock()
@@ -94,53 +133,97 @@ class TestWaitForServer:
 
 
 class TestChatRepl:
-    """Test _chat_repl interactive loop."""
+    """Test _chat_repl interactive loop with ChatBridge."""
 
-    @patch("bsage.cli.httpx.post")
+    @staticmethod
+    def _make_bridge_and_loop():
+        """Create a mock ChatBridge and event loop for testing."""
+        import asyncio
+
+        chat_bridge = MagicMock()
+        loop = MagicMock(spec=asyncio.AbstractEventLoop)
+        return chat_bridge, loop
+
+    @patch("bsage.cli.asyncio.run_coroutine_threadsafe")
     @patch("bsage.cli.click.prompt", side_effect=["Hello", "/quit"])
-    def test_send_and_quit(self, mock_prompt, mock_post) -> None:
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"response": "Hi there!"}
-        mock_response.raise_for_status = MagicMock()
-        mock_post.return_value = mock_response
+    def test_send_and_quit(self, mock_prompt, mock_coro) -> None:
+        chat_bridge, loop = self._make_bridge_and_loop()
+        mock_future = MagicMock()
+        mock_future.result.return_value = "Hi there!"
+        mock_coro.return_value = mock_future
 
-        _chat_repl("http://localhost:8000")
+        # Capture call args at invocation time (history is mutable)
+        captured_calls: list[dict] = []
+        original_chat = chat_bridge.chat
 
-        mock_post.assert_called_once()
-        call_json = mock_post.call_args.kwargs.get("json", mock_post.call_args[1].get("json"))
-        assert call_json["message"] == "Hello"
+        def _capture(**kwargs):
+            captured_calls.append({
+                "message": kwargs["message"], "history": list(kwargs["history"]),
+            })
+            return original_chat(**kwargs)
+
+        chat_bridge.chat = _capture
+
+        _chat_repl(chat_bridge, loop)
+
+        mock_coro.assert_called_once()
+        assert len(captured_calls) == 1
+        assert captured_calls[0]["message"] == "Hello"
+        assert captured_calls[0]["history"] == []
+        assert mock_coro.call_args[0][1] is loop
 
     @patch("bsage.cli.click.prompt", side_effect=["/quit"])
     def test_quit_immediately(self, mock_prompt) -> None:
-        _chat_repl("http://localhost:8000")
-        # Should exit without posting
+        chat_bridge, loop = self._make_bridge_and_loop()
+        _chat_repl(chat_bridge, loop)
 
     @patch("bsage.cli.click.prompt", side_effect=EOFError)
     def test_eof_exits_gracefully(self, mock_prompt) -> None:
-        _chat_repl("http://localhost:8000")
+        chat_bridge, loop = self._make_bridge_and_loop()
+        _chat_repl(chat_bridge, loop)
 
-    @patch("bsage.cli.httpx.post", side_effect=httpx.ConnectError("lost"))
-    @patch("bsage.cli.click.prompt", side_effect=["Hello"])
-    def test_connection_lost_exits(self, mock_prompt, mock_post) -> None:
-        _chat_repl("http://localhost:8000")
+    @patch("bsage.cli.asyncio.run_coroutine_threadsafe")
+    @patch("bsage.cli.click.prompt", side_effect=["Hello", "/quit"])
+    def test_connection_lost_continues(self, mock_prompt, mock_coro) -> None:
+        chat_bridge, loop = self._make_bridge_and_loop()
+        mock_coro.return_value = MagicMock()
+        mock_coro.return_value.result.side_effect = Exception("connection lost")
 
-    @patch("bsage.cli.httpx.post")
+        _chat_repl(chat_bridge, loop)
+        # Error is caught, user can /quit
+
+    @patch("bsage.cli.asyncio.run_coroutine_threadsafe")
     @patch("bsage.cli.click.prompt", side_effect=["Hello", "World", "/quit"])
-    def test_history_accumulates(self, mock_prompt, mock_post) -> None:
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"response": "Reply"}
-        mock_response.raise_for_status = MagicMock()
-        mock_post.return_value = mock_response
+    def test_history_accumulates(self, mock_prompt, mock_coro) -> None:
+        chat_bridge, loop = self._make_bridge_and_loop()
+        mock_future = MagicMock()
+        mock_future.result.return_value = "Reply"
+        mock_coro.return_value = mock_future
 
-        _chat_repl("http://localhost:8000")
+        # Capture call args at invocation time (history is mutable)
+        captured_calls: list[dict] = []
+        original_chat = chat_bridge.chat
+
+        def _capture(**kwargs):
+            captured_calls.append({
+                "message": kwargs["message"], "history": list(kwargs["history"]),
+            })
+            return original_chat(**kwargs)
+
+        chat_bridge.chat = _capture
+
+        _chat_repl(chat_bridge, loop)
 
         # Two messages sent before /quit
-        assert mock_post.call_count == 2
-        # Messages are sent with correct content
-        first_msg = mock_post.call_args_list[0].kwargs["json"]["message"]
-        second_msg = mock_post.call_args_list[1].kwargs["json"]["message"]
-        assert first_msg == "Hello"
-        assert second_msg == "World"
+        assert mock_coro.call_count == 2
+        # First call: message="Hello", empty history
+        assert captured_calls[0]["message"] == "Hello"
+        assert captured_calls[0]["history"] == []
+        # Second call: message="World", history includes first exchange
+        assert captured_calls[1]["message"] == "World"
+        assert len(captured_calls[1]["history"]) == 2
+        assert captured_calls[1]["history"][0] == {"role": "user", "content": "Hello"}
+        assert captured_calls[1]["history"][1] == {"role": "assistant", "content": "Reply"}
 
 
 class TestInitCommand:

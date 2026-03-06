@@ -70,6 +70,8 @@ def mock_state():
     state.credential_store.list_services = MagicMock(return_value=[])
     state.retriever = MagicMock()
     state.retriever.rag_available = False
+    state.chat_bridge = AsyncMock()
+    state.chat_bridge.chat = AsyncMock(return_value="Mocked chat response")
     return state
 
 
@@ -477,12 +479,12 @@ class TestChatEndpoint:
         assert response.status_code == 422
 
     def test_chat_agent_loop_error_returns_500(self, client, mock_state) -> None:
-        mock_state.agent_loop.chat = AsyncMock(side_effect=RuntimeError("LLM down"))
+        mock_state.chat_bridge.chat = AsyncMock(side_effect=RuntimeError("LLM down"))
         response = client.post("/api/chat", json={"message": "Hello"})
         assert response.status_code == 500
 
     def test_chat_uninit_returns_503(self, client, mock_state) -> None:
-        mock_state.agent_loop = None
+        mock_state.chat_bridge = None
         response = client.post("/api/chat", json={"message": "Hello"})
         assert response.status_code == 503
 

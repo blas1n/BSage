@@ -13,7 +13,6 @@ from pydantic import BaseModel
 from bsage.core.exceptions import VaultPathError
 from bsage.core.plugin_loader import PluginMeta
 from bsage.core.skill_loader import SkillMeta
-from bsage.gateway.chat import handle_chat
 from bsage.gateway.dependencies import AppState
 
 logger = structlog.get_logger(__name__)
@@ -74,9 +73,7 @@ def _meta_to_dict(
         has_credentials = bool(creds.get("fields"))
     else:
         has_credentials = False
-    credentials_configured = (
-        meta.name in (configured_services or []) if has_credentials else True
-    )
+    credentials_configured = meta.name in (configured_services or []) if has_credentials else True
     # Entries that need credentials but haven't been set up default to disabled.
     if has_credentials and not credentials_configured:
         enabled = False
@@ -213,9 +210,7 @@ def create_routes(state: AppState) -> APIRouter:
         await state.credential_store.store(name, body.credentials)
         logger.info("credentials_stored_via_gui", name=name)
         if state.agent_loop:
-            state.runtime_config.rebuild_enabled(
-                state.agent_loop._registry, state.credential_store
-            )
+            state.runtime_config.rebuild_enabled(state.agent_loop._registry, state.credential_store)
         return {"status": "ok", "name": name}
 
     # -- Enable/Disable toggle -----------------------------------------------
@@ -232,9 +227,7 @@ def create_routes(state: AppState) -> APIRouter:
             enabled = False
         state.runtime_config.update(disabled_entries=disabled)
         if state.agent_loop:
-            state.runtime_config.rebuild_enabled(
-                state.agent_loop._registry, state.credential_store
-            )
+            state.runtime_config.rebuild_enabled(state.agent_loop._registry, state.credential_store)
         logger.info("entry_toggled", name=name, enabled=enabled)
         return {"name": name, "enabled": enabled}
 
@@ -324,17 +317,13 @@ def create_routes(state: AppState) -> APIRouter:
     @api_router.post("/chat")
     async def chat(body: ChatMessage) -> dict[str, str]:
         """Vault-aware conversational chat with plugin tool use."""
-        if state.agent_loop is None:
+        if state.chat_bridge is None:
             raise HTTPException(status_code=503, detail="Gateway not initialized")
         try:
-            response = await handle_chat(
+            response = await state.chat_bridge.chat(
                 message=body.message,
                 history=body.history,
-                agent_loop=state.agent_loop,
-                garden_writer=state.garden_writer,
-                prompt_registry=state.prompt_registry,
                 context_paths=body.context_paths,
-                retriever=state.retriever,
             )
             return {"response": response}
         except Exception as exc:

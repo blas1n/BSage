@@ -10,6 +10,10 @@ import subprocess
 import threading
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from bsage.core.chat_bridge import ChatBridge
 
 import click
 import httpx
@@ -53,9 +57,13 @@ def run(no_chat: bool) -> None:
 
     click.echo(f"Starting BSage Gateway on {settings.gateway_host}:{settings.gateway_port}")
 
+    from bsage.core.chat_bridge import ChatBridge
+    from bsage.gateway.app import create_app
+
+    app = create_app(settings)
+
     config = uvicorn.Config(
-        "bsage.gateway.app:create_app",
-        factory=True,
+        app,
         host=settings.gateway_host,
         port=settings.gateway_port,
         log_level=settings.log_level,
@@ -66,10 +74,13 @@ def run(no_chat: bool) -> None:
         server.run()
         return
 
+    server_loop: asyncio.AbstractEventLoop | None = None
+
     def _run_server() -> None:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(server.serve())
+        nonlocal server_loop
+        server_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(server_loop)
+        server_loop.run_until_complete(server.serve())
 
     thread = threading.Thread(target=_run_server, daemon=True)
     thread.start()
@@ -78,8 +89,26 @@ def run(no_chat: bool) -> None:
         click.echo("Error: Gateway failed to start.", err=True)
         raise SystemExit(1)
 
+    # Access AppState from the app instance (lifespan completed by now)
+    assert server_loop is not None
+    app_state = app.state.bsage
+    if app_state is None or app_state.chat_bridge is None:
+        click.echo("Error: Gateway initialized but ChatBridge unavailable.", err=True)
+        raise SystemExit(1)
+
+    async def _cli_reply(msg: str) -> None:
+        click.echo(f"BSage> {msg}\n")
+
+    cli_chat_bridge = ChatBridge(
+        agent_loop=app_state.agent_loop,
+        garden_writer=app_state.garden_writer,
+        prompt_registry=app_state.prompt_registry,
+        retriever=app_state.retriever,
+        reply_fn=_cli_reply,
+    )
+
     try:
-        _chat_repl(base_url)
+        _chat_repl(cli_chat_bridge, server_loop)
     except KeyboardInterrupt:
         click.echo("\nGoodbye!")
     finally:
@@ -101,8 +130,11 @@ def _wait_for_server(base_url: str) -> bool:
     return False
 
 
-def _chat_repl(base_url: str) -> None:
-    """Interactive chat REPL that talks to the local Gateway."""
+def _chat_repl(
+    chat_bridge: ChatBridge,
+    server_loop: asyncio.AbstractEventLoop,
+) -> None:
+    """Interactive chat REPL using ChatBridge directly."""
     click.echo("BSage Chat — Type /quit to exit.\n")
     history: list[dict[str, str]] = []
 
@@ -121,35 +153,19 @@ def _chat_repl(base_url: str) -> None:
             continue
 
         try:
-            resp = httpx.post(
-                f"{base_url}/api/chat",
-                json={"message": user_input, "history": history},
-                timeout=300.0,
+            future = asyncio.run_coroutine_threadsafe(
+                chat_bridge.chat(message=user_input, history=history),
+                server_loop,
             )
-            resp.raise_for_status()
-            answer = resp.json().get("response", "")
-        except httpx.ConnectError:
-            click.echo("Error: Lost connection to Gateway.", err=True)
-            return
-        except httpx.TimeoutException:
+            answer = future.result(timeout=300.0)
+        except TimeoutError:
             click.echo("Error: Request timed out. The LLM may be slow — try again.", err=True)
             continue
-        except httpx.HTTPStatusError as exc:
-            try:
-                detail = exc.response.json().get("detail", "Unknown error")
-            except Exception:
-                detail = exc.response.text[:200]
-            click.echo(f"Error: {detail}", err=True)
-            continue
-        except httpx.HTTPError as exc:
+        except Exception as exc:
             click.echo(f"Error: {exc}", err=True)
             continue
-        except Exception as exc:
-            click.echo(f"Error: Unexpected error — {exc}", err=True)
-            continue
 
-        click.echo(f"BSage> {answer}\n")
-
+        # reply_fn already printed the response via click.echo
         history.append({"role": "user", "content": user_input})
         history.append({"role": "assistant", "content": answer})
 

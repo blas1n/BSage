@@ -2,7 +2,6 @@
 
 from unittest.mock import AsyncMock, MagicMock
 
-from bsage.core.notification import NotificationInterface
 from bsage.core.skill_context import SkillContext
 
 
@@ -19,7 +18,7 @@ class TestSkillContext:
         assert context.config == {"key": "value"}
         assert context.credentials == {}
         assert context.input_data is None
-        assert context.notify is None
+        assert context.chat is None
 
     def test_context_with_input_data(self) -> None:
         context = SkillContext(
@@ -41,13 +40,13 @@ class TestSkillContext:
         )
         assert context.credentials == {"api_key": "secret"}
 
-    def test_context_with_notification(self) -> None:
-        mock_notify = AsyncMock(spec=NotificationInterface)
+    def test_context_with_chat(self) -> None:
+        mock_chat = AsyncMock()
         context = SkillContext(
             garden=MagicMock(),
             llm=MagicMock(),
             config={},
             logger=MagicMock(),
-            notify=mock_notify,
+            chat=mock_chat,
         )
-        assert context.notify is mock_notify
+        assert context.chat is mock_chat

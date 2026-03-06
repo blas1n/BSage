@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from bsage.core.chat_bridge import ReplyFn
 from bsage.core.events import emit_event
 from bsage.core.exceptions import MissingCredentialError
-from bsage.core.notification import NotificationInterface
 from bsage.core.prompt_registry import PromptRegistry
 from bsage.core.runner import Runner
 from bsage.core.safe_mode import SafeModeGuard
@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from bsage.core.plugin_loader import PluginMeta
     from bsage.core.runtime_config import RuntimeConfig
     from bsage.core.skill_loader import SkillMeta
+    from bsage.garden.retriever import VaultRetriever
 
 logger = structlog.get_logger(__name__)
 
@@ -41,22 +42,22 @@ class AgentLoop:
         safe_mode_guard: SafeModeGuard,
         garden_writer: GardenWriter,
         llm_client: LLMClient,
-        notification: NotificationInterface | None = None,
         prompt_registry: PromptRegistry | None = None,
         event_bus: EventBus | None = None,
         on_refresh: Callable[[], Awaitable[None]] | None = None,
         runtime_config: RuntimeConfig | None = None,
+        retriever: VaultRetriever | None = None,
     ) -> None:
         self._registry = registry
         self._runner = runner
         self._safe_mode_guard = safe_mode_guard
         self._garden_writer = garden_writer
         self._llm_client = llm_client
-        self._notification = notification
         self._prompt_registry = prompt_registry
         self._event_bus = event_bus
         self._on_refresh = on_refresh
         self._runtime_config = runtime_config
+        self._retriever = retriever
 
     # ------------------------------------------------------------------
     # Public API
@@ -93,6 +94,9 @@ class AgentLoop:
         # 1. Write raw data to seeds
         await self._garden_writer.write_seed(plugin_name, raw_data)
 
+        # Build reply_fn from source plugin's _notify_fn
+        reply_fn = self._make_reply_fn(plugin_name)
+
         # 2. Run deterministic on_input-triggered plugins/skills
         triggered = self._find_triggered(plugin_name)
         results: list[dict] = []
@@ -101,7 +105,7 @@ class AgentLoop:
             if not approved:
                 logger.warning("entry_rejected_by_safe_mode", name=meta.name)
                 continue
-            context = self.build_context(input_data=raw_data)
+            context = self.build_context(input_data=raw_data, reply_fn=reply_fn)
             try:
                 result = await self._runner.run(meta, context)
             except MissingCredentialError:
@@ -112,7 +116,7 @@ class AgentLoop:
             await self._garden_writer.write_action(meta.name, summary)
 
         # 3. Let LLM decide and execute on-demand plugins via tool use
-        on_demand_results = await self._decide_on_demand(plugin_name, raw_data)
+        on_demand_results = await self._decide_on_demand(plugin_name, raw_data, reply_fn)
         results.extend(on_demand_results)
 
         logger.info(
@@ -245,7 +249,9 @@ class AgentLoop:
     # On-demand routing via tool use
     # ------------------------------------------------------------------
 
-    async def _decide_on_demand(self, source_name: str, raw_data: dict[str, Any]) -> list[dict]:
+    async def _decide_on_demand(
+        self, source_name: str, raw_data: dict[str, Any], reply_fn: ReplyFn | None = None
+    ) -> list[dict]:
         """Let LLM decide and execute on-demand entries via tool use.
 
         If on-demand plugins have input_schema, uses tool use so the LLM
@@ -317,7 +323,7 @@ class AgentLoop:
                 approved = await self._safe_mode_guard.check(meta)
                 if not approved:
                     continue
-                context = self.build_context(input_data=raw_data)
+                context = self.build_context(input_data=raw_data, reply_fn=reply_fn)
                 result = await self._runner.run(meta, context)
                 results.append(result)
                 summary = json.dumps(result, default=str)
@@ -379,16 +385,51 @@ class AgentLoop:
         """
         return self._registry[name]
 
-    def build_context(self, input_data: dict[str, Any] | None = None) -> SkillContext:
+    def build_context(
+        self,
+        input_data: dict[str, Any] | None = None,
+        reply_fn: ReplyFn | None = None,
+    ) -> SkillContext:
         """Create a SkillContext with all dependencies injected."""
+        chat_bridge = None
+        if self._prompt_registry:
+            from bsage.core.chat_bridge import ChatBridge
+
+            chat_bridge = ChatBridge(
+                agent_loop=self,
+                garden_writer=self._garden_writer,
+                prompt_registry=self._prompt_registry,
+                retriever=self._retriever,
+                reply_fn=reply_fn,
+            )
         return SkillContext(
             garden=self._garden_writer,
             llm=self._llm_client,
             config={},
             logger=structlog.get_logger("skill"),
             input_data=input_data,
-            notify=self._notification,
+            chat=chat_bridge,
         )
+
+    def _make_reply_fn(self, source_name: str) -> ReplyFn | None:
+        """Create a reply closure from the source plugin's _notify_fn."""
+        from bsage.core.plugin_loader import PluginMeta
+
+        meta = self._registry.get(source_name)
+        if not isinstance(meta, PluginMeta) or meta._notify_fn is None:
+            return None
+
+        async def _reply(message: str) -> None:
+            ctx = SkillContext(
+                garden=self._garden_writer,
+                llm=self._llm_client,
+                config={},
+                logger=structlog.get_logger("notify"),
+                input_data={"message": message},
+            )
+            await self._runner.run_notify(meta, ctx)
+
+        return _reply
 
     async def write_action(self, name: str, summary: str) -> None:
         """Write an action log entry for a plugin/skill execution."""

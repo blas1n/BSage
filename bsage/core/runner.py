@@ -23,8 +23,8 @@ class Runner:
 
     Accepts both ``PluginMeta`` and ``SkillMeta`` and dispatches to the
     appropriate runner (PluginRunner for Python code, SkillRunner for LLM
-    pipelines).  This allows the scheduler, AgentLoop, and NotificationRouter
-    to use a single runner interface regardless of meta type.
+    pipelines).  This allows the scheduler and AgentLoop to use a single
+    runner interface regardless of meta type.
     """
 
     def __init__(self, plugin_runner: PluginRunner, skill_runner: SkillRunner) -> None:

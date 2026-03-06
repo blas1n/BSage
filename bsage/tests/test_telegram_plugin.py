@@ -17,6 +17,10 @@ def _make_context(
     ctx.credentials = credentials or {"bot_token": "tok123", "chat_id": "456"}
     ctx.garden = AsyncMock()
     ctx.garden.write_seed = AsyncMock()
+    ctx.llm = AsyncMock()
+    ctx.llm.chat = AsyncMock(return_value="LLM reply")
+    ctx.chat = AsyncMock()
+    ctx.chat.chat = AsyncMock(return_value="ChatBridge reply")
     # Set up vault for state file access
     mock_vault = MagicMock()
     if vault_root:
@@ -204,6 +208,61 @@ async def test_execute_skips_non_message_updates(tmp_path) -> None:
         result = await execute_fn(ctx)
 
     assert result == {"collected": 1}
+
+
+# ── auto-reply tests (via context.chat / ChatBridge) ─────────────────
+
+
+async def test_execute_calls_chat_bridge(tmp_path) -> None:
+    execute_fn, _, _ = _load_plugin()
+    ctx = _make_context(vault_root=tmp_path)
+
+    api_response = {
+        "ok": True,
+        "result": [_telegram_update(500, "Hello bot")],
+    }
+
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = api_response
+
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        result = await execute_fn(ctx)
+
+    assert result == {"collected": 1}
+    ctx.chat.chat.assert_awaited_once_with(message="Hello bot")
+    ctx.logger.info.assert_any_call("auto_reply_sent", length=len("ChatBridge reply"))
+
+
+async def test_execute_no_reply_when_chat_is_none(tmp_path) -> None:
+    execute_fn, _, _ = _load_plugin()
+    ctx = _make_context(vault_root=tmp_path)
+    ctx.chat = None
+
+    api_response = {
+        "ok": True,
+        "result": [_telegram_update(501, "Hello")],
+    }
+
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = api_response
+
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        result = await execute_fn(ctx)
+
+    assert result == {"collected": 1}
+    # Should not crash when chat is None
 
 
 # ── _parse_update() tests ────────────────────────────────────────────

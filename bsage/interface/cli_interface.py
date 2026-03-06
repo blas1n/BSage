@@ -1,4 +1,4 @@
-"""CLI-based interfaces: approval and notification via click."""
+"""CLI-based interfaces: approval via click."""
 
 from __future__ import annotations
 
@@ -38,19 +38,3 @@ class CLIApprovalInterface:
         return approved
 
 
-class CLINotification:
-    """Terminal-based notification via click.echo.
-
-    Implements the NotificationInterface protocol.
-    """
-
-    async def send(self, message: str, level: str = "info") -> None:
-        """Print a notification message to the terminal."""
-        if level == "warning":
-            prefix = click.style("[BSage WARNING]", fg="yellow")
-        elif level == "error":
-            prefix = click.style("[BSage ERROR]", fg="red")
-        else:
-            prefix = "[BSage]"
-        click.echo(f"{prefix} {message}")
-        logger.info("cli_notification_sent", level=level)

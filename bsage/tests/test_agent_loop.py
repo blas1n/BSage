@@ -448,6 +448,57 @@ class TestAgentLoopBuildContext:
         context = loop.build_context(input_data=None)
         assert context.input_data is None
 
+    async def test_build_context_with_reply_fn(self, mock_deps) -> None:
+        loop = AgentLoop(**mock_deps, prompt_registry=MagicMock())
+        reply_fn = AsyncMock()
+        context = loop.build_context(input_data={"k": "v"}, reply_fn=reply_fn)
+        assert context.chat is not None
+        assert context.chat._reply_fn is reply_fn
+
+    async def test_build_context_no_chat_without_prompt_registry(self, mock_deps) -> None:
+        loop = _make_loop(mock_deps)  # no prompt_registry
+        context = loop.build_context()
+        assert context.chat is None
+
+
+class TestMakeReplyFn:
+    """Test _make_reply_fn creates reply closures from plugin _notify_fn."""
+
+    async def test_returns_none_for_non_plugin(self, mock_deps) -> None:
+        loop = _make_loop(mock_deps)
+        result = loop._make_reply_fn("insight-linker")  # SkillMeta
+        assert result is None
+
+    async def test_returns_none_for_plugin_without_notify(self, mock_deps) -> None:
+        loop = _make_loop(mock_deps)
+        result = loop._make_reply_fn("tool-plugin")  # No _notify_fn
+        assert result is None
+
+    async def test_returns_callable_for_notify_plugin(self, mock_deps) -> None:
+        meta = mock_deps["registry"]["calendar-input"]
+        meta._notify_fn = AsyncMock(return_value={"sent": True})
+        loop = _make_loop(mock_deps)
+        result = loop._make_reply_fn("calendar-input")
+        assert result is not None
+        assert callable(result)
+
+    async def test_reply_fn_calls_run_notify(self, mock_deps) -> None:
+        meta = mock_deps["registry"]["calendar-input"]
+        meta._notify_fn = AsyncMock(return_value={"sent": True})
+        mock_deps["runner"].run_notify = AsyncMock(return_value={"sent": True})
+        loop = _make_loop(mock_deps)
+        reply_fn = loop._make_reply_fn("calendar-input")
+        assert reply_fn is not None
+        await reply_fn("Hello!")
+        mock_deps["runner"].run_notify.assert_called_once()
+        ctx = mock_deps["runner"].run_notify.call_args.args[1]
+        assert ctx.input_data == {"message": "Hello!"}
+
+    async def test_returns_none_for_unknown_plugin(self, mock_deps) -> None:
+        loop = _make_loop(mock_deps)
+        result = loop._make_reply_fn("nonexistent")
+        assert result is None
+
 
 class TestAgentLoopEvents:
     """Test EventBus emission from AgentLoop."""
