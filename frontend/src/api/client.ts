@@ -5,7 +5,11 @@ import type {
   CredentialFieldsResponse,
   EntryMeta,
   RuntimeConfig,
+  VaultBacklink,
   VaultFileResponse,
+  VaultGraph,
+  VaultSearchResult,
+  VaultTags,
   VaultTreeEntry,
 } from "./types";
 
@@ -62,4 +66,14 @@ export const api = {
 
   vaultFile: (path: string) =>
     request<VaultFileResponse>(`/vault/file?path=${encodeURIComponent(path)}`),
+
+  vaultSearch: (q: string) =>
+    request<VaultSearchResult[]>(`/vault/search?q=${encodeURIComponent(q)}`),
+
+  vaultBacklinks: (path: string) =>
+    request<VaultBacklink[]>(`/vault/backlinks?path=${encodeURIComponent(path)}`),
+
+  vaultGraph: () => request<VaultGraph>("/vault/graph"),
+
+  vaultTags: () => request<VaultTags>("/vault/tags"),
 };

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -16,6 +18,9 @@ from bsage.core.skill_loader import SkillMeta
 from bsage.gateway.dependencies import AppState
 
 logger = structlog.get_logger(__name__)
+
+_WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
+_TAG_RE = re.compile(r"(?:^|(?<=\s))#([a-zA-Z][a-zA-Z0-9_/-]+)", re.MULTILINE)
 
 
 class ChatMessage(BaseModel):
@@ -281,6 +286,147 @@ def create_routes(state: AppState) -> APIRouter:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
         return {"path": path, "content": content}
+
+    # -- Vault search / backlinks / graph / tags -----------------------------
+
+    async def _scan_vault_md_files() -> list[tuple[str, str]]:
+        """Walk vault and return (relative_path, content) for all .md files."""
+        vault_root = state.vault.root
+
+        def _walk() -> list[tuple[str, str]]:
+            results: list[tuple[str, str]] = []
+            for dirpath, dirnames, filenames in os.walk(vault_root):
+                dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+                for f in sorted(filenames):
+                    if not f.endswith(".md"):
+                        continue
+                    full = Path(dirpath) / f
+                    rel = str(full.relative_to(vault_root))
+                    try:
+                        content = full.read_text(encoding="utf-8")
+                    except OSError:
+                        continue
+                    results.append((rel, content))
+            return results
+
+        return await asyncio.to_thread(_walk)
+
+    def _extract_title(content: str, rel_path: str) -> str:
+        """Extract title from first # heading or fallback to filename stem."""
+        for line in content.split("\n"):
+            stripped = line.strip()
+            if stripped.startswith("# "):
+                return stripped[2:].strip()
+        return Path(rel_path).stem
+
+    def _build_stem_lookup(files: list[tuple[str, str]]) -> dict[str, str]:
+        """Map lowercase filename stem → relative path (first match wins)."""
+        lookup: dict[str, str] = {}
+        for rel, _ in files:
+            stem = Path(rel).stem.lower()
+            if stem not in lookup:
+                lookup[stem] = rel
+        return lookup
+
+    @api_router.get("/vault/search")
+    async def vault_search(
+        q: str = Query(..., min_length=1, description="Search query"),
+    ) -> list[dict[str, Any]]:
+        """Full-text search across vault .md files (case-insensitive, max 50 results)."""
+        files = await _scan_vault_md_files()
+        query_lower = q.lower()
+        results: list[dict[str, Any]] = []
+
+        for rel, content in files:
+            matches: list[dict[str, Any]] = []
+            for i, line in enumerate(content.split("\n"), start=1):
+                if query_lower in line.lower():
+                    matches.append({"line": i, "text": line.strip()})
+            if matches:
+                results.append({"path": rel, "matches": matches[:10]})
+            if len(results) >= 50:
+                break
+
+        return results
+
+    @api_router.get("/vault/backlinks")
+    async def vault_backlinks(
+        path: str = Query(..., description="Relative path of the target note"),
+    ) -> list[dict[str, Any]]:
+        """Find notes containing [[wikilink]] references to the given path."""
+        files = await _scan_vault_md_files()
+        target_stem = Path(path).stem.lower()
+        target_path_no_ext = path.removesuffix(".md").lower()
+        results: list[dict[str, Any]] = []
+
+        for rel, content in files:
+            if rel == path:
+                continue
+            for m in _WIKILINK_RE.finditer(content):
+                link = m.group(1).strip()
+                link_lower = link.lower()
+                # Match by filename stem or by relative path (with/without .md)
+                if link_lower in (target_stem, target_path_no_ext):
+                    title = _extract_title(content, rel)
+                    results.append({"path": rel, "title": title})
+                    break
+
+        return results
+
+    @api_router.get("/vault/graph")
+    async def vault_graph() -> dict[str, Any]:
+        """Return all notes as nodes and wikilink connections as edges."""
+        files = await _scan_vault_md_files()
+        stem_lookup = _build_stem_lookup(files)
+        known_paths = {rel for rel, _ in files}
+
+        nodes: list[dict[str, str]] = []
+        links: list[dict[str, str]] = []
+
+        for rel, content in files:
+            # Group = top-level directory (seeds, garden, actions) or "root"
+            parts = rel.split("/", 1)
+            group = parts[0] if len(parts) > 1 else "root"
+            name = Path(rel).stem
+            nodes.append({"id": rel, "name": name, "group": group})
+
+            for m in _WIKILINK_RE.finditer(content):
+                link = m.group(1).strip()
+                link_lower = link.lower()
+                # Resolve link to a known path
+                target = None
+                if link in known_paths:
+                    target = link
+                elif link + ".md" in known_paths:
+                    target = link + ".md"
+                elif link_lower in stem_lookup:
+                    target = stem_lookup[link_lower]
+                if target and target != rel:
+                    links.append({"source": rel, "target": target})
+
+        return {"nodes": nodes, "links": links}
+
+    @api_router.get("/vault/tags")
+    async def vault_tags() -> dict[str, Any]:
+        """Extract all #tag occurrences from vault files."""
+        files = await _scan_vault_md_files()
+        tag_map: dict[str, list[str]] = {}
+
+        for rel, content in files:
+            # Skip YAML frontmatter for tag extraction
+            body = content
+            if content.startswith("---\n"):
+                end_idx = content.find("\n---\n", 4)
+                if end_idx != -1:
+                    body = content[end_idx + 5 :]
+
+            found_tags: set[str] = set()
+            for m in _TAG_RE.finditer(body):
+                found_tags.add(m.group(1).lower())
+            for tag in found_tags:
+                tag_map.setdefault(tag, []).append(rel)
+
+        return {"tags": tag_map}
 
     # -- Config --------------------------------------------------------------
 

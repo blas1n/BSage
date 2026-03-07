@@ -100,3 +100,37 @@ export interface ApprovalResponse {
 
 /** Any message coming from the WebSocket. */
 export type WSMessage = WSEvent | ApprovalRequest | { type: string; [key: string]: unknown };
+
+/** GET /api/vault/search response entry. */
+export interface VaultSearchResult {
+  path: string;
+  matches: { line: number; text: string }[];
+}
+
+/** GET /api/vault/backlinks response entry. */
+export interface VaultBacklink {
+  path: string;
+  title: string;
+}
+
+/** GET /api/vault/graph response. */
+export interface VaultGraph {
+  nodes: VaultGraphNode[];
+  links: VaultGraphLink[];
+}
+
+export interface VaultGraphNode {
+  id: string;
+  name: string;
+  group: string;
+}
+
+export interface VaultGraphLink {
+  source: string;
+  target: string;
+}
+
+/** GET /api/vault/tags response. */
+export interface VaultTags {
+  tags: Record<string, string[]>;
+}
