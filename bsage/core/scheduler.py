@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
+import re
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -273,3 +276,145 @@ class Scheduler:
             )
         except Exception:
             logger.exception("trigger_execution_failed", name=name)
+
+
+class SchedulerAdapter:
+    """Thin adapter exposing Scheduler to plugins via SchedulerInterface.
+
+    Allows plugins to dynamically create, remove, and list cron jobs
+    at runtime. Dynamic jobs are persisted to a JSON file so they
+    survive restarts.
+    """
+
+    def __init__(self, scheduler: Scheduler, persist_path: Path) -> None:
+        self._scheduler = scheduler
+        self._persist_path = persist_path
+
+    async def add_cron(
+        self,
+        name: str,
+        schedule: str,
+        target: str,
+        input_data: dict[str, Any] | None = None,
+    ) -> None:
+        """Add a dynamic cron job.
+
+        Args:
+            name: Job name (lowercase alphanumeric + hyphens).
+            schedule: 5-field cron expression.
+            target: Name of the plugin/skill to execute.
+            input_data: Optional input payload (reserved for future use).
+
+        Raises:
+            ValueError: If name format or schedule is invalid.
+        """
+        if not re.match(r"^[a-z][a-z0-9-]*$", name):
+            raise ValueError(f"Invalid job name: {name}")
+        cron_kwargs = Scheduler._parse_cron(schedule)
+        job_id = f"bsage-dynamic-{name}"
+
+        # Remove existing dynamic job with same name
+        if name in self._scheduler._jobs:
+            with contextlib.suppress(Exception):
+                self._scheduler._scheduler.remove_job(self._scheduler._jobs[name])
+
+        trigger = CronTrigger(**cron_kwargs)
+        self._scheduler._scheduler.add_job(
+            self._scheduler._on_process_trigger,
+            trigger=trigger,
+            args=[target],
+            id=job_id,
+            name=f"BSage dynamic: {name}",
+        )
+        self._scheduler._jobs[name] = job_id
+        await self._persist(name, schedule, target)
+        logger.info("dynamic_cron_added", name=name, schedule=schedule, target=target)
+
+    async def remove_cron(self, name: str) -> None:
+        """Remove a dynamic cron job.
+
+        Args:
+            name: Job name to remove.
+
+        Raises:
+            KeyError: If no dynamic job with the given name exists.
+        """
+        job_id = self._scheduler._jobs.get(name)
+        if not job_id:
+            raise KeyError(f"No dynamic job: {name}")
+        self._scheduler._scheduler.remove_job(job_id)
+        del self._scheduler._jobs[name]
+        await self._remove_persisted(name)
+        logger.info("dynamic_cron_removed", name=name)
+
+    async def list_jobs(self) -> list[dict[str, Any]]:
+        """List all registered jobs (static and dynamic).
+
+        Returns:
+            List of dicts with name, job_id, and next_run.
+        """
+        jobs: list[dict[str, Any]] = []
+        for name, job_id in self._scheduler._jobs.items():
+            job = self._scheduler._scheduler.get_job(job_id)
+            jobs.append(
+                {
+                    "name": name,
+                    "job_id": job_id,
+                    "next_run": str(job.next_run_time) if job else None,
+                    "dynamic": job_id.startswith("bsage-dynamic-"),
+                }
+            )
+        return jobs
+
+    async def _persist(self, name: str, schedule: str, target: str) -> None:
+        """Add or update a dynamic job in the persistence file."""
+        entries = await self._load_entries()
+        # Replace existing entry for this name
+        entries = [e for e in entries if e.get("name") != name]
+        entries.append({"name": name, "schedule": schedule, "target": target})
+
+        self._persist_path.parent.mkdir(parents=True, exist_ok=True)
+
+        def _write() -> None:
+            self._persist_path.write_text(json.dumps(entries, indent=2))
+
+        await asyncio.to_thread(_write)
+
+    async def _remove_persisted(self, name: str) -> None:
+        """Remove a dynamic job from the persistence file."""
+        entries = await self._load_entries()
+        entries = [e for e in entries if e.get("name") != name]
+
+        def _write() -> None:
+            self._persist_path.write_text(json.dumps(entries, indent=2))
+
+        await asyncio.to_thread(_write)
+
+    async def _load_entries(self) -> list[dict[str, Any]]:
+        """Load persisted dynamic jobs from JSON."""
+        if not self._persist_path.exists():
+            return []
+        try:
+            text = await asyncio.to_thread(self._persist_path.read_text)
+            data = json.loads(text)
+            return data if isinstance(data, list) else []
+        except (json.JSONDecodeError, OSError):
+            logger.warning("dynamic_jobs_load_failed", exc_info=True)
+            return []
+
+    async def load_persisted(self) -> None:
+        """Load dynamic jobs from JSON on startup and register them."""
+        entries = await self._load_entries()
+        for entry in entries:
+            try:
+                await self.add_cron(
+                    entry["name"],
+                    entry["schedule"],
+                    entry["target"],
+                )
+            except Exception:
+                logger.warning(
+                    "dynamic_job_restore_failed",
+                    name=entry.get("name"),
+                    exc_info=True,
+                )

@@ -578,9 +578,7 @@ class TestSchedulerPollingTrigger:
         )
         scheduler._register_polling("calendar-input", meta)
         with contextlib.suppress(asyncio.CancelledError, TimeoutError):
-            await asyncio.wait_for(
-                scheduler._polling_tasks["calendar-input"], timeout=2.0
-            )
+            await asyncio.wait_for(scheduler._polling_tasks["calendar-input"], timeout=2.0)
 
         assert call_count >= 1
         scheduler.stop()
@@ -602,6 +600,184 @@ class TestSchedulerPollingTrigger:
         scheduler.register_new_triggers(new_entries)
         assert "telegram-input" in scheduler._polling_tasks
         scheduler.stop()
+
+
+class TestSchedulerAdapter:
+    """Test SchedulerAdapter dynamic cron management."""
+
+    async def test_add_cron_registers_job(
+        self, mock_agent_loop, mock_runner, mock_safe_mode_guard, tmp_path
+    ) -> None:
+        from bsage.core.scheduler import SchedulerAdapter
+
+        scheduler = Scheduler(
+            agent_loop=mock_agent_loop,
+            runner=mock_runner,
+            safe_mode_guard=mock_safe_mode_guard,
+        )
+        scheduler.start()
+        persist_path = tmp_path / ".scheduler" / "dynamic_jobs.json"
+        adapter = SchedulerAdapter(scheduler, persist_path)
+
+        await adapter.add_cron("my-job", "0 9 * * 1", "weekly-digest")
+        assert "my-job" in scheduler._jobs
+        assert scheduler._jobs["my-job"] == "bsage-dynamic-my-job"
+        scheduler.stop()
+
+    async def test_add_cron_persists_to_file(
+        self, mock_agent_loop, mock_runner, mock_safe_mode_guard, tmp_path
+    ) -> None:
+        import json
+
+        from bsage.core.scheduler import SchedulerAdapter
+
+        scheduler = Scheduler(
+            agent_loop=mock_agent_loop,
+            runner=mock_runner,
+            safe_mode_guard=mock_safe_mode_guard,
+        )
+        scheduler.start()
+        persist_path = tmp_path / ".scheduler" / "dynamic_jobs.json"
+        adapter = SchedulerAdapter(scheduler, persist_path)
+
+        await adapter.add_cron("test-job", "*/5 * * * *", "some-target")
+        assert persist_path.exists()
+        data = json.loads(persist_path.read_text())
+        assert any(e["name"] == "test-job" for e in data)
+        scheduler.stop()
+
+    async def test_add_cron_invalid_name_raises(
+        self, mock_agent_loop, mock_runner, mock_safe_mode_guard, tmp_path
+    ) -> None:
+        from bsage.core.scheduler import SchedulerAdapter
+
+        scheduler = Scheduler(
+            agent_loop=mock_agent_loop,
+            runner=mock_runner,
+            safe_mode_guard=mock_safe_mode_guard,
+        )
+        persist_path = tmp_path / ".scheduler" / "dynamic_jobs.json"
+        adapter = SchedulerAdapter(scheduler, persist_path)
+
+        with pytest.raises(ValueError, match="Invalid job name"):
+            await adapter.add_cron("BAD NAME!", "0 9 * * 1", "target")
+
+    async def test_add_cron_invalid_schedule_raises(
+        self, mock_agent_loop, mock_runner, mock_safe_mode_guard, tmp_path
+    ) -> None:
+        from bsage.core.scheduler import SchedulerAdapter
+
+        scheduler = Scheduler(
+            agent_loop=mock_agent_loop,
+            runner=mock_runner,
+            safe_mode_guard=mock_safe_mode_guard,
+        )
+        persist_path = tmp_path / ".scheduler" / "dynamic_jobs.json"
+        adapter = SchedulerAdapter(scheduler, persist_path)
+
+        with pytest.raises(ValueError, match="Invalid cron"):
+            await adapter.add_cron("my-job", "bad schedule", "target")
+
+    async def test_remove_cron_removes_job(
+        self, mock_agent_loop, mock_runner, mock_safe_mode_guard, tmp_path
+    ) -> None:
+        from bsage.core.scheduler import SchedulerAdapter
+
+        scheduler = Scheduler(
+            agent_loop=mock_agent_loop,
+            runner=mock_runner,
+            safe_mode_guard=mock_safe_mode_guard,
+        )
+        scheduler.start()
+        persist_path = tmp_path / ".scheduler" / "dynamic_jobs.json"
+        adapter = SchedulerAdapter(scheduler, persist_path)
+
+        await adapter.add_cron("remove-me", "0 0 * * *", "target")
+        assert "remove-me" in scheduler._jobs
+
+        await adapter.remove_cron("remove-me")
+        assert "remove-me" not in scheduler._jobs
+        scheduler.stop()
+
+    async def test_remove_cron_nonexistent_raises(
+        self, mock_agent_loop, mock_runner, mock_safe_mode_guard, tmp_path
+    ) -> None:
+        from bsage.core.scheduler import SchedulerAdapter
+
+        scheduler = Scheduler(
+            agent_loop=mock_agent_loop,
+            runner=mock_runner,
+            safe_mode_guard=mock_safe_mode_guard,
+        )
+        persist_path = tmp_path / ".scheduler" / "dynamic_jobs.json"
+        adapter = SchedulerAdapter(scheduler, persist_path)
+
+        with pytest.raises(KeyError, match="No dynamic job"):
+            await adapter.remove_cron("nonexistent")
+
+    async def test_list_jobs_returns_registered_jobs(
+        self, mock_agent_loop, mock_runner, mock_safe_mode_guard, tmp_path
+    ) -> None:
+        from bsage.core.scheduler import SchedulerAdapter
+
+        scheduler = Scheduler(
+            agent_loop=mock_agent_loop,
+            runner=mock_runner,
+            safe_mode_guard=mock_safe_mode_guard,
+        )
+        scheduler.start()
+        persist_path = tmp_path / ".scheduler" / "dynamic_jobs.json"
+        adapter = SchedulerAdapter(scheduler, persist_path)
+
+        await adapter.add_cron("job-a", "0 0 * * *", "target-a")
+        jobs = await adapter.list_jobs()
+        assert len(jobs) >= 1
+        assert any(j["name"] == "job-a" and j["dynamic"] is True for j in jobs)
+        scheduler.stop()
+
+    async def test_load_persisted_restores_jobs(
+        self, mock_agent_loop, mock_runner, mock_safe_mode_guard, tmp_path
+    ) -> None:
+        import json
+
+        from bsage.core.scheduler import SchedulerAdapter
+
+        persist_path = tmp_path / ".scheduler" / "dynamic_jobs.json"
+        persist_path.parent.mkdir(parents=True)
+        persist_path.write_text(
+            json.dumps([{"name": "restored-job", "schedule": "0 6 * * *", "target": "my-target"}])
+        )
+
+        scheduler = Scheduler(
+            agent_loop=mock_agent_loop,
+            runner=mock_runner,
+            safe_mode_guard=mock_safe_mode_guard,
+        )
+        scheduler.start()
+        adapter = SchedulerAdapter(scheduler, persist_path)
+        await adapter.load_persisted()
+
+        assert "restored-job" in scheduler._jobs
+        scheduler.stop()
+
+    async def test_load_persisted_handles_corrupt_json(
+        self, mock_agent_loop, mock_runner, mock_safe_mode_guard, tmp_path
+    ) -> None:
+        from bsage.core.scheduler import SchedulerAdapter
+
+        persist_path = tmp_path / ".scheduler" / "dynamic_jobs.json"
+        persist_path.parent.mkdir(parents=True)
+        persist_path.write_text("not valid json!!!")
+
+        scheduler = Scheduler(
+            agent_loop=mock_agent_loop,
+            runner=mock_runner,
+            safe_mode_guard=mock_safe_mode_guard,
+        )
+        adapter = SchedulerAdapter(scheduler, persist_path)
+        # Should not raise
+        await adapter.load_persisted()
+        assert len(scheduler._jobs) == 0
 
     async def test_register_new_polling_skips_existing(
         self, mock_agent_loop, mock_runner, mock_safe_mode_guard
