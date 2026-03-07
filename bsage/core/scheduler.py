@@ -219,7 +219,7 @@ class Scheduler:
         logger.info("trigger_fired", name=name, category="input")
         await emit_event(self._event_bus, "TRIGGER_FIRED", {"name": name, "category": "input"})
         try:
-            context = self._agent_loop.build_context()
+            context = self._agent_loop.build_context(for_entry=name)
             meta = self._agent_loop.get_entry(name)
             result = await self._runner.run(meta, context)
             if result.get("collected", 1) == 0:
@@ -256,7 +256,7 @@ class Scheduler:
                 logger.warning("process_trigger_rejected_by_safe_mode", name=name)
                 return
 
-            context = self._agent_loop.build_context()
+            context = self._agent_loop.build_context(for_entry=name)
             result = await self._runner.run(meta, context)
             summary = json.dumps(result, default=str)
             await self._agent_loop.write_action(name, summary)

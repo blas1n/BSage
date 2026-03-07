@@ -389,8 +389,17 @@ class AgentLoop:
         self,
         input_data: dict[str, Any] | None = None,
         reply_fn: ReplyFn | None = None,
+        for_entry: str | None = None,
     ) -> SkillContext:
-        """Create a SkillContext with all dependencies injected."""
+        """Create a SkillContext with all dependencies injected.
+
+        Args:
+            input_data: Input payload for the skill.
+            reply_fn: Explicit reply callback (takes priority over for_entry).
+            for_entry: Plugin name to auto-resolve reply_fn from its _notify_fn.
+        """
+        if reply_fn is None and for_entry:
+            reply_fn = self._make_reply_fn(for_entry)
         chat_bridge = None
         if self._prompt_registry:
             from bsage.core.chat_bridge import ChatBridge

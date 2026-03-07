@@ -29,7 +29,9 @@ class ContextBuilderLike(Protocol):
 class SchedulerSupport(Protocol):
     """Protocol defining the interface that Scheduler requires from AgentLoop."""
 
-    def build_context(self, input_data: dict[str, Any] | None = None) -> SkillContext: ...
+    def build_context(
+        self, input_data: dict[str, Any] | None = None, *, for_entry: str | None = None
+    ) -> SkillContext: ...
 
     def get_entry(self, name: str) -> Any: ...
 
