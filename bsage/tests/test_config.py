@@ -27,7 +27,7 @@ class TestSettings:
         assert settings.tmp_dir == Path("./tmp")
         assert settings.credentials_dir == Path("./.credentials")
         assert settings.safe_mode is True
-        assert settings.gateway_host == "127.0.0.1"
+        assert settings.gateway_host == "0.0.0.0"
         assert settings.gateway_port == 8000
         assert settings.log_level == "info"
 
