@@ -1,5 +1,6 @@
 """Tests for bsage.core.agent_loop — AgentLoop orchestration via trigger matching."""
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -10,8 +11,8 @@ from bsage.core.plugin_loader import PluginMeta
 from bsage.core.skill_loader import SkillMeta
 
 
-def _make_plugin_meta(**overrides) -> PluginMeta:
-    defaults = {
+def _make_plugin_meta(**overrides: Any) -> PluginMeta:
+    defaults: dict[str, Any] = {
         "name": "test-plugin",
         "version": "1.0.0",
         "category": "process",
@@ -21,8 +22,8 @@ def _make_plugin_meta(**overrides) -> PluginMeta:
     return PluginMeta(**defaults)
 
 
-def _make_skill_meta(**overrides) -> SkillMeta:
-    defaults = {
+def _make_skill_meta(**overrides: Any) -> SkillMeta:
+    defaults: dict[str, Any] = {
         "name": "test-skill",
         "version": "1.0.0",
         "category": "process",
@@ -459,6 +460,9 @@ class TestAgentLoopBuildContext:
         loop = AgentLoop(**mock_deps, prompt_registry=MagicMock())
         context = loop.build_context(input_data={"k": "v"}, reply_via="calendar-input")
         assert context.chat is not None
+        from bsage.core.chat_bridge import ChatBridge
+
+        assert isinstance(context.chat, ChatBridge)
         assert context.chat._reply_fn is not None
 
     async def test_build_context_no_chat_without_prompt_registry(self, mock_deps) -> None:
@@ -618,9 +622,7 @@ class TestHandleToolCallNewTools:
             side_effect=FileNotFoundError("not found")
         )
         loop = _make_loop(mock_deps)
-        result = await loop._handle_tool_call(
-            "tc1", "append-note", {"path": "x", "text": "t"}
-        )
+        result = await loop._handle_tool_call("tc1", "append-note", {"path": "x", "text": "t"})
         assert "error" in result
 
     async def test_delete_note_routes_to_garden_writer(self, mock_deps) -> None:
