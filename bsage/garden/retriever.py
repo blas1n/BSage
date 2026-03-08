@@ -595,17 +595,21 @@ class VaultRetriever:
                     rel = str(p.relative_to(self._vault.root))
                     all_paths.append((rel, p))
             except Exception:
-                # Try subdirectories (e.g. seeds/chat, garden/idea)
-                base = self._vault.resolve_path(subdir)
-                if base.is_dir():
-                    for child in sorted(base.iterdir()):
-                        if child.is_dir():
-                            child_sub = f"{subdir}/{child.name}"
-                            try:
-                                paths = await self._vault.read_notes(child_sub)
-                                for p in paths:
-                                    rel = str(p.relative_to(self._vault.root))
-                                    all_paths.append((rel, p))
-                            except Exception:
-                                pass
+                note_paths = []
+
+            # Also scan subdirectories (e.g. seeds/telegram-input, garden/insight).
+            # read_notes() returns [] (not an exception) when no *.md files exist
+            # directly in the directory, so we always check subdirs too.
+            base = self._vault.resolve_path(subdir)
+            if base.is_dir():
+                for child in sorted(base.iterdir()):
+                    if child.is_dir():
+                        child_sub = f"{subdir}/{child.name}"
+                        try:
+                            paths = await self._vault.read_notes(child_sub)
+                            for p in paths:
+                                rel = str(p.relative_to(self._vault.root))
+                                all_paths.append((rel, p))
+                        except Exception:
+                            pass
         return all_paths
