@@ -41,3 +41,6 @@ frontend/dist/
 
 # Internal Docs
 docs/internal
+
+# Devcontainer local overrides (git worktree mount)
+docker-compose.override.yml
