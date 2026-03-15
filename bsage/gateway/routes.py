@@ -446,7 +446,7 @@ def create_routes(state: AppState) -> APIRouter:
         """Return current runtime config (api_key excluded)."""
         snap = state.runtime_config.snapshot()
         snap["has_llm_api_key"] = bool(state.runtime_config.llm_api_key)
-        snap["has_embedding_api_key"] = bool(state.runtime_config.embedding_api_key)
+        snap["index_available"] = state.retriever.index_available
         return snap
 
     @api_router.patch("/config")
@@ -460,7 +460,7 @@ def create_routes(state: AppState) -> APIRouter:
         if not changes:
             snap = state.runtime_config.snapshot()
             snap["has_llm_api_key"] = bool(state.runtime_config.llm_api_key)
-            snap["has_embedding_api_key"] = bool(state.runtime_config.embedding_api_key)
+            snap["index_available"] = state.retriever.index_available
             return snap
         try:
             state.runtime_config.update(**changes)
@@ -468,7 +468,7 @@ def create_routes(state: AppState) -> APIRouter:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         snap = state.runtime_config.snapshot()
         snap["has_llm_api_key"] = bool(state.runtime_config.llm_api_key)
-        snap["has_embedding_api_key"] = bool(state.runtime_config.embedding_api_key)
+        snap["index_available"] = state.retriever.index_available
         return snap
 
     @api_router.post("/chat")

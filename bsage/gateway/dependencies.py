@@ -22,11 +22,15 @@ from bsage.core.safe_mode import SafeModeGuard
 from bsage.core.scheduler import Scheduler
 from bsage.core.skill_loader import SkillLoader
 from bsage.core.skill_runner import SkillRunner
-from bsage.garden.embeddings import EmbeddingClient
+from bsage.garden.file_index_reader import FileIndexReader
+from bsage.garden.graph_extractor import GraphExtractor
+from bsage.garden.graph_retriever import GraphRetriever
+from bsage.garden.graph_store import GraphStore
+from bsage.garden.llm_extractor import LLMExtractor
+from bsage.garden.ontology import OntologyRegistry
 from bsage.garden.retriever import VaultRetriever
 from bsage.garden.sync import SyncManager
 from bsage.garden.vault import Vault
-from bsage.garden.vector_store import VectorStore
 from bsage.garden.writer import GardenWriter
 from bsage.gateway.event_broadcaster import WebSocketEventBroadcaster
 from bsage.gateway.ws import manager as ws_manager
@@ -105,21 +109,28 @@ class AppState:
             credential_store=self.credential_store, event_bus=self.event_bus
         )
 
-        # RAG components (optional — active when embedding_model is configured)
-        self.embedding_client: EmbeddingClient | None = None
-        self.vector_store: VectorStore | None = None
+        # Index reader for vault search
+        self.index_reader = FileIndexReader(vault=self.vault)
 
-        if self.runtime_config.embedding_model:
-            self.embedding_client = EmbeddingClient(runtime_config=self.runtime_config)
-            rag_path = settings.rag_index_path or (settings.vault_path / ".rag" / "index.db")
-            self.vector_store = VectorStore(rag_path)
+        # Knowledge graph
+        graph_db_path = settings.vault_path / ".bsage" / "graph.db"
+        self.graph_store = GraphStore(graph_db_path)
+        ontology_path = settings.vault_path / ".bsage" / "ontology.yaml"
+        self.ontology = OntologyRegistry(ontology_path)
+
+        async def _llm_extract_fn(system: str, text: str) -> str:
+            return await self.llm_client.chat(
+                system=system, messages=[{"role": "user", "content": text}]
+            )
+
+        self.llm_extractor = LLMExtractor(llm_fn=_llm_extract_fn, ontology=self.ontology)
+        self.graph_extractor = GraphExtractor(llm_extractor=self.llm_extractor)
+        self.graph_retriever = GraphRetriever(self.graph_store, self.vault)
 
         self.retriever = VaultRetriever(
             vault=self.vault,
-            vector_store=self.vector_store,
-            embedding_client=self.embedding_client,
-            event_bus=self.event_bus,
-            garden_writer=self.garden_writer,
+            index_reader=self.index_reader,
+            graph_retriever=self.graph_retriever,
         )
 
         # Skills
@@ -148,20 +159,22 @@ class AppState:
 
     async def initialize(self) -> None:
         """Load plugins and skills, create AgentLoop, register triggers, start scheduler."""
-        # Initialize vector store for RAG
-        if self.vector_store:
-            await self.vector_store.initialize()
-
         # Subscribe index subscriber to EventBus for write-time indexing
-        if self.retriever.rag_available:
-            from bsage.garden.index_subscriber import IndexSubscriber
+        from bsage.garden.graph_subscriber import GraphSubscriber
+        from bsage.garden.index_subscriber import IndexSubscriber
 
-            index_sub = IndexSubscriber(self.retriever, self.vault)
-            self.event_bus.subscribe(index_sub)
+        index_sub = IndexSubscriber(self.index_reader, self.vault)
+        self.event_bus.subscribe(index_sub)
+
+        # Initialize knowledge graph
+        await self.graph_store.initialize()
+        await self.ontology.load()
+        graph_sub = GraphSubscriber(self.graph_store, self.vault, self.graph_extractor)
+        self.event_bus.subscribe(graph_sub)
 
         # Background reindex to pick up manual vault edits (Obsidian, etc.)
-        if self.retriever.rag_available:
-            self._reindex_task = asyncio.create_task(self._background_reindex())
+        self._reindex_task = asyncio.create_task(self._background_reindex())
+        self._graph_rebuild_task = asyncio.create_task(self._background_graph_rebuild())
 
         plugin_registry = await self.plugin_loader.load_all()
         skill_registry = await self.skill_loader.load_all()
@@ -221,20 +234,35 @@ class AppState:
         """Reconcile index with vault contents on startup.
 
         Runs in the background so it doesn't block server startup.
-        Content-hash dedup ensures only new/changed notes are re-embedded.
-        Retries once after 60 seconds to handle transient embedding API failures.
+        Rebuilds the _index/ markdown files from vault notes.
+        Retries once after 30 seconds on failure.
         """
         for attempt in range(2):
             try:
                 count = await self.retriever.reindex_all()
-                logger.info("startup_reindex_complete", indexed=count, attempt=attempt)
+                logger.info("startup_reindex_complete", indexed=count)
                 return
             except Exception:
+                logger.error("startup_reindex_failed", attempt=attempt + 1, exc_info=True)
                 if attempt == 0:
-                    logger.warning("startup_reindex_failed_retrying", exc_info=True)
-                    await asyncio.sleep(60.0)
-                else:
-                    logger.error("startup_reindex_failed", exc_info=True)
+                    await asyncio.sleep(30)
+
+    async def _background_graph_rebuild(self) -> None:
+        """Rebuild knowledge graph from existing vault notes on startup.
+
+        Uses content hashing to skip notes that haven't changed since
+        the last rebuild, avoiding O(N) DB writes on every restart.
+        Retries once after 30 seconds on failure.
+        """
+        for attempt in range(2):
+            try:
+                count = await self.graph_store.rebuild_from_vault(self.vault, self.graph_extractor)
+                logger.info("graph_rebuild_complete", **count)
+                return
+            except Exception:
+                logger.error("graph_rebuild_failed", attempt=attempt + 1, exc_info=True)
+                if attempt == 0:
+                    await asyncio.sleep(30)
 
     async def _refresh_registry(self) -> None:
         """Scan for new plugins/skills and integrate them into the live registry.
@@ -287,10 +315,11 @@ class AppState:
         """Stop scheduler and clean up resources."""
         if self.scheduler:
             self.scheduler.stop()
-        # Cancel background reindex if still running
-        task = getattr(self, "_reindex_task", None)
-        if task and not task.done():
-            task.cancel()
-        if self.vector_store:
-            await self.vector_store.close()
+        # Cancel background tasks if still running
+        for attr in ("_reindex_task", "_graph_rebuild_task"):
+            task = getattr(self, attr, None)
+            if task and not task.done():
+                task.cancel()
+        # Close graph database
+        await self.graph_store.close()
         logger.info("gateway_shutdown")

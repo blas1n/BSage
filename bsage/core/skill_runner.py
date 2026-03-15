@@ -137,14 +137,14 @@ class SkillRunner:
     async def _gather_vault_context(self, read_dirs: list[str], context: SkillContext) -> str:
         """Read vault notes and build a context string for LLM.
 
-        Uses RAG-based semantic retrieval when a retriever is available,
+        Uses index-based retrieval when a retriever is available,
         falling back to the original sequential read on failure or when
         the retriever is not configured.
         """
         if not read_dirs:
             return ""
 
-        if self._retriever and self._retriever.rag_available:
+        if self._retriever:
             query = ""
             if context.input_data:
                 query = str(context.input_data)[:500]
@@ -158,7 +158,7 @@ class SkillRunner:
                     top_k=_MAX_NOTES_PER_DIR,
                 )
             except Exception:
-                logger.warning("rag_gather_failed_fallback", exc_info=True)
+                logger.warning("index_gather_failed_fallback", exc_info=True)
 
         parts: list[str] = []
         total_chars = 0
