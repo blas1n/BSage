@@ -102,7 +102,7 @@ class TestWriteGarden:
         content = result.read_text()
         assert content.startswith("---\n")
         assert "type: idea" in content
-        assert "status: growing" in content
+        assert "status: seed" in content
         assert "source: garden-writer" in content
         assert "captured_at:" in content
         assert "[[BSage]]" in content

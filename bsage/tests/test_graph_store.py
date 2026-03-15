@@ -321,3 +321,80 @@ async def test_concurrent_read_during_write(store: GraphStore):
     results = await asyncio.gather(_read(), _write())
     # Read should return at least Alpha
     assert len(results[0]) >= 1
+
+
+# ------------------------------------------------------------------
+# Maturity-related queries
+# ------------------------------------------------------------------
+
+
+async def test_count_relationships_for_entity(store: GraphStore):
+    e1 = GraphEntity(name="NoteA", entity_type="note", source_path="garden/idea/a.md")
+    e2 = GraphEntity(name="Concept1", entity_type="concept", source_path="garden/idea/a.md")
+    e3 = GraphEntity(name="Concept2", entity_type="concept", source_path="garden/idea/b.md")
+    id1 = await store.upsert_entity(e1)
+    id2 = await store.upsert_entity(e2)
+    id3 = await store.upsert_entity(e3)
+
+    r1 = GraphRelationship(source_id=id1, target_id=id2, rel_type="references", source_path="a.md")
+    r2 = GraphRelationship(source_id=id3, target_id=id1, rel_type="related_to", source_path="b.md")
+    await store.upsert_relationship(r1)
+    await store.upsert_relationship(r2)
+    await store.commit()
+
+    count = await store.count_relationships_for_entity("garden/idea/a.md")
+    assert count >= 2
+
+
+async def test_count_relationships_for_entity_zero(store: GraphStore):
+    e = GraphEntity(name="Lonely", entity_type="note", source_path="garden/idea/lonely.md")
+    await store.upsert_entity(e)
+    await store.commit()
+
+    count = await store.count_relationships_for_entity("garden/idea/lonely.md")
+    assert count == 0
+
+
+async def test_count_distinct_sources(store: GraphStore):
+    e = GraphEntity(name="Multi", entity_type="concept", source_path="a.md")
+    eid = await store.upsert_entity(e)
+
+    p1 = ProvenanceRecord(
+        entity_id=eid,
+        source_path="a.md",
+        extraction_method="rule",
+        confidence=1.0,
+        extracted_at="2026-01-01T00:00:00",
+    )
+    p2 = ProvenanceRecord(
+        entity_id=eid,
+        source_path="b.md",
+        extraction_method="rule",
+        confidence=1.0,
+        extracted_at="2026-01-01T00:00:00",
+    )
+    await store.add_provenance(p1)
+    await store.add_provenance(p2)
+    await store.commit()
+
+    count = await store.count_distinct_sources("a.md")
+    assert count >= 1
+
+
+async def test_count_distinct_sources_zero(store: GraphStore):
+    count = await store.count_distinct_sources("nonexistent.md")
+    assert count == 0
+
+
+async def test_get_entity_updated_at(store: GraphStore):
+    e = GraphEntity(name="Timed", entity_type="note", source_path="garden/idea/timed.md")
+    await store.upsert_entity(e)
+    await store.commit()
+
+    ts = await store.get_entity_updated_at("garden/idea/timed.md")
+    assert ts is not None
+
+
+async def test_get_entity_updated_at_missing(store: GraphStore):
+    ts = await store.get_entity_updated_at("nonexistent.md")
+    assert ts is None

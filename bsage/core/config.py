@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     credentials_dir: Path = Path("./.credentials")
     prompts_dir: Path = Path("./prompts")
 
+    # Maturity lifecycle thresholds
+    maturity_seedling_min_relationships: int = 2
+    maturity_budding_min_sources: int = 3
+    maturity_evergreen_min_days_stable: int = 14
+    maturity_evergreen_min_relationships: int = 5
+
     # Runtime
     safe_mode: bool = True
     disabled_entries: list[str] = []

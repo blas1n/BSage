@@ -63,6 +63,23 @@ class TestSettings:
         settings = Settings(_env_file=None)
         assert settings.llm_api_base is None
 
+    def test_maturity_threshold_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Maturity lifecycle thresholds should have sensible defaults."""
+        monkeypatch.delenv("LLM_API_KEY", raising=False)
+        settings = Settings(_env_file=None)
+        assert settings.maturity_seedling_min_relationships == 2
+        assert settings.maturity_budding_min_sources == 3
+        assert settings.maturity_evergreen_min_days_stable == 14
+        assert settings.maturity_evergreen_min_relationships == 5
+
+    def test_maturity_thresholds_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Maturity thresholds should be configurable via env vars."""
+        monkeypatch.setenv("MATURITY_SEEDLING_MIN_RELATIONSHIPS", "5")
+        monkeypatch.setenv("MATURITY_BUDDING_MIN_SOURCES", "4")
+        settings = Settings(_env_file=None)
+        assert settings.maturity_seedling_min_relationships == 5
+        assert settings.maturity_budding_min_sources == 4
+
 
 class TestGetSettings:
     """Test the get_settings() factory function."""

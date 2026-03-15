@@ -18,6 +18,7 @@ from bsage.garden.vault import Vault
 
 if TYPE_CHECKING:
     from bsage.core.events import EventBus
+    from bsage.core.skill_context import GraphInterface
     from bsage.garden.sync import SyncManager
 
 logger = structlog.get_logger(__name__)
@@ -350,7 +351,7 @@ class GardenWriter:
 
         metadata: dict = {
             "type": note.note_type,
-            "status": "growing",
+            "status": "seed",
             "source": note.source,
             "captured_at": date_str,
         }
@@ -446,6 +447,93 @@ class GardenWriter:
         async with self._get_log_lock():
             await asyncio.to_thread(_write)
         logger.debug("input_log_written", source=source, path=str(log_path))
+
+    # ------------------------------------------------------------------
+    # Maturity lifecycle
+    # ------------------------------------------------------------------
+
+    _STATUS_RE = re.compile(r"^(status:\s*)\S+", re.MULTILINE)
+
+    async def update_frontmatter_status(self, note_path: Path, new_status: str) -> None:
+        """Update the ``status`` field in a note's YAML frontmatter in-place.
+
+        Args:
+            note_path: Absolute path to the markdown note.
+            new_status: New maturity status value.
+        """
+        content = await asyncio.to_thread(note_path.read_text, "utf-8")
+        updated = self._STATUS_RE.sub(rf"\g<1>{new_status}", content, count=1)
+        if updated == content:
+            return
+        await asyncio.to_thread(note_path.write_text, updated, encoding="utf-8")
+        rel_path = str(note_path.relative_to(self._vault.root))
+        await emit_event(
+            self._event_bus,
+            "NOTE_UPDATED",
+            {"path": rel_path, "field": "status", "new_value": new_status},
+        )
+        logger.info("maturity_status_updated", path=rel_path, new_status=new_status)
+
+    async def promote_maturity(
+        self,
+        graph: GraphInterface | None,
+        config: Any = None,
+    ) -> dict[str, Any]:
+        """Scan all garden notes and promote eligible ones.
+
+        Args:
+            graph: Graph interface for relationship/provenance queries.
+            config: Optional ``MaturityConfig`` override; uses Settings defaults if None.
+
+        Returns:
+            Dict with ``promoted`` count, ``checked`` count, and ``details`` list.
+        """
+        from bsage.garden.markdown_utils import extract_frontmatter
+        from bsage.garden.maturity import MaturityConfig, MaturityEvaluator
+
+        if graph is None:
+            return {"promoted": 0, "checked": 0, "details": []}
+
+        if config is None:
+            config = MaturityConfig()
+
+        evaluator = MaturityEvaluator(graph, config)
+        garden_base = self._vault.resolve_path("garden")
+
+        def _collect_md() -> list[Path]:
+            if not garden_base.is_dir():
+                return []
+            return sorted(garden_base.rglob("*.md"))
+
+        md_files = await asyncio.to_thread(_collect_md)
+        promoted = 0
+        details: list[dict[str, str]] = []
+
+        for md_file in md_files:
+            rel_path = str(md_file.relative_to(self._vault.root))
+            content = await asyncio.to_thread(md_file.read_text, "utf-8")
+            fm = extract_frontmatter(content)
+            current_status = fm.get("status", "seed")
+
+            new_status = await evaluator.evaluate(rel_path, current_status)
+            if new_status is not None:
+                await self.update_frontmatter_status(md_file, new_status.value)
+                promoted += 1
+                details.append(
+                    {
+                        "path": rel_path,
+                        "from": current_status,
+                        "to": new_status.value,
+                    }
+                )
+                logger.info(
+                    "note_promoted",
+                    path=rel_path,
+                    from_status=current_status,
+                    to_status=new_status.value,
+                )
+
+        return {"promoted": promoted, "checked": len(md_files), "details": details}
 
     async def handle_write_note(self, args: dict[str, Any]) -> dict[str, Any]:
         """Handle a write-note tool call from the LLM.

@@ -71,6 +71,17 @@ class SchedulerInterface(Protocol):
 
 
 @runtime_checkable
+class GraphInterface(Protocol):
+    """Protocol for graph queries (subset exposed to plugins)."""
+
+    async def count_relationships_for_entity(self, entity_name: str) -> int: ...
+
+    async def count_distinct_sources(self, entity_name: str) -> int: ...
+
+    async def get_entity_updated_at(self, entity_name: str) -> str | None: ...
+
+
+@runtime_checkable
 class EventEmitter(Protocol):
     """Protocol for emitting events to the EventBus."""
 
@@ -131,3 +142,4 @@ class SkillContext:
     retriever: RetrieverInterface | None = field(default=None)
     scheduler: SchedulerInterface | None = field(default=None)
     events: EventEmitter | None = field(default=None)
+    graph: GraphInterface | None = field(default=None)

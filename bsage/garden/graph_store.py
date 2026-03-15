@@ -410,6 +410,70 @@ class GraphStore:
         return row[0] if row else 0
 
     # ------------------------------------------------------------------
+    # Maturity-related queries
+    # ------------------------------------------------------------------
+
+    async def count_relationships_for_entity(self, entity_name: str) -> int:
+        """Count all relationships (inbound + outbound) for an entity by source_path."""
+        norm = _normalize(entity_name)
+        row = await self._fetchone(
+            """SELECT COUNT(*) FROM relationships r
+               JOIN entities e ON e.id = r.source_id OR e.id = r.target_id
+               WHERE e.source_path = ?""",
+            (entity_name,),
+        )
+        if row and row[0]:
+            return row[0]
+        # Fallback: try by normalized name
+        row = await self._fetchone(
+            """SELECT COUNT(*) FROM (
+                   SELECT r.id FROM relationships r
+                   JOIN entities e ON e.id = r.source_id
+                   WHERE e.name_normalized = ?
+                   UNION ALL
+                   SELECT r.id FROM relationships r
+                   JOIN entities e ON e.id = r.target_id
+                   WHERE e.name_normalized = ?
+               )""",
+            (norm, norm),
+        )
+        return row[0] if row else 0
+
+    async def count_distinct_sources(self, entity_name: str) -> int:
+        """Count distinct source_path entries in provenance for an entity."""
+        norm = _normalize(entity_name)
+        row = await self._fetchone(
+            """SELECT COUNT(DISTINCT p.source_path) FROM provenance p
+               JOIN entities e ON e.id = p.entity_id
+               WHERE e.source_path = ?""",
+            (entity_name,),
+        )
+        if row and row[0]:
+            return row[0]
+        row = await self._fetchone(
+            """SELECT COUNT(DISTINCT p.source_path) FROM provenance p
+               JOIN entities e ON e.id = p.entity_id
+               WHERE e.name_normalized = ?""",
+            (norm,),
+        )
+        return row[0] if row else 0
+
+    async def get_entity_updated_at(self, entity_name: str) -> str | None:
+        """Return the updated_at timestamp for an entity."""
+        norm = _normalize(entity_name)
+        row = await self._fetchone(
+            "SELECT updated_at FROM entities WHERE source_path = ? LIMIT 1",
+            (entity_name,),
+        )
+        if row:
+            return row[0]
+        row = await self._fetchone(
+            "SELECT updated_at FROM entities WHERE name_normalized = ? LIMIT 1",
+            (norm,),
+        )
+        return row[0] if row else None
+
+    # ------------------------------------------------------------------
     # Source content hashing (incremental rebuild)
     # ------------------------------------------------------------------
 

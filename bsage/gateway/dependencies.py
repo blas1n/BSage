@@ -201,6 +201,7 @@ class AppState:
             on_refresh=self._refresh_registry,
             runtime_config=self.runtime_config,
             retriever=self.retriever,
+            graph_store=self.graph_store,
         )
 
         self.chat_bridge = ChatBridge(
