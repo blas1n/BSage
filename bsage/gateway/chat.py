@@ -27,10 +27,10 @@ async def gather_vault_context(
 ) -> str:
     """Read relevant vault notes and concatenate them up to *max_chars*.
 
-    Uses RAG-based semantic search when *retriever* is available and a
+    Uses index-based retrieval when *retriever* is available and a
     *query* is provided.  Falls back to recency-based reading otherwise.
     """
-    if retriever and retriever.rag_available and query:
+    if retriever and query:
         try:
             return await retriever.retrieve(
                 query=query,
@@ -38,7 +38,7 @@ async def gather_vault_context(
                 max_chars=max_chars,
             )
         except Exception:
-            logger.warning("chat_rag_fallback", exc_info=True)
+            logger.warning("chat_index_fallback", exc_info=True)
 
     # Original recency-based fallback
     segments: list[str] = []

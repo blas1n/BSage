@@ -273,6 +273,7 @@ class TestAgentLoopOnRefresh:
         garden_writer = MagicMock()
         garden_writer.write_seed = AsyncMock()
         garden_writer.write_action = AsyncMock()
+        garden_writer.write_input_log = AsyncMock()
         llm_client = MagicMock()
         llm_client.chat = AsyncMock(return_value="none")
         return {

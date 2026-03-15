@@ -93,7 +93,7 @@ class AgentLoop:
     async def on_input(self, plugin_name: str, raw_data: dict[str, Any]) -> list[dict[str, Any]]:
         """Process input from a Plugin and run triggered entries.
 
-        1. Write raw data to seeds.
+        1. Preserve raw data in input-log, then refine and write to seeds.
         2. Run deterministic on_input-triggered plugins/skills.
         3. Let LLM decide and execute on-demand plugins via tool use.
         """
@@ -102,8 +102,13 @@ class AgentLoop:
         logger.info("agent_loop_input", plugin_name=plugin_name)
         await emit_event(self._event_bus, "INPUT_RECEIVED", {"plugin_name": plugin_name})
 
-        # 1. Write raw data to seeds
-        await self._garden_writer.write_seed(plugin_name, raw_data)
+        # 1a. Preserve raw data in input-log (transparency)
+        raw_summary = json.dumps(raw_data, default=str, ensure_ascii=False)
+        await self._garden_writer.write_input_log(plugin_name, raw_summary)
+
+        # 1b. Refine and write to seeds
+        refined = await self._refine_seed(plugin_name, raw_data)
+        await self._garden_writer.write_seed(plugin_name, refined)
 
         # 2. Run deterministic on_input-triggered plugins/skills
         triggered = self._find_triggered(plugin_name)
@@ -138,6 +143,65 @@ class AgentLoop:
             {"plugin_name": plugin_name, "entries_run": len(results)},
         )
         return results
+
+    # ------------------------------------------------------------------
+    # Seed refinement
+    # ------------------------------------------------------------------
+
+    _REFINE_PROMPT_FALLBACK = (
+        "You are a data cleaner for a personal knowledge base. "
+        "Clean the following input WITHOUT changing its meaning.\n"
+        "Rules:\n"
+        "- Fix typos and grammar\n"
+        "- Extract the core content (remove noise, repetition)\n"
+        "- Generate a concise title (under 30 chars)\n"
+        "- Assign up to 3 relevant tags\n"
+        '- Output ONLY valid JSON: {"title": "...", "content": "...", "tags": [...]}\n'
+        "- Preserve the original language (Korean, English, etc.)"
+    )
+
+    @property
+    def _refine_prompt(self) -> str:
+        """Load seed-refiner prompt from PromptRegistry, falling back to inline."""
+        if self._prompt_registry:
+            try:
+                return self._prompt_registry.get("seed-refiner")
+            except KeyError:
+                pass
+        return self._REFINE_PROMPT_FALLBACK
+
+    async def _refine_seed(self, plugin_name: str, raw_data: dict[str, Any]) -> dict[str, Any]:
+        """Refine raw input data using a lightweight LLM pass.
+
+        Falls back to raw_data if refinement fails.
+        """
+        # If already structured (has title + content), skip refinement
+        if "title" in raw_data and "content" in raw_data:
+            return raw_data
+
+        raw_text = json.dumps(raw_data, default=str, ensure_ascii=False)
+        if len(raw_text) < 20:
+            return raw_data
+
+        response = ""
+        try:
+            response = await self._llm_client.chat(
+                system=self._refine_prompt,
+                messages=[{"role": "user", "content": raw_text}],
+            )
+            parsed = json.loads(response.strip())
+            if isinstance(parsed, dict) and "title" in parsed and "content" in parsed:
+                logger.info("seed_refined", plugin_name=plugin_name)
+                return parsed
+        except (json.JSONDecodeError, ValueError, TypeError, RuntimeError, OSError):
+            logger.debug(
+                "seed_refine_failed_using_raw",
+                plugin_name=plugin_name,
+                response_preview=response[:200],
+                exc_info=True,
+            )
+
+        return raw_data
 
     # ------------------------------------------------------------------
     # Trigger matching
@@ -216,11 +280,8 @@ class AgentLoop:
         dirs = args.get("context_dirs")
         max_results = args.get("max_results", 10)
         if self._retriever:
-            from bsage.core.skill_context import RetrieverAdapter
-
-            adapter = RetrieverAdapter(self._retriever)
-            return await adapter.search(query, context_dirs=dirs, top_k=max_results)
-        return "(search not available — embedding model not configured)"
+            return await self._retriever.search(query, context_dirs=dirs, top_k=max_results)
+        return "(search not available — index not configured)"
 
     async def _handle_tool_call(self, tool_call_id: str, name: str, args: dict[str, Any]) -> str:
         """Execute an entry triggered by an LLM tool call.

@@ -71,6 +71,7 @@ def mock_deps():
     garden_writer = MagicMock()
     garden_writer.write_seed = AsyncMock()
     garden_writer.write_action = AsyncMock()
+    garden_writer.write_input_log = AsyncMock()
     llm_client = MagicMock()
     llm_client.chat = AsyncMock(return_value="none")
     return {
@@ -655,7 +656,7 @@ class TestHandleToolCallNewTools:
 
     async def test_search_vault_with_retriever(self, mock_deps) -> None:
         mock_retriever = AsyncMock()
-        mock_retriever.retrieve = AsyncMock(return_value="Found: relevant note content")
+        mock_retriever.search = AsyncMock(return_value="Found: relevant note content")
         loop = AgentLoop(**mock_deps, retriever=mock_retriever)
         result = await loop._handle_tool_call("tc1", "search-vault", {"query": "test query"})
         assert "relevant note content" in result
@@ -667,7 +668,7 @@ class TestHandleToolCallNewTools:
 
     async def test_search_vault_handles_error(self, mock_deps) -> None:
         mock_retriever = AsyncMock()
-        mock_retriever.retrieve = AsyncMock(side_effect=RuntimeError("search failed"))
+        mock_retriever.search = AsyncMock(side_effect=RuntimeError("search failed"))
         loop = AgentLoop(**mock_deps, retriever=mock_retriever)
         result = await loop._handle_tool_call("tc1", "search-vault", {"query": "test"})
         assert "error" in result

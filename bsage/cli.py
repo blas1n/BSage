@@ -378,45 +378,23 @@ def install(name: str) -> None:
 
 
 @main.command()
-@click.option("--dirs", default=None, help="Comma-separated dirs to index (default: seeds,garden)")
-def reindex(dirs: str | None) -> None:
-    """Rebuild the RAG index for the vault."""
+def reindex() -> None:
+    """Rebuild the _index/ files for the vault."""
     settings = get_settings()
 
-    from bsage.core.runtime_config import RuntimeConfig
-    from bsage.garden.embeddings import EmbeddingClient
+    from bsage.garden.file_index_reader import FileIndexReader
     from bsage.garden.retriever import VaultRetriever
-    from bsage.garden.vector_store import VectorStore
-
-    persist_path = settings.credentials_dir / "runtime_config.json"
-    runtime_config = RuntimeConfig.from_settings(settings, persist_path=persist_path)
-
-    if not runtime_config.embedding_model:
-        click.echo("Error: EMBEDDING_MODEL not configured. Set it in .env", err=True)
-        raise SystemExit(1)
 
     vault = Vault(settings.vault_path)
-    rag_path = settings.rag_index_path or (settings.vault_path / ".rag" / "index.db")
-    vector_store = VectorStore(rag_path)
-    embedding_client = EmbeddingClient(runtime_config=runtime_config)
-    retriever = VaultRetriever(
-        vault=vault, vector_store=vector_store, embedding_client=embedding_client
-    )
-
-    target_dirs = dirs.split(",") if dirs else None
-
-    def _progress(current: int, total: int) -> None:
-        click.echo(f"\r  Indexing {current}/{total}", nl=False)
+    index_reader = FileIndexReader(vault=vault)
+    retriever = VaultRetriever(vault=vault, index_reader=index_reader)
 
     async def _run() -> int:
-        await vector_store.initialize()
-        count = await retriever.reindex_all(dirs=target_dirs, on_progress=_progress)
-        await vector_store.close()
-        return count
+        return await retriever.reindex_all()
 
     click.echo(f"Reindexing vault at {settings.vault_path}")
     count = asyncio.run(_run())
-    click.echo(f"\n  Done. {count} notes indexed.")
+    click.echo(f"  Done. {count} notes indexed.")
 
 
 @main.command()

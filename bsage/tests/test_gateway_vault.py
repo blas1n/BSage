@@ -92,7 +92,7 @@ def mock_state(vault_root):
     state.credential_store = MagicMock()
     state.credential_store.list_services = MagicMock(return_value=[])
     state.retriever = MagicMock()
-    state.retriever.rag_available = False
+    state.retriever.index_available = False
     state.chat_bridge = AsyncMock()
     state.chat_bridge.chat = AsyncMock(return_value="Mocked")
     state.prompt_registry = MagicMock(spec=PromptRegistry)

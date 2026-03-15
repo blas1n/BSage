@@ -69,7 +69,7 @@ def mock_state():
     state.credential_store = MagicMock()
     state.credential_store.list_services = MagicMock(return_value=[])
     state.retriever = MagicMock()
-    state.retriever.rag_available = False
+    state.retriever.index_available = False
     state.chat_bridge = AsyncMock()
     state.chat_bridge.chat = AsyncMock(return_value="Mocked chat response")
     return state
@@ -762,10 +762,10 @@ class TestConfigEndpointsExtended:
         assert "has_llm_api_key" in data
         assert data["has_llm_api_key"] is True  # test-key is set
 
-    def test_get_config_includes_has_embedding_api_key(self, client) -> None:
+    def test_get_config_includes_index_available(self, client) -> None:
         response = client.get("/api/config")
         data = response.json()
-        assert "has_embedding_api_key" in data
+        assert "index_available" in data
 
     def test_get_config_includes_disabled_entries(self, client) -> None:
         response = client.get("/api/config")

@@ -34,15 +34,12 @@ class _ConfigState:
     llm_api_key: str
     llm_api_base: str | None
     safe_mode: bool
-    embedding_model: str = ""
-    embedding_api_key: str = ""
-    embedding_api_base: str | None = None
     disabled_entries: list[str] = field(default_factory=list)
 
 
 # Pre-computed at import time — avoids repeated introspection.
 _STATE_FIELD_NAMES: frozenset[str] = frozenset(f.name for f in dc_fields(_ConfigState))
-_SECRET_FIELDS: frozenset[str] = frozenset({"llm_api_key", "embedding_api_key"})
+_SECRET_FIELDS: frozenset[str] = frozenset({"llm_api_key"})
 
 
 def _validate(kwargs: dict[str, Any]) -> None:

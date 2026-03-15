@@ -261,6 +261,12 @@ class GardenWriter:
         self._vault = vault
         self._sync_manager = sync_manager
         self._event_bus = event_bus
+        self._log_lock: asyncio.Lock | None = None
+
+    def _get_log_lock(self) -> asyncio.Lock:
+        if self._log_lock is None:
+            self._log_lock = asyncio.Lock()
+        return self._log_lock
 
     async def write_seed(self, source: str, data: dict) -> Path:
         """Write raw collected data as a seed note.
@@ -401,12 +407,45 @@ class GardenWriter:
             else:
                 log_path.write_text(f"# Actions — {date_str}\n\n" + entry, encoding="utf-8")
 
-        await asyncio.to_thread(_write)
+        async with self._get_log_lock():
+            await asyncio.to_thread(_write)
         logger.info("action_logged", skill_name=skill_name, path=str(log_path))
         await self._notify_sync("action", log_path, skill_name)
         await emit_event(
             self._event_bus, "ACTION_LOGGED", {"path": str(log_path), "source": skill_name}
         )
+
+    async def write_input_log(self, source: str, raw_text: str) -> None:
+        """Write raw input data to the input-log directory for transparency.
+
+        Creates or appends to actions/input-log/{YYYY-MM-DD}.md with a
+        timestamped entry preserving the raw data before refinement.
+
+        Args:
+            source: Name of the input source (plugin name).
+            raw_text: Raw input data as text.
+        """
+        now = datetime.now(tz=UTC)
+        date_str = now.strftime("%Y-%m-%d")
+        time_str = now.strftime("%H:%M:%S")
+
+        log_dir = self._vault.resolve_path("actions/input-log")
+        await asyncio.to_thread(log_dir.mkdir, parents=True, exist_ok=True)
+
+        log_path = log_dir / f"{date_str}.md"
+        truncated = raw_text[:500] if len(raw_text) > 500 else raw_text
+        entry = f"- **{time_str}** | `{source}` | {truncated}\n"
+
+        def _write() -> None:
+            if log_path.exists():
+                with log_path.open("a", encoding="utf-8") as f:
+                    f.write(entry)
+            else:
+                log_path.write_text(f"# Input Log — {date_str}\n\n" + entry, encoding="utf-8")
+
+        async with self._get_log_lock():
+            await asyncio.to_thread(_write)
+        logger.debug("input_log_written", source=source, path=str(log_path))
 
     async def handle_write_note(self, args: dict[str, Any]) -> dict[str, Any]:
         """Handle a write-note tool call from the LLM.
@@ -544,7 +583,7 @@ class GardenWriter:
             if not abs_path.exists():
                 return
             content = await self._vault.read_note_content(abs_path)
-        except Exception:
+        except (FileNotFoundError, OSError, UnicodeDecodeError):
             return
 
         if not content.startswith("---\n"):
@@ -559,7 +598,7 @@ class GardenWriter:
 
         try:
             metadata = yaml.safe_load(fm_str)
-        except Exception:
+        except (yaml.YAMLError, ValueError):
             return
         if not isinstance(metadata, dict):
             return
