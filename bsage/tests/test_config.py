@@ -72,6 +72,24 @@ class TestSettings:
         assert settings.maturity_evergreen_min_days_stable == 14
         assert settings.maturity_evergreen_min_relationships == 5
 
+    def test_embedding_config_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Embedding config should be disabled by default."""
+        monkeypatch.delenv("EMBEDDING_MODEL", raising=False)
+        settings = Settings(_env_file=None)
+        assert settings.embedding_model == ""
+        assert settings.embedding_api_key == ""
+        assert settings.embedding_api_base is None
+
+    def test_embedding_config_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Embedding config should be loadable from env vars."""
+        monkeypatch.setenv("EMBEDDING_MODEL", "text-embedding-3-small")
+        monkeypatch.setenv("EMBEDDING_API_KEY", "sk-embed-key")
+        monkeypatch.setenv("EMBEDDING_API_BASE", "http://localhost:11434")
+        settings = Settings(_env_file=None)
+        assert settings.embedding_model == "text-embedding-3-small"
+        assert settings.embedding_api_key == "sk-embed-key"
+        assert settings.embedding_api_base == "http://localhost:11434"
+
     def test_maturity_thresholds_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Maturity thresholds should be configurable via env vars."""
         monkeypatch.setenv("MATURITY_SEEDLING_MIN_RELATIONSHIPS", "5")

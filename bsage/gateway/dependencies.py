@@ -22,6 +22,7 @@ from bsage.core.safe_mode import SafeModeGuard
 from bsage.core.scheduler import Scheduler
 from bsage.core.skill_loader import SkillLoader
 from bsage.core.skill_runner import SkillRunner
+from bsage.garden.embedder import Embedder
 from bsage.garden.file_index_reader import FileIndexReader
 from bsage.garden.graph_extractor import GraphExtractor
 from bsage.garden.graph_retriever import GraphRetriever
@@ -31,6 +32,7 @@ from bsage.garden.ontology import OntologyRegistry
 from bsage.garden.retriever import VaultRetriever
 from bsage.garden.sync import SyncManager
 from bsage.garden.vault import Vault
+from bsage.garden.vector_store import VectorStore
 from bsage.garden.writer import GardenWriter
 from bsage.gateway.event_broadcaster import WebSocketEventBroadcaster
 from bsage.gateway.ws import manager as ws_manager
@@ -127,10 +129,21 @@ class AppState:
         self.graph_extractor = GraphExtractor(llm_extractor=self.llm_extractor)
         self.graph_retriever = GraphRetriever(self.graph_store, self.vault)
 
+        # Vector embeddings (opt-in via EMBEDDING_MODEL env var)
+        vector_db_path = settings.vault_path / ".bsage" / "vectors.db"
+        self.vector_store = VectorStore(vector_db_path)
+        self.embedder = Embedder(
+            model=settings.embedding_model,
+            api_key=settings.embedding_api_key,
+            api_base=settings.embedding_api_base,
+        )
+
         self.retriever = VaultRetriever(
             vault=self.vault,
             index_reader=self.index_reader,
             graph_retriever=self.graph_retriever,
+            vector_store=self.vector_store if self.embedder.enabled else None,
+            embedder=self.embedder if self.embedder.enabled else None,
         )
 
         # Skills
@@ -169,6 +182,15 @@ class AppState:
         # Initialize knowledge graph
         await self.graph_store.initialize()
         await self.ontology.load()
+
+        # Initialize vector store (always, even if embedder disabled — no-op)
+        if self.embedder.enabled:
+            await self.vector_store.initialize()
+
+            from bsage.garden.vector_subscriber import VectorSubscriber
+
+            vector_sub = VectorSubscriber(self.vector_store, self.vault, self.embedder)
+            self.event_bus.subscribe(vector_sub)
         graph_sub = GraphSubscriber(self.graph_store, self.vault, self.graph_extractor)
         self.event_bus.subscribe(graph_sub)
 
@@ -321,6 +343,7 @@ class AppState:
             task = getattr(self, attr, None)
             if task and not task.done():
                 task.cancel()
-        # Close graph database
+        # Close databases
         await self.graph_store.close()
+        await self.vector_store.close()
         logger.info("gateway_shutdown")

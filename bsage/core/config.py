@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     credentials_dir: Path = Path("./.credentials")
     prompts_dir: Path = Path("./prompts")
 
+    # Embedding / Vector search (empty model = disabled)
+    embedding_model: str = ""
+    embedding_api_key: str = ""
+    embedding_api_base: str | None = None
+
     # Maturity lifecycle thresholds
     maturity_seedling_min_relationships: int = 2
     maturity_budding_min_sources: int = 3
