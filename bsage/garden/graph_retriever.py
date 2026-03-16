@@ -1,4 +1,4 @@
-"""GraphRetriever — graph-based note retrieval for knowledge graph RAG."""
+"""GraphRetriever — graph-based note retrieval for knowledge graph RAG (v2.2)."""
 
 from __future__ import annotations
 
@@ -12,6 +12,17 @@ if TYPE_CHECKING:
     from bsage.garden.vault import Vault
 
 logger = structlog.get_logger(__name__)
+
+
+def _score(confidence: float, weight: float, depth: int) -> float:
+    """Compute a retrieval relevance score.
+
+    Higher is better.  ``confidence * weight / depth`` ensures that
+    high-confidence, strong edges at shallow depth rank highest.
+    """
+    if depth <= 0:
+        depth = 1
+    return confidence * weight / depth
 
 
 class GraphRetriever:
@@ -51,7 +62,8 @@ class GraphRetriever:
             return ""
 
         # 2. Multi-hop traversal from each matched entity
-        source_paths: dict[str, int] = {}  # path -> min depth
+        # v2.2: track score = confidence * weight / depth for ranking
+        source_scores: dict[str, float] = {}  # path -> best score
         graph_lines: list[str] = ["## Graph Context"]
 
         for entity in matched:
@@ -64,20 +76,28 @@ class GraphRetriever:
                     f"**{neighbor.name}** ({neighbor.entity_type})"
                 )
                 if neighbor.source_path:
-                    source_paths.setdefault(neighbor.source_path, 1)
+                    s = _score(rel.confidence, rel.weight, 1)
+                    source_scores[neighbor.source_path] = max(
+                        source_scores.get(neighbor.source_path, 0.0), s
+                    )
 
             # Deeper hops
             hops = await self._store.multi_hop_query(entity.id, max_hops=max_hops)
             for depth, hop_entity in hops:
                 if hop_entity.source_path:
-                    source_paths.setdefault(hop_entity.source_path, depth)
+                    s = _score(hop_entity.confidence, 0.5, depth)
+                    source_scores[hop_entity.source_path] = max(
+                        source_scores.get(hop_entity.source_path, 0.0), s
+                    )
 
-            # Include the matched entity's own source
+            # Include the matched entity's own source (highest priority)
             if entity.source_path:
-                source_paths.setdefault(entity.source_path, 0)
+                source_scores[entity.source_path] = max(
+                    source_scores.get(entity.source_path, 0.0), 10.0
+                )
 
-        # 3. Read note contents (sorted by depth, limited to top_k)
-        sorted_paths = sorted(source_paths.items(), key=lambda x: x[1])[:top_k]
+        # 3. Read note contents (sorted by score descending, limited to top_k)
+        sorted_paths = sorted(source_scores.items(), key=lambda x: -x[1])[:top_k]
 
         parts: list[str] = ["\n".join(graph_lines)]
         total = len(parts[0])
@@ -86,7 +106,7 @@ class GraphRetriever:
             parts.append("\n## Related Notes")
             total += len(parts[-1])
 
-        for path, _depth in sorted_paths:
+        for path, _score_val in sorted_paths:
             if total >= max_chars:
                 break
             try:

@@ -66,7 +66,9 @@ class LLMExtractor:
         self._processed_hashes: OrderedDict[str, None] = OrderedDict()
         self._unknown_type_counts: dict[str, int] = {}
         self._unknown_rel_type_counts: dict[str, int] = {}
-        self._unknown_threshold: int = 3
+        # Read threshold from ontology evolution_config, fallback to 3
+        evo_config = ontology.get_evolution_config()
+        self._unknown_threshold: int = int(evo_config.get("create_threshold", 3))
 
     async def extract(
         self, rel_path: str, body_text: str
