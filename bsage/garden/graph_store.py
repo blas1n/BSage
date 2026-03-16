@@ -530,7 +530,20 @@ class GraphStore:
     ) -> dict[str, int]:
         count = 0
         skipped = 0
-        for subdir in ("seeds", "garden"):
+        # v2.2: scan entity-type folders + seeds + legacy garden
+        scan_dirs = (
+            "seeds",
+            "ideas",
+            "insights",
+            "projects",
+            "people",
+            "events",
+            "tasks",
+            "facts",
+            "preferences",
+            "garden",
+        )
+        for subdir in scan_dirs:
             base = vault.resolve_path(subdir)
 
             def _collect_md(p: Path = base) -> list[Path]:

@@ -38,6 +38,16 @@ class Settings(BaseSettings):
     maturity_evergreen_min_days_stable: int = 14
     maturity_evergreen_min_relationships: int = 5
 
+    # Confidence decay — halflife in days per knowledge layer
+    decay_halflife_semantic: int = 365
+    decay_halflife_episodic: int = 30
+    decay_halflife_procedural: int = 90
+    decay_halflife_affective: int = 60
+
+    # Edge lifecycle
+    edge_promotion_min_mentions: int = 3
+    edge_decay_days: int = 90
+
     # Runtime
     safe_mode: bool = True
     disabled_entries: list[str] = []

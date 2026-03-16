@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -394,6 +395,122 @@ class OntologyRegistry:
     def get_evolution_config(self) -> dict[str, Any]:
         """Return the evolution configuration."""
         return dict(self._data.get("evolution_config", {}))
+
+    # ------------------------------------------------------------------
+    # Schema evolution operations (v2.2)
+    # ------------------------------------------------------------------
+
+    async def deprecate_entity_type(self, name: str, *, reason: str = "") -> bool:
+        """Mark an entity type as deprecated. Returns True if changed."""
+        types = self._data.get("entity_types", {})
+        entry = types.get(name)
+        if entry is None or entry.get("deprecated"):
+            return False
+        today = datetime.now(tz=UTC).strftime("%Y-%m-%d")
+        entry["deprecated"] = True
+        entry["deprecated_at"] = today
+        await self.save()
+        await self._append_changelog("DEPRECATE", f"Entity type `{name}` deprecated. {reason}")
+        logger.info("ontology_entity_type_deprecated", name=name, reason=reason)
+        return True
+
+    async def merge_entity_types(
+        self, source_name: str, target_name: str, *, reason: str = ""
+    ) -> bool:
+        """Merge *source_name* into *target_name* (deprecate source).
+
+        Returns True if the merge was performed.
+        """
+        types = self._data.get("entity_types", {})
+        source = types.get(source_name)
+        target = types.get(target_name)
+        if source is None or target is None:
+            return False
+        if source.get("deprecated"):
+            return False
+        today = datetime.now(tz=UTC).strftime("%Y-%m-%d")
+        source["deprecated"] = True
+        source["deprecated_at"] = today
+        source["merged_into"] = target_name
+        # Preserve old name as alias description
+        await self.save()
+        await self._append_changelog(
+            "MERGE",
+            f"`{source_name}` merged into `{target_name}`. {reason}",
+        )
+        logger.info(
+            "ontology_entity_types_merged",
+            source=source_name,
+            target=target_name,
+            reason=reason,
+        )
+        return True
+
+    async def split_entity_type(
+        self,
+        original: str,
+        new_name: str,
+        new_description: str,
+        *,
+        reason: str = "",
+        knowledge_layer: str = "semantic",
+        folder: str | None = None,
+    ) -> bool:
+        """Split a subset of *original* into a new type *new_name*.
+
+        Returns True if the new type was created.
+        """
+        types = self._data.get("entity_types", {})
+        if original not in types or new_name in types:
+            return False
+        entry: dict[str, Any] = {
+            "description": new_description,
+            "knowledge_layer": knowledge_layer,
+            "split_from": original,
+        }
+        if folder:
+            entry["folder"] = folder
+        types[new_name] = entry
+        await self.save()
+        await self._append_changelog(
+            "SPLIT",
+            f"`{original}` split → new type `{new_name}`. {reason}",
+        )
+        logger.info("ontology_entity_type_split", original=original, new_name=new_name)
+        return True
+
+    async def promote_entity_type(self, name: str, *, reason: str = "") -> bool:
+        """Promote an entity type to top-level (placeholder for hierarchy changes).
+
+        Currently logs the promotion; hierarchy data model is a future extension.
+        Returns True if the type exists and was logged.
+        """
+        types = self._data.get("entity_types", {})
+        if name not in types:
+            return False
+        await self._append_changelog("PROMOTE", f"Entity type `{name}` promoted. {reason}")
+        logger.info("ontology_entity_type_promoted", name=name, reason=reason)
+        return True
+
+    # ------------------------------------------------------------------
+    # Changelog
+    # ------------------------------------------------------------------
+
+    async def _append_changelog(self, operation: str, detail: str) -> None:
+        """Append an entry to ontology-changelog.md next to ontology.yaml."""
+        changelog_path = self._path.parent / "ontology-changelog.md"
+        today = datetime.now(tz=UTC).strftime("%Y-%m-%d")
+        version = self.schema_version
+        entry = f"\n## {today} — schema v{version}\n\n### {operation}\n- {detail}\n"
+
+        def _write() -> None:
+            if changelog_path.exists():
+                with open(changelog_path, "a", encoding="utf-8") as f:
+                    f.write(entry)
+            else:
+                changelog_path.write_text(f"# Ontology Changelog\n{entry}", encoding="utf-8")
+
+        await asyncio.to_thread(_write)
 
     # ------------------------------------------------------------------
     # Schema metadata

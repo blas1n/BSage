@@ -18,6 +18,7 @@ from bsage.garden.vault import Vault
 if TYPE_CHECKING:
     from bsage.core.events import EventBus
     from bsage.core.skill_context import GraphInterface
+    from bsage.garden.ontology import OntologyRegistry
     from bsage.garden.sync import SyncManager
 
 logger = structlog.get_logger(__name__)
@@ -78,7 +79,7 @@ def _build_frontmatter(metadata: dict) -> str:
 
 _MAX_ACTION_SUMMARY = 200
 
-_VALID_NOTE_TYPES = {"idea", "insight", "project", "event", "task"}
+_VALID_NOTE_TYPES = {"idea", "insight", "project", "event", "task", "fact", "person", "preference"}
 
 WRITE_NOTE_TOOL: dict[str, Any] = {
     "type": "function",
@@ -266,16 +267,27 @@ class GardenWriter:
         vault: Vault,
         sync_manager: SyncManager | None = None,
         event_bus: EventBus | None = None,
+        ontology: OntologyRegistry | None = None,
     ) -> None:
         self._vault = vault
         self._sync_manager = sync_manager
         self._event_bus = event_bus
+        self._ontology = ontology
         self._log_lock: asyncio.Lock | None = None
 
     def _get_log_lock(self) -> asyncio.Lock:
         if self._log_lock is None:
             self._log_lock = asyncio.Lock()
         return self._log_lock
+
+    def _resolve_folder(self, note_type: str) -> str:
+        """Resolve the vault folder for a note type using ontology mapping."""
+        if self._ontology:
+            folder = self._ontology.get_entity_folder(note_type)
+            if folder:
+                return folder.rstrip("/")
+        # Fallback: use type name as folder (e.g. "idea" → "ideas")
+        return f"{note_type}s" if not note_type.endswith("s") else note_type
 
     async def write_seed(self, source: str, data: dict) -> Path:
         """Write raw collected data as a seed note.
@@ -333,8 +345,9 @@ class GardenWriter:
     async def write_garden(self, note: GardenNote | dict) -> Path:
         """Write a processed garden note with deduplication.
 
-        Creates a file at garden/{note_type}/{slug}.md. If a file with the
-        same slug already exists, appends _001, _002, etc.
+        v2.2: Uses the ontology folder mapping (e.g. ``ideas/``, ``events/``)
+        instead of ``garden/{type}/``. Falls back to ``{note_type}/`` if no
+        mapping exists.
 
         Args:
             note: The GardenNote or dict with note fields to write.
@@ -348,7 +361,9 @@ class GardenWriter:
         date_str = now.strftime("%Y-%m-%d")
         slug = _slugify(note.title)
 
-        type_dir = self._vault.resolve_path(f"garden/{note.note_type}")
+        # v2.2: resolve folder from ontology or fall back to type name
+        folder = self._resolve_folder(note.note_type)
+        type_dir = self._vault.resolve_path(folder)
         type_dir.mkdir(parents=True, exist_ok=True)
 
         file_path = type_dir / f"{slug}.md"
@@ -513,12 +528,28 @@ class GardenWriter:
             config = MaturityConfig()
 
         evaluator = MaturityEvaluator(graph, config)
-        garden_base = self._vault.resolve_path("garden")
+
+        # v2.2: scan all entity-type folders, not just garden/
+        scan_dirs = [
+            "ideas",
+            "insights",
+            "projects",
+            "people",
+            "events",
+            "tasks",
+            "facts",
+            "preferences",
+        ]
+        # Also scan legacy garden/ if it exists
+        scan_dirs.append("garden")
 
         def _collect_md() -> list[Path]:
-            if not garden_base.is_dir():
-                return []
-            return sorted(garden_base.rglob("*.md"))
+            files: list[Path] = []
+            for d in scan_dirs:
+                base = self._vault.root / d
+                if base.is_dir():
+                    files.extend(base.rglob("*.md"))
+            return sorted(files)
 
         md_files = await asyncio.to_thread(_collect_md)
         promoted = 0

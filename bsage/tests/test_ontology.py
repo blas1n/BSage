@@ -274,3 +274,125 @@ async def test_version_property_compat(tmp_path):
 
     assert registry.version == "3"
     assert registry.schema_version == 3
+
+
+# ------------------------------------------------------------------
+# Schema evolution operations (v2.2)
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio()
+async def test_deprecate_entity_type(tmp_path):
+    path = tmp_path / "ontology.yaml"
+    registry = OntologyRegistry(path)
+    await registry.load()
+
+    result = await registry.deprecate_entity_type("tool", reason="unused")
+    assert result is True
+    assert not registry.is_valid_entity_type("tool")
+    # Still in get_all
+    assert "tool" in registry.get_all_entity_types()
+    # Changelog created
+    changelog = (tmp_path / "ontology-changelog.md").read_text()
+    assert "DEPRECATE" in changelog
+    assert "tool" in changelog
+
+
+@pytest.mark.asyncio()
+async def test_deprecate_already_deprecated(tmp_path):
+    path = tmp_path / "ontology.yaml"
+    registry = OntologyRegistry(path)
+    await registry.load()
+
+    await registry.deprecate_entity_type("tool")
+    result = await registry.deprecate_entity_type("tool")
+    assert result is False
+
+
+@pytest.mark.asyncio()
+async def test_merge_entity_types(tmp_path):
+    path = tmp_path / "ontology.yaml"
+    registry = OntologyRegistry(path)
+    await registry.load()
+
+    # Add two types then merge
+    await registry.add_entity_type("work_tool", "Work tool", folder="work_tools/")
+    await registry.add_entity_type("dev_tool", "Dev tool", folder="dev_tools/")
+    result = await registry.merge_entity_types("dev_tool", "work_tool", reason="82% overlap")
+    assert result is True
+    assert not registry.is_valid_entity_type("dev_tool")
+    assert registry.is_valid_entity_type("work_tool")
+
+    all_types = registry.get_all_entity_types()
+    assert all_types["dev_tool"]["merged_into"] == "work_tool"
+
+    changelog = (tmp_path / "ontology-changelog.md").read_text()
+    assert "MERGE" in changelog
+
+
+@pytest.mark.asyncio()
+async def test_merge_nonexistent_fails(tmp_path):
+    path = tmp_path / "ontology.yaml"
+    registry = OntologyRegistry(path)
+    await registry.load()
+
+    result = await registry.merge_entity_types("nonexistent", "person")
+    assert result is False
+
+
+@pytest.mark.asyncio()
+async def test_split_entity_type(tmp_path):
+    path = tmp_path / "ontology.yaml"
+    registry = OntologyRegistry(path)
+    await registry.load()
+
+    result = await registry.split_entity_type(
+        "concept",
+        "technology",
+        "기술 스택",
+        folder="technologies/",
+        knowledge_layer="semantic",
+        reason="bimodal distribution",
+    )
+    assert result is True
+    assert registry.is_valid_entity_type("technology")
+    assert registry.get_entity_folder("technology") == "technologies/"
+
+    all_types = registry.get_all_entity_types()
+    assert all_types["technology"]["split_from"] == "concept"
+
+    changelog = (tmp_path / "ontology-changelog.md").read_text()
+    assert "SPLIT" in changelog
+
+
+@pytest.mark.asyncio()
+async def test_split_duplicate_name_fails(tmp_path):
+    path = tmp_path / "ontology.yaml"
+    registry = OntologyRegistry(path)
+    await registry.load()
+
+    result = await registry.split_entity_type("concept", "person", "Duplicate")
+    assert result is False
+
+
+@pytest.mark.asyncio()
+async def test_promote_entity_type(tmp_path):
+    path = tmp_path / "ontology.yaml"
+    registry = OntologyRegistry(path)
+    await registry.load()
+
+    result = await registry.promote_entity_type("concept", reason="high usage")
+    assert result is True
+
+    changelog = (tmp_path / "ontology-changelog.md").read_text()
+    assert "PROMOTE" in changelog
+
+
+@pytest.mark.asyncio()
+async def test_promote_nonexistent_fails(tmp_path):
+    path = tmp_path / "ontology.yaml"
+    registry = OntologyRegistry(path)
+    await registry.load()
+
+    result = await registry.promote_entity_type("nonexistent")
+    assert result is False

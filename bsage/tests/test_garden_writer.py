@@ -97,7 +97,8 @@ class TestWriteGarden:
         result = await writer.write_garden(note)
 
         assert result.exists()
-        assert result.parent == tmp_path / "garden" / "idea"
+        # v2.2: notes go to entity-type folders (ideas/) not garden/idea/
+        assert result.parent == tmp_path / "ideas"
 
         content = result.read_text()
         assert content.startswith("---\n")
