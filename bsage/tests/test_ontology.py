@@ -72,8 +72,12 @@ async def test_default_ontology_has_expanded_types(tmp_path):
 
     # Relationship types
     for rtype in (
-        "related_to", "references", "tagged_with",
-        "depends_on", "assigned_to", "belongs_to",
+        "related_to",
+        "references",
+        "tagged_with",
+        "depends_on",
+        "assigned_to",
+        "belongs_to",
     ):
         assert registry.is_valid_relationship_type(rtype), f"Missing rel type: {rtype}"
 
