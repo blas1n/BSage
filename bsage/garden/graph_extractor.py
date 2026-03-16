@@ -21,7 +21,8 @@ _TYPE_MAP: dict[str, str] = {
     "idea": "note",
     "insight": "note",
     "project": "project",
-    "event": "note",
+    "event": "event",
+    "task": "task",
     "seed": "note",
 }
 

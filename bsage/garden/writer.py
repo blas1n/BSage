@@ -70,7 +70,7 @@ def _build_frontmatter(metadata: dict) -> str:
 
 _MAX_ACTION_SUMMARY = 200
 
-_VALID_NOTE_TYPES = {"idea", "insight", "project"}
+_VALID_NOTE_TYPES = {"idea", "insight", "project", "event", "task"}
 
 WRITE_NOTE_TOOL: dict[str, Any] = {
     "type": "function",

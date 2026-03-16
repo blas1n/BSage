@@ -58,6 +58,20 @@ def test_extract_project_type():
     assert entities[0].entity_type == "project"
 
 
+def test_extract_event_type():
+    content = _make_note(note_type="event", title="Team Standup")
+    extractor = GraphExtractor()
+    entities, _ = extractor.extract_from_note("garden/event/standup.md", content)
+    assert entities[0].entity_type == "event"
+
+
+def test_extract_task_type():
+    content = _make_note(note_type="task", title="Fix auth bug")
+    extractor = GraphExtractor()
+    entities, _ = extractor.extract_from_note("garden/task/fix-auth.md", content)
+    assert entities[0].entity_type == "task"
+
+
 def test_extract_tags():
     content = _make_note(tags=["ai", "productivity"])
     extractor = GraphExtractor()

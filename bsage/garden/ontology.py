@@ -19,6 +19,9 @@ _DEFAULT_ONTOLOGY: dict[str, Any] = {
         "person": {"description": "A person"},
         "concept": {"description": "An abstract concept or topic"},
         "project": {"description": "A project or initiative"},
+        "event": {"description": "A calendar event or occurrence"},
+        "task": {"description": "An actionable task or to-do item"},
+        "organization": {"description": "A company, team, or group"},
         "tool": {"description": "A software tool or technology"},
         "tag": {"description": "A categorization tag"},
         "source": {"description": "An input data source"},
@@ -30,6 +33,11 @@ _DEFAULT_ONTOLOGY: dict[str, Any] = {
         "created_by": {"description": "Entity created by a source"},
         "part_of": {"description": "Entity belongs to another"},
         "uses": {"description": "Entity uses a tool or concept"},
+        "depends_on": {"description": "Entity depends on another (task/project dependency)"},
+        "assigned_to": {"description": "Task assigned to a person"},
+        "attends": {"description": "Person attends an event"},
+        "belongs_to": {"description": "Person or entity belongs to an organization"},
+        "mentions": {"description": "Entity mentions another in passing"},
     },
 }
 

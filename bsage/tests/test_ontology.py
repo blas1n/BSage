@@ -61,19 +61,37 @@ async def test_get_relationship_types(tmp_path):
 
 
 @pytest.mark.asyncio()
+async def test_default_ontology_has_expanded_types(tmp_path):
+    path = tmp_path / ".bsage" / "ontology.yaml"
+    registry = OntologyRegistry(path)
+    await registry.load()
+
+    # Entity types
+    for etype in ("note", "person", "concept", "project", "event", "task", "organization", "tool"):
+        assert registry.is_valid_entity_type(etype), f"Missing entity type: {etype}"
+
+    # Relationship types
+    for rtype in (
+        "related_to", "references", "tagged_with",
+        "depends_on", "assigned_to", "belongs_to",
+    ):
+        assert registry.is_valid_relationship_type(rtype), f"Missing rel type: {rtype}"
+
+
+@pytest.mark.asyncio()
 async def test_add_entity_type(tmp_path):
     path = tmp_path / "ontology.yaml"
     registry = OntologyRegistry(path)
     await registry.load()
 
-    added = await registry.add_entity_type("event", "A calendar event")
+    added = await registry.add_entity_type("custom_type", "A custom type")
     assert added is True
-    assert registry.is_valid_entity_type("event")
+    assert registry.is_valid_entity_type("custom_type")
 
     # Verify persisted
     with open(path) as f:
         data = yaml.safe_load(f)
-    assert "event" in data["entity_types"]
+    assert "custom_type" in data["entity_types"]
 
 
 @pytest.mark.asyncio()
@@ -92,9 +110,9 @@ async def test_add_relationship_type(tmp_path):
     registry = OntologyRegistry(path)
     await registry.load()
 
-    added = await registry.add_relationship_type("depends_on", "Dependency relationship")
+    added = await registry.add_relationship_type("custom_rel", "A custom relationship")
     assert added is True
-    assert registry.is_valid_relationship_type("depends_on")
+    assert registry.is_valid_relationship_type("custom_rel")
 
 
 @pytest.mark.asyncio()
