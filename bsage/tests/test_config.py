@@ -98,7 +98,6 @@ class TestSettings:
         assert settings.maturity_seedling_min_relationships == 5
         assert settings.maturity_budding_min_sources == 4
 
-
     def test_rejects_zero_maturity_threshold(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Maturity thresholds must be positive."""
         monkeypatch.setenv("MATURITY_SEEDLING_MIN_RELATIONSHIPS", "0")

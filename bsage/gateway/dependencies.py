@@ -126,7 +126,9 @@ class AppState:
             )
 
         self.llm_extractor = LLMExtractor(llm_fn=_llm_extract_fn, ontology=self.ontology)
-        self.graph_extractor = GraphExtractor(llm_extractor=self.llm_extractor)
+        self.graph_extractor = GraphExtractor(
+            llm_extractor=self.llm_extractor, ontology=self.ontology
+        )
         self.graph_retriever = GraphRetriever(self.graph_store, self.vault)
 
         # Vector embeddings (opt-in via EMBEDDING_MODEL env var)
@@ -189,7 +191,12 @@ class AppState:
 
             from bsage.garden.vector_subscriber import VectorSubscriber
 
-            vector_sub = VectorSubscriber(self.vector_store, self.vault, self.embedder)
+            vector_sub = VectorSubscriber(
+                self.vector_store,
+                self.vault,
+                self.embedder,
+                max_embed_chars=self.settings.max_embed_chars,
+            )
             self.event_bus.subscribe(vector_sub)
         graph_sub = GraphSubscriber(self.graph_store, self.vault, self.graph_extractor)
         self.event_bus.subscribe(graph_sub)

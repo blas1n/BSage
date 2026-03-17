@@ -398,3 +398,19 @@ async def test_get_entity_updated_at(store: GraphStore):
 async def test_get_entity_updated_at_missing(store: GraphStore):
     ts = await store.get_entity_updated_at("nonexistent.md")
     assert ts is None
+
+
+# ------------------------------------------------------------------
+# count_entities_of_type
+# ------------------------------------------------------------------
+
+
+async def test_count_entities_of_type(store: GraphStore):
+    await store.upsert_entity(GraphEntity(name="A", entity_type="idea", source_path="a.md"))
+    await store.upsert_entity(GraphEntity(name="B", entity_type="idea", source_path="b.md"))
+    await store.upsert_entity(GraphEntity(name="C", entity_type="event", source_path="c.md"))
+    await store.commit()
+
+    assert await store.count_entities_of_type("idea") == 2
+    assert await store.count_entities_of_type("event") == 1
+    assert await store.count_entities_of_type("nonexistent") == 0

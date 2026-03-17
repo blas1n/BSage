@@ -1,6 +1,6 @@
 """Tests for knowledge conflict resolution."""
 
-from bsage.garden.conflict import ConflictResult, FactRecord, detect_conflicts, resolve_conflict
+from bsage.garden.conflict import FactRecord, detect_conflicts, resolve_conflict
 
 
 def _fact(

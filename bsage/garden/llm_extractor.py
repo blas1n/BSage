@@ -246,9 +246,7 @@ class LLMExtractor:
 
         if not _matches(domain, source_type):
             return False
-        if not _matches(range_, target_type):
-            return False
-        return True
+        return _matches(range_, target_type)
 
     async def _track_unknown_type(self, entity_type: str) -> None:
         """Track unknown entity types and auto-evolve ontology when threshold is reached."""

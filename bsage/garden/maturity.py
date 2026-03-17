@@ -105,18 +105,19 @@ class MaturityEvaluator:
 
         rel_count = await self._graph.count_relationships_for_entity(note_path)
 
-        if current == NoteMaturity.EVERGREEN:
-            if rel_count < self._config.evergreen_min_relationships:
-                return NoteMaturity.BUDDING
+        if (
+            current == NoteMaturity.EVERGREEN
+            and rel_count < self._config.evergreen_min_relationships
+        ):
+            return NoteMaturity.BUDDING
 
         if current in (NoteMaturity.BUDDING, NoteMaturity.EVERGREEN):
             source_count = await self._graph.count_distinct_sources(note_path)
             if current == NoteMaturity.BUDDING and source_count < self._config.budding_min_sources:
                 return NoteMaturity.SEEDLING
 
-        if current == NoteMaturity.SEEDLING:
-            if rel_count < self._config.seedling_min_relationships:
-                return NoteMaturity.SEED
+        if current == NoteMaturity.SEEDLING and rel_count < self._config.seedling_min_relationships:
+            return NoteMaturity.SEED
 
         return None
 

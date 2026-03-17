@@ -123,7 +123,7 @@ class MaintenanceTasks:
             for type_name, type_info in entity_types.items():
                 if not type_info.get("folder"):
                     continue
-                count = await self._graph.count_relationships_for_entity(type_name)
+                count = await self._graph.count_entities_of_type(type_name)
                 if count == 0:
                     candidates.append(type_name)
 

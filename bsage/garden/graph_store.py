@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS relationships (
 CREATE INDEX IF NOT EXISTS idx_rel_source ON relationships (source_id);
 CREATE INDEX IF NOT EXISTS idx_rel_target ON relationships (target_id);
 CREATE INDEX IF NOT EXISTS idx_rel_source_path ON relationships (source_path);
+CREATE INDEX IF NOT EXISTS idx_rel_edge_type ON relationships (edge_type);
 
 CREATE TABLE IF NOT EXISTS provenance (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -426,6 +427,14 @@ class GraphStore:
     # Maturity-related queries
     # ------------------------------------------------------------------
 
+    async def count_entities_of_type(self, entity_type: str) -> int:
+        """Count entities with a given entity_type."""
+        row = await self._fetchone(
+            "SELECT COUNT(*) FROM entities WHERE entity_type = ?",
+            (entity_type,),
+        )
+        return row[0] if row else 0
+
     async def count_relationships_for_entity(self, entity_name: str) -> int:
         """Count all relationships (inbound + outbound) for an entity by source_path."""
         norm = _normalize(entity_name)
@@ -616,13 +625,33 @@ class GraphStore:
     # Helpers
     # ------------------------------------------------------------------
 
-    async def _fetchone(self, sql: str, params: tuple = ()) -> tuple[Any, ...] | None:
+    async def query(self, sql: str, params: tuple = ()) -> list[aiosqlite.Row]:
+        """Execute a read query and return all result rows."""
+        return await self._fetchall(sql, params)
+
+    async def execute_batch(
+        self, statements: list[tuple[str, tuple]], *, commit: bool = True
+    ) -> int:
+        """Execute multiple write statements within the write lock.
+
+        Returns total number of affected rows.
+        """
+        total = 0
+        async with self._write_lock:
+            for sql, params in statements:
+                cursor = await self._conn.execute(sql, params)
+                total += cursor.rowcount
+            if commit and total:
+                await self._conn.commit()
+        return total
+
+    async def _fetchone(self, sql: str, params: tuple = ()) -> aiosqlite.Row | None:
         cursor = await self._conn.execute(sql, params)
         return await cursor.fetchone()
 
-    async def _fetchall(self, sql: str, params: tuple = ()) -> list[tuple[Any, ...]]:
+    async def _fetchall(self, sql: str, params: tuple = ()) -> list[aiosqlite.Row]:
         cursor = await self._conn.execute(sql, params)
-        return await cursor.fetchall()
+        return list(await cursor.fetchall())
 
     @staticmethod
     def _row_to_entity(row: Any) -> GraphEntity:

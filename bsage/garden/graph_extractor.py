@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
@@ -51,7 +51,7 @@ def _slug_from_path(path: str) -> str:
     return stem.replace("-", " ").replace("_", " ").strip()
 
 
-def _extract_wikilink_names(items: list) -> list[str]:
+def _extract_wikilink_names(items: list[Any]) -> list[str]:
     """Extract wikilink target names from a list of strings."""
     names: list[str] = []
     for item in items:

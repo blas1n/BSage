@@ -277,12 +277,7 @@ class GardenWriter:
         self._sync_manager = sync_manager
         self._event_bus = event_bus
         self._ontology = ontology
-        self._log_lock: asyncio.Lock | None = None
-
-    def _get_log_lock(self) -> asyncio.Lock:
-        if self._log_lock is None:
-            self._log_lock = asyncio.Lock()
-        return self._log_lock
+        self._log_lock: asyncio.Lock = asyncio.Lock()
 
     def _resolve_folder(self, note_type: str) -> str:
         """Resolve the vault folder for a note type using ontology mapping."""
@@ -445,7 +440,7 @@ class GardenWriter:
             else:
                 log_path.write_text(f"# Actions — {date_str}\n\n" + entry, encoding="utf-8")
 
-        async with self._get_log_lock():
+        async with self._log_lock:
             await asyncio.to_thread(_write)
         logger.info("action_logged", skill_name=skill_name, path=str(log_path))
         await self._notify_sync("action", log_path, skill_name)
@@ -481,7 +476,7 @@ class GardenWriter:
             else:
                 log_path.write_text(f"# Input Log — {date_str}\n\n" + entry, encoding="utf-8")
 
-        async with self._get_log_lock():
+        async with self._log_lock:
             await asyncio.to_thread(_write)
         logger.debug("input_log_written", source=source, path=str(log_path))
 

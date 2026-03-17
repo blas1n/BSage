@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-_MAX_EMBED_CHARS = 8000
+_DEFAULT_MAX_EMBED_CHARS = 8000
 
 
 class VectorSubscriber:
@@ -31,10 +31,13 @@ class VectorSubscriber:
         vector_store: VectorStore,
         vault: Vault,
         embedder: Embedder,
+        *,
+        max_embed_chars: int = _DEFAULT_MAX_EMBED_CHARS,
     ) -> None:
         self._vector_store = vector_store
         self._vault = vault
         self._embedder = embedder
+        self._max_embed_chars = max_embed_chars
 
     async def on_event(self, event: Event) -> None:
         """Handle an event from the EventBus."""
@@ -74,7 +77,14 @@ class VectorSubscriber:
         if not text:
             return
 
-        text = text[:_MAX_EMBED_CHARS]
+        if len(text) > self._max_embed_chars:
+            logger.warning(
+                "vector_text_truncated",
+                path=note_path,
+                original_len=len(text),
+                max_len=self._max_embed_chars,
+            )
+            text = text[: self._max_embed_chars]
 
         try:
             embedding = await self._embedder.embed(text)

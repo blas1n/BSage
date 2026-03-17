@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 import structlog
 
@@ -119,7 +118,7 @@ def detect_conflicts(facts: list[FactRecord]) -> list[tuple[FactRecord, FactReco
         by_key.setdefault(key, []).append(fact)
 
     conflicts: list[tuple[FactRecord, FactRecord]] = []
-    for key, group in by_key.items():
+    for _key, group in by_key.items():
         if len(group) < 2:
             continue
         for i in range(len(group)):

@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     edge_promotion_min_mentions: int = Field(default=3, gt=0)
     edge_decay_days: int = Field(default=90, gt=0)
 
+    # Embedding text limit
+    max_embed_chars: int = Field(default=8000, gt=0)
+
     # Runtime
     safe_mode: bool = True
     disabled_entries: list[str] = []

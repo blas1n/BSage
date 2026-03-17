@@ -22,22 +22,17 @@ def mock_settings():
 @pytest.fixture()
 def mock_garden():
     garden = AsyncMock()
-    garden.promote_maturity = AsyncMock(
-        return_value={"promoted": 0, "checked": 5, "details": []}
-    )
+    garden.promote_maturity = AsyncMock(return_value={"promoted": 0, "checked": 5, "details": []})
     garden.write_action = AsyncMock()
     return garden
 
 
 @pytest.fixture()
 def mock_graph():
-    """Mock graph store with async internals for EdgeLifecycleEvaluator."""
+    """Mock graph store with public API for EdgeLifecycleEvaluator."""
     g = AsyncMock()
-    # Provide _fetchall, _write_lock, _conn for EdgeLifecycleEvaluator
-    g._fetchall = AsyncMock(return_value=[])
-    g._conn = AsyncMock()
-    g._conn.execute = AsyncMock(return_value=MagicMock(rowcount=0))
-    g._conn.commit = AsyncMock()
+    g.query = AsyncMock(return_value=[])
+    g.execute_batch = AsyncMock(return_value=0)
     return g
 
 
@@ -87,9 +82,7 @@ class TestRunMaturity:
         assert result["error"] is True
         assert result["promoted"] == 0
 
-    async def test_uses_default_config_without_settings(
-        self, mock_garden, mock_graph
-    ) -> None:
+    async def test_uses_default_config_without_settings(self, mock_garden, mock_graph) -> None:
         tasks = MaintenanceTasks(garden_writer=mock_garden, graph_store=mock_graph)
         await tasks.run_maturity()
         call_kwargs = mock_garden.promote_maturity.call_args
@@ -103,9 +96,7 @@ class TestRunEdgeLifecycle:
         result = await tasks.run_edge_lifecycle()
         assert result["status"] == "skipped"
 
-    async def test_runs_with_settings(
-        self, mock_garden, mock_graph, mock_settings
-    ) -> None:
+    async def test_runs_with_settings(self, mock_garden, mock_graph, mock_settings) -> None:
         tasks = MaintenanceTasks(
             garden_writer=mock_garden,
             graph_store=mock_graph,
@@ -122,7 +113,7 @@ class TestRunEdgeLifecycle:
         assert "demoted" in result
 
     async def test_returns_error_dict_on_exception(self, mock_garden, mock_graph) -> None:
-        mock_graph._fetchall = AsyncMock(side_effect=RuntimeError("db fail"))
+        mock_graph.query = AsyncMock(side_effect=RuntimeError("db fail"))
         tasks = MaintenanceTasks(garden_writer=mock_garden, graph_store=mock_graph)
         result = await tasks.run_edge_lifecycle()
         assert result["error"] is True
@@ -130,9 +121,7 @@ class TestRunEdgeLifecycle:
 
 class TestRunOntologyEvolution:
     async def test_skips_without_ontology(self, mock_garden, mock_graph) -> None:
-        tasks = MaintenanceTasks(
-            garden_writer=mock_garden, graph_store=mock_graph, ontology=None
-        )
+        tasks = MaintenanceTasks(garden_writer=mock_garden, graph_store=mock_graph, ontology=None)
         result = await tasks.run_ontology_evolution()
         assert result["status"] == "skipped"
 
@@ -152,7 +141,7 @@ class TestRunOntologyEvolution:
                 "idea": {"folder": "ideas"},
             }
         )
-        mock_graph.count_relationships_for_entity = AsyncMock(return_value=0)
+        mock_graph.count_entities_of_type = AsyncMock(return_value=0)
         mock_ontology.deprecate_entity_type = AsyncMock(return_value=True)
 
         tasks = MaintenanceTasks(

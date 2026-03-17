@@ -55,7 +55,7 @@ class EdgeLifecycleEvaluator:
             GROUP BY e_tgt.name
             HAVING mention_count >= ?
         """
-        rows = await self._store._fetchall(sql, (self._config.promotion_min_mentions,))
+        rows = await self._store.query(sql, (self._config.promotion_min_mentions,))
         return [{"target_name": row[0], "mention_count": row[1]} for row in rows]
 
     async def find_demotion_candidates(self) -> list[dict[str, Any]]:
@@ -78,7 +78,7 @@ class EdgeLifecycleEvaluator:
             WHERE r.edge_type = 'strong'
               AND CAST(julianday('now') - julianday(r.created_at) AS INTEGER) >= ?
         """
-        rows = await self._store._fetchall(sql, (self._config.demotion_days,))
+        rows = await self._store.query(sql, (self._config.demotion_days,))
         return [
             {
                 "rel_id": row[0],
@@ -92,21 +92,21 @@ class EdgeLifecycleEvaluator:
     async def promote_edges(self) -> int:
         """Promote qualifying weak edges to strong. Returns count promoted."""
         candidates = await self.find_promotion_candidates()
-        promoted = 0
-        async with self._store._write_lock:
-            for candidate in candidates:
-                cursor = await self._store._conn.execute(
-                    """UPDATE relationships
-                       SET edge_type = 'strong', weight = ?
-                       WHERE edge_type = 'weak'
-                         AND target_id IN (
-                             SELECT id FROM entities WHERE name = ?
-                         )""",
-                    (self._config.promoted_weight, candidate["target_name"]),
-                )
-                promoted += cursor.rowcount
-            if promoted:
-                await self._store._conn.commit()
+        if not candidates:
+            return 0
+        statements = [
+            (
+                """UPDATE relationships
+                   SET edge_type = 'strong', weight = ?
+                   WHERE edge_type = 'weak'
+                     AND target_id IN (
+                         SELECT id FROM entities WHERE name = ?
+                     )""",
+                (self._config.promoted_weight, candidate["target_name"]),
+            )
+            for candidate in candidates
+        ]
+        promoted = await self._store.execute_batch(statements)
         if promoted:
             logger.info("edges_promoted", count=promoted)
         return promoted
@@ -114,18 +114,18 @@ class EdgeLifecycleEvaluator:
     async def demote_edges(self) -> int:
         """Demote qualifying strong edges to weak. Returns count demoted."""
         candidates = await self.find_demotion_candidates()
-        demoted = 0
-        async with self._store._write_lock:
-            for candidate in candidates:
-                await self._store._conn.execute(
-                    """UPDATE relationships
-                       SET edge_type = 'weak', weight = ?
-                       WHERE id = ?""",
-                    (self._config.weak_weight, candidate["rel_id"]),
-                )
-                demoted += 1
-            if demoted:
-                await self._store._conn.commit()
+        if not candidates:
+            return 0
+        statements = [
+            (
+                """UPDATE relationships
+                   SET edge_type = 'weak', weight = ?
+                   WHERE id = ?""",
+                (self._config.weak_weight, candidate["rel_id"]),
+            )
+            for candidate in candidates
+        ]
+        demoted = await self._store.execute_batch(statements)
         if demoted:
             logger.info("edges_demoted", count=demoted)
         return demoted

@@ -54,6 +54,8 @@ class Embedder:
         except Exception as exc:
             logger.error("embedding_failed", model=self._model, exc_info=True)
             raise RuntimeError(f"Embedding call failed: {exc}") from exc
+        if not response.data:
+            raise RuntimeError("Embedding response contains no data")
         return response.data[0]["embedding"]
 
     async def embed_many(self, texts: list[str]) -> list[list[float]]:
@@ -83,6 +85,8 @@ class Embedder:
                 "embedding_batch_failed", model=self._model, count=len(texts), exc_info=True
             )
             raise RuntimeError(f"Embedding batch call failed: {exc}") from exc
+        if not response.data:
+            raise RuntimeError("Embedding batch response contains no data")
         # Sort by index to preserve order
         sorted_data = sorted(response.data, key=lambda d: d["index"])
         return [d["embedding"] for d in sorted_data]
