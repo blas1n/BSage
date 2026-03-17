@@ -6,8 +6,10 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from bsage.garden.confidence import DecayConfig, effective_confidence
+
 if TYPE_CHECKING:
-    from bsage.garden.graph_models import GraphEntity
+    from bsage.garden.graph_models import GraphEntity, GraphRelationship
     from bsage.garden.graph_store import GraphStore
     from bsage.garden.ontology import OntologyRegistry
     from bsage.garden.vault import Vault
@@ -24,6 +26,17 @@ def _score(confidence: float, weight: float, depth: int) -> float:
     if depth <= 0:
         depth = 1
     return confidence * weight / depth
+
+
+def _decayed_confidence(rel: GraphRelationship, neighbor: GraphEntity) -> float:
+    """Apply time-based decay to relationship confidence using entity's knowledge layer."""
+    updated_at = neighbor.properties.get("updated_at")
+    return effective_confidence(
+        rel.confidence,
+        updated_at,
+        neighbor.knowledge_layer,
+        config=DecayConfig(),
+    )
 
 
 class GraphRetriever:
@@ -89,7 +102,8 @@ class GraphRetriever:
                     f"**{neighbor.name}** ({neighbor.entity_type})"
                 )
                 if neighbor.source_path:
-                    s = _score(rel.confidence, rel.weight, 1)
+                    conf = _decayed_confidence(rel, neighbor)
+                    s = _score(conf, rel.weight, 1)
                     source_scores[neighbor.source_path] = max(
                         source_scores.get(neighbor.source_path, 0.0), s
                     )

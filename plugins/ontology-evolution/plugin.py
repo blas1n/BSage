@@ -39,7 +39,9 @@ async def execute(context) -> dict:
         # Check if type has any recent activity
         count = await graph.count_relationships_for_entity(type_name)
         if count == 0:
-            candidates.append({"type": type_name, "action": "deprecate_candidate", "reason": "no relationships"})
+            candidates.append(
+                {"type": type_name, "action": "deprecate_candidate", "reason": "no relationships"}
+            )
 
     # Auto-deprecate types with zero activity
     deprecated = 0

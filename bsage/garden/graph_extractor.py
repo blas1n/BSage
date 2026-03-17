@@ -117,6 +117,67 @@ class GraphExtractor:
         )
         entities.append(note_entity)
 
+        # Track all names captured via frontmatter to avoid body-link duplication
+        all_related_names: set[str] = set()
+
+        # 1b. Fact triple extraction (subject/predicate/object → typed edges)
+        if fm_type == "fact":
+            subject_raw = fm.get("subject", "")
+            predicate = fm.get("predicate", "")
+            object_raw = fm.get("object", "")
+            subject_names = _extract_wikilink_names([subject_raw]) if subject_raw else []
+            object_names = _extract_wikilink_names([object_raw]) if object_raw else []
+            if subject_names and predicate and object_names:
+                subj_entity = GraphEntity(
+                    name=subject_names[0], entity_type="concept", source_path=rel_path
+                )
+                obj_entity = GraphEntity(
+                    name=object_names[0], entity_type="concept", source_path=rel_path
+                )
+                entities.extend([subj_entity, obj_entity])
+                relationships.append(
+                    GraphRelationship(
+                        source_id=subj_entity.id,
+                        target_id=obj_entity.id,
+                        rel_type=predicate,
+                        source_path=rel_path,
+                        weight=self._get_relation_weight(predicate),
+                        edge_type="strong",
+                    )
+                )
+                # Link fact note to subject
+                relationships.append(
+                    GraphRelationship(
+                        source_id=note_entity.id,
+                        target_id=subj_entity.id,
+                        rel_type="related_to",
+                        source_path=rel_path,
+                        weight=0.8,
+                        edge_type="strong",
+                    )
+                )
+                all_related_names.update(subject_names + object_names)
+            # Supersedes chain
+            supersedes_raw = fm.get("supersedes", "")
+            if supersedes_raw:
+                sup_names = _extract_wikilink_names([supersedes_raw])
+                for sup_name in sup_names:
+                    sup_entity = GraphEntity(
+                        name=sup_name, entity_type="fact", source_path=rel_path
+                    )
+                    entities.append(sup_entity)
+                    relationships.append(
+                        GraphRelationship(
+                            source_id=note_entity.id,
+                            target_id=sup_entity.id,
+                            rel_type="supersedes",
+                            source_path=rel_path,
+                            weight=self._get_relation_weight("supersedes"),
+                            edge_type="strong",
+                        )
+                    )
+                    all_related_names.add(sup_name)
+
         # 2. Tags → tag entities + tagged_with relationships (strong edges)
         tags = fm.get("tags", [])
         if not isinstance(tags, list):
@@ -158,7 +219,6 @@ class GraphExtractor:
 
         # 4. Typed relations from frontmatter keys (v2.2: key = relation type)
         relation_types = self._get_known_relation_types()
-        all_related_names: set[str] = set()
 
         for key, value in fm.items():
             if key in _META_KEYS or key not in relation_types:

@@ -40,6 +40,9 @@ class GardenNote:
         relations: Typed relations dict — key is relation type, value is list of targets.
                    Example: {"attendees": ["[[Alice]]"], "belongs_to": ["[[Project X]]"]}
         aliases: Alternative names for Obsidian search.
+        extra_fields: Additional frontmatter fields for specialized note types
+                      (fact: subject/predicate/object/valid_from/valid_to/supersedes/source_type,
+                       preference: subject/domain/context/source_type).
     """
 
     title: str
@@ -52,6 +55,7 @@ class GardenNote:
     knowledge_layer: str = "semantic"
     relations: dict[str, list[str]] = field(default_factory=dict)
     aliases: list[str] = field(default_factory=list)
+    extra_fields: dict[str, Any] = field(default_factory=dict)
 
 
 def _slugify(title: str) -> str:
@@ -382,6 +386,9 @@ class GardenWriter:
         }
         if note.aliases:
             metadata["aliases"] = note.aliases
+        # Extra fields for specialized note types (fact, preference, etc.)
+        for key, value in note.extra_fields.items():
+            metadata[key] = value
         # Typed relations — each key becomes a frontmatter key
         for rel_type, targets in note.relations.items():
             metadata[rel_type] = targets

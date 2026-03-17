@@ -269,3 +269,68 @@ def test_extract_knowledge_layer_from_ontology():
     entities, _ = extractor.extract_from_note("events/standup.md", content)
 
     assert entities[0].knowledge_layer == "episodic"
+
+
+def test_extract_fact_triple():
+    """v2.2: Fact notes produce subject→object typed edge + supersedes chain."""
+    content = (
+        "---\n"
+        "type: fact\n"
+        "title: Blasin의 현재 역할\n"
+        'subject: "[[Blasin]]"\n'
+        "predicate: has_role\n"
+        'object: "[[AX Team Lead]]"\n'
+        "valid_from: 2024-06\n"
+        "valid_to: present\n"
+        "source_type: explicit\n"
+        'supersedes: "[[fact-blasin-backend-dev]]"\n'
+        "confidence: 0.99\n"
+        "---\n"
+        "AX 팀 리드.\n"
+    )
+    extractor = GraphExtractor()
+    entities, relationships = extractor.extract_from_note("facts/blasin-role.md", content)
+
+    # Should have: fact note entity, Blasin, AX Team Lead, fact-blasin-backend-dev
+    entity_names = {e.name for e in entities}
+    assert "Blasin" in entity_names
+    assert "AX Team Lead" in entity_names
+    assert "fact-blasin-backend-dev" in entity_names
+
+    # has_role edge: Blasin → AX Team Lead
+    role_rels = [r for r in relationships if r.rel_type == "has_role"]
+    assert len(role_rels) == 1
+    assert role_rels[0].edge_type == "strong"
+
+    # supersedes edge: this fact → old fact
+    sup_rels = [r for r in relationships if r.rel_type == "supersedes"]
+    assert len(sup_rels) == 1
+    assert sup_rels[0].edge_type == "strong"
+
+
+def test_extract_fact_without_supersedes():
+    """Fact note without supersedes should still extract triple."""
+    content = (
+        "---\n"
+        "type: fact\n"
+        "title: Alice works at ACME\n"
+        'subject: "[[Alice]]"\n'
+        "predicate: works_at\n"
+        'object: "[[ACME Corp]]"\n'
+        "valid_from: 2024-01\n"
+        "valid_to: present\n"
+        "source_type: explicit\n"
+        "---\n"
+    )
+    extractor = GraphExtractor()
+    entities, relationships = extractor.extract_from_note("facts/alice-acme.md", content)
+
+    entity_names = {e.name for e in entities}
+    assert "Alice" in entity_names
+    assert "ACME Corp" in entity_names
+
+    works_rels = [r for r in relationships if r.rel_type == "works_at"]
+    assert len(works_rels) == 1
+
+    sup_rels = [r for r in relationships if r.rel_type == "supersedes"]
+    assert len(sup_rels) == 0

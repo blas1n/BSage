@@ -88,6 +88,9 @@ class GraphSubscriber:
             if event.event_type == EventType.NOTE_UPDATED:
                 await self._store.confirm_entities_by_source(rel_path)
 
+            # Conflict detection for fact notes
+            self._check_fact_conflicts(rel_path, content, entities)
+
             logger.info(
                 "graph_note_indexed",
                 path=rel_path,
@@ -96,3 +99,26 @@ class GraphSubscriber:
             )
         except (ValueError, FileNotFoundError, OSError, UnicodeDecodeError):
             logger.warning("graph_on_write_failed", path=path_str, exc_info=True)
+
+    @staticmethod
+    def _check_fact_conflicts(rel_path: str, content: str, entities: list) -> None:
+        """Log potential conflicts when a fact note is indexed."""
+        from bsage.garden.markdown_utils import extract_frontmatter
+
+        fm = extract_frontmatter(content)
+        if fm.get("type") != "fact":
+            return
+
+        subject = fm.get("subject", "")
+        predicate = fm.get("predicate", "")
+        if not subject or not predicate:
+            return
+
+        logger.info(
+            "fact_indexed",
+            path=rel_path,
+            subject=subject,
+            predicate=predicate,
+            object=fm.get("object", ""),
+            source_type=fm.get("source_type", "inferred"),
+        )
