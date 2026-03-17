@@ -716,6 +716,9 @@ class GardenWriter:
         """
         try:
             abs_path = self._vault.resolve_path(note_path)
+            if not abs_path.resolve().is_relative_to(self._vault.root.resolve()):
+                logger.warning("path_traversal_blocked", note_path=note_path)
+                return
             if not abs_path.exists():
                 return
             content = await self._vault.read_note_content(abs_path)

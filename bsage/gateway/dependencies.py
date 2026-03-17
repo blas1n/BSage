@@ -258,6 +258,7 @@ class AppState:
             garden_writer=self.garden_writer,
             graph_store=self.graph_store,
             ontology=getattr(self, "ontology", None),
+            settings=self.settings,
         )
         self.scheduler.register_maintenance(maintenance)
 
@@ -356,5 +357,6 @@ class AppState:
                 task.cancel()
         # Close databases
         await self.graph_store.close()
-        await self.vector_store.close()
+        if self.embedder.enabled:
+            await self.vector_store.close()
         logger.info("gateway_shutdown")

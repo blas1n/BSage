@@ -99,6 +99,25 @@ class TestSettings:
         assert settings.maturity_budding_min_sources == 4
 
 
+    def test_rejects_zero_maturity_threshold(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Maturity thresholds must be positive."""
+        monkeypatch.setenv("MATURITY_SEEDLING_MIN_RELATIONSHIPS", "0")
+        with pytest.raises(ValueError):
+            Settings(_env_file=None)
+
+    def test_rejects_negative_decay_halflife(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Decay halflife must be positive."""
+        monkeypatch.setenv("DECAY_HALFLIFE_SEMANTIC", "-1")
+        with pytest.raises(ValueError):
+            Settings(_env_file=None)
+
+    def test_rejects_zero_edge_decay_days(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Edge decay days must be positive."""
+        monkeypatch.setenv("EDGE_DECAY_DAYS", "0")
+        with pytest.raises(ValueError):
+            Settings(_env_file=None)
+
+
 class TestGetSettings:
     """Test the get_settings() factory function."""
 

@@ -93,9 +93,8 @@ class EdgeLifecycleEvaluator:
         """Promote qualifying weak edges to strong. Returns count promoted."""
         candidates = await self.find_promotion_candidates()
         promoted = 0
-        for candidate in candidates:
-            # Update all weak edges pointing to this target
-            async with self._store._write_lock:
+        async with self._store._write_lock:
+            for candidate in candidates:
                 cursor = await self._store._conn.execute(
                     """UPDATE relationships
                        SET edge_type = 'strong', weight = ?
@@ -106,6 +105,7 @@ class EdgeLifecycleEvaluator:
                     (self._config.promoted_weight, candidate["target_name"]),
                 )
                 promoted += cursor.rowcount
+            if promoted:
                 await self._store._conn.commit()
         if promoted:
             logger.info("edges_promoted", count=promoted)
@@ -115,8 +115,8 @@ class EdgeLifecycleEvaluator:
         """Demote qualifying strong edges to weak. Returns count demoted."""
         candidates = await self.find_demotion_candidates()
         demoted = 0
-        for candidate in candidates:
-            async with self._store._write_lock:
+        async with self._store._write_lock:
+            for candidate in candidates:
                 await self._store._conn.execute(
                     """UPDATE relationships
                        SET edge_type = 'weak', weight = ?
@@ -124,6 +124,7 @@ class EdgeLifecycleEvaluator:
                     (self._config.weak_weight, candidate["rel_id"]),
                 )
                 demoted += 1
+            if demoted:
                 await self._store._conn.commit()
         if demoted:
             logger.info("edges_demoted", count=demoted)

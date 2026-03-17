@@ -49,7 +49,11 @@ class Embedder:
         if self._api_base:
             kwargs["api_base"] = self._api_base
 
-        response = await litellm.aembedding(**kwargs)
+        try:
+            response = await litellm.aembedding(**kwargs)
+        except Exception as exc:
+            logger.error("embedding_failed", model=self._model, exc_info=True)
+            raise RuntimeError(f"Embedding call failed: {exc}") from exc
         return response.data[0]["embedding"]
 
     async def embed_many(self, texts: list[str]) -> list[list[float]]:
@@ -72,7 +76,13 @@ class Embedder:
         if self._api_base:
             kwargs["api_base"] = self._api_base
 
-        response = await litellm.aembedding(**kwargs)
+        try:
+            response = await litellm.aembedding(**kwargs)
+        except Exception as exc:
+            logger.error(
+                "embedding_batch_failed", model=self._model, count=len(texts), exc_info=True
+            )
+            raise RuntimeError(f"Embedding batch call failed: {exc}") from exc
         # Sort by index to preserve order
         sorted_data = sorted(response.data, key=lambda d: d["index"])
         return [d["embedding"] for d in sorted_data]

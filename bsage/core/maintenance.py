@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 if TYPE_CHECKING:
+    from bsage.core.config import Settings
     from bsage.garden.graph_store import GraphStore
     from bsage.garden.ontology import OntologyRegistry
     from bsage.garden.writer import GardenWriter
@@ -38,81 +39,113 @@ class MaintenanceTasks:
         garden_writer: GardenWriter,
         graph_store: GraphStore | None = None,
         ontology: OntologyRegistry | None = None,
+        settings: Settings | None = None,
     ) -> None:
         self._garden = garden_writer
         self._graph = graph_store
         self._ontology = ontology
+        self._settings = settings
 
     async def run_maturity(self) -> dict[str, Any]:
         """Evaluate and promote/demote garden note maturity."""
-        result = await self._garden.promote_maturity(self._graph)
-        if result["promoted"] > 0:
-            details = ", ".join(f"{d['path']} ({d['from']}→{d['to']})" for d in result["details"])
-            await self._garden.write_action(
-                "maintenance:maturity",
-                f"Promoted {result['promoted']} notes: {details}",
+        try:
+            config = None
+            if self._settings:
+                from bsage.garden.maturity import MaturityConfig
+
+                config = MaturityConfig(
+                    seedling_min_relationships=self._settings.maturity_seedling_min_relationships,
+                    budding_min_sources=self._settings.maturity_budding_min_sources,
+                    evergreen_min_days_stable=self._settings.maturity_evergreen_min_days_stable,
+                    evergreen_min_relationships=self._settings.maturity_evergreen_min_relationships,
+                )
+            result = await self._garden.promote_maturity(self._graph, config=config)
+            if result["promoted"] > 0:
+                details = ", ".join(
+                    f"{d['path']} ({d['from']}→{d['to']})" for d in result["details"]
+                )
+                await self._garden.write_action(
+                    "maintenance:maturity",
+                    f"Promoted {result['promoted']} notes: {details}",
+                )
+            logger.info(
+                "maintenance_maturity_done",
+                promoted=result["promoted"],
+                checked=result["checked"],
             )
-        logger.info(
-            "maintenance_maturity_done",
-            promoted=result["promoted"],
-            checked=result["checked"],
-        )
-        return result
+            return result
+        except Exception:
+            logger.exception("maintenance_maturity_failed")
+            return {"promoted": 0, "checked": 0, "details": [], "error": True}
 
     async def run_edge_lifecycle(self) -> dict[str, Any]:
         """Promote frequently-mentioned weak edges; demote stale strong edges."""
         if self._graph is None:
             return {"status": "skipped", "reason": "no graph"}
 
-        from bsage.garden.edge_lifecycle import EdgeLifecycleConfig, EdgeLifecycleEvaluator
+        try:
+            from bsage.garden.edge_lifecycle import EdgeLifecycleConfig, EdgeLifecycleEvaluator
 
-        evaluator = EdgeLifecycleEvaluator(self._graph, EdgeLifecycleConfig())
-        promoted = await evaluator.promote_edges()
-        demoted = await evaluator.demote_edges()
+            edge_config = EdgeLifecycleConfig()
+            if self._settings:
+                edge_config = EdgeLifecycleConfig(
+                    promotion_min_mentions=self._settings.edge_promotion_min_mentions,
+                    demotion_days=self._settings.edge_decay_days,
+                )
+            evaluator = EdgeLifecycleEvaluator(self._graph, edge_config)
+            promoted = await evaluator.promote_edges()
+            demoted = await evaluator.demote_edges()
 
-        if promoted or demoted:
-            await self._garden.write_action(
-                "maintenance:edge-lifecycle",
-                f"Promoted {promoted} edges, demoted {demoted} edges",
+            if promoted or demoted:
+                await self._garden.write_action(
+                    "maintenance:edge-lifecycle",
+                    f"Promoted {promoted} edges, demoted {demoted} edges",
+                )
+            logger.info(
+                "maintenance_edge_lifecycle_done",
+                promoted=promoted,
+                demoted=demoted,
             )
-        logger.info(
-            "maintenance_edge_lifecycle_done",
-            promoted=promoted,
-            demoted=demoted,
-        )
-        return {"promoted": promoted, "demoted": demoted}
+            return {"promoted": promoted, "demoted": demoted}
+        except Exception:
+            logger.exception("maintenance_edge_lifecycle_failed")
+            return {"promoted": 0, "demoted": 0, "error": True}
 
     async def run_ontology_evolution(self) -> dict[str, Any]:
         """Review ontology for DEPRECATE candidates (zero-activity types)."""
         if self._ontology is None or self._graph is None:
             return {"status": "skipped", "reason": "no ontology or graph"}
 
-        entity_types = self._ontology.get_entity_types()
-        candidates = []
+        try:
+            entity_types = self._ontology.get_entity_types()
+            candidates = []
 
-        for type_name, type_info in entity_types.items():
-            if not type_info.get("folder"):
-                continue
-            count = await self._graph.count_relationships_for_entity(type_name)
-            if count == 0:
-                candidates.append(type_name)
+            for type_name, type_info in entity_types.items():
+                if not type_info.get("folder"):
+                    continue
+                count = await self._graph.count_relationships_for_entity(type_name)
+                if count == 0:
+                    candidates.append(type_name)
 
-        deprecated = 0
-        for type_name in candidates:
-            result = await self._ontology.deprecate_entity_type(
-                type_name, reason="no relationships found"
+            deprecated = 0
+            for type_name in candidates:
+                result = await self._ontology.deprecate_entity_type(
+                    type_name, reason="no relationships found"
+                )
+                if result:
+                    deprecated += 1
+
+            if deprecated or candidates:
+                await self._garden.write_action(
+                    "maintenance:ontology-evolution",
+                    f"Reviewed {len(candidates)} candidates, deprecated {deprecated} types",
+                )
+            logger.info(
+                "maintenance_ontology_evolution_done",
+                candidates=len(candidates),
+                deprecated=deprecated,
             )
-            if result:
-                deprecated += 1
-
-        if deprecated or candidates:
-            await self._garden.write_action(
-                "maintenance:ontology-evolution",
-                f"Reviewed {len(candidates)} candidates, deprecated {deprecated} types",
-            )
-        logger.info(
-            "maintenance_ontology_evolution_done",
-            candidates=len(candidates),
-            deprecated=deprecated,
-        )
-        return {"candidates": len(candidates), "deprecated": deprecated}
+            return {"candidates": len(candidates), "deprecated": deprecated}
+        except Exception:
+            logger.exception("maintenance_ontology_evolution_failed")
+            return {"candidates": 0, "deprecated": 0, "error": True}

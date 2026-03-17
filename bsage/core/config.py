@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -33,20 +34,20 @@ class Settings(BaseSettings):
     embedding_api_base: str | None = None
 
     # Maturity lifecycle thresholds
-    maturity_seedling_min_relationships: int = 2
-    maturity_budding_min_sources: int = 3
-    maturity_evergreen_min_days_stable: int = 14
-    maturity_evergreen_min_relationships: int = 5
+    maturity_seedling_min_relationships: int = Field(default=2, gt=0)
+    maturity_budding_min_sources: int = Field(default=3, gt=0)
+    maturity_evergreen_min_days_stable: int = Field(default=14, gt=0)
+    maturity_evergreen_min_relationships: int = Field(default=5, gt=0)
 
     # Confidence decay — halflife in days per knowledge layer
-    decay_halflife_semantic: int = 365
-    decay_halflife_episodic: int = 30
-    decay_halflife_procedural: int = 90
-    decay_halflife_affective: int = 60
+    decay_halflife_semantic: int = Field(default=365, gt=0)
+    decay_halflife_episodic: int = Field(default=30, gt=0)
+    decay_halflife_procedural: int = Field(default=90, gt=0)
+    decay_halflife_affective: int = Field(default=60, gt=0)
 
     # Edge lifecycle
-    edge_promotion_min_mentions: int = 3
-    edge_decay_days: int = 90
+    edge_promotion_min_mentions: int = Field(default=3, gt=0)
+    edge_decay_days: int = Field(default=90, gt=0)
 
     # Runtime
     safe_mode: bool = True

@@ -1,6 +1,8 @@
 """Tests for Embedder — litellm embedding wrapper."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from bsage.garden.embedder import Embedder
 
@@ -65,3 +67,17 @@ class TestEmbedder:
         e = Embedder(model="text-embedding-3-small")
         results = await e.embed_many([])
         assert results == []
+
+    @patch("litellm.aembedding")
+    async def test_embed_raises_runtime_error_on_failure(self, mock_aembedding) -> None:
+        mock_aembedding.side_effect = Exception("API timeout")
+        e = Embedder(model="text-embedding-3-small")
+        with pytest.raises(RuntimeError, match="Embedding call failed"):
+            await e.embed("test")
+
+    @patch("litellm.aembedding")
+    async def test_embed_many_raises_runtime_error_on_failure(self, mock_aembedding) -> None:
+        mock_aembedding.side_effect = Exception("rate limit")
+        e = Embedder(model="text-embedding-3-small")
+        with pytest.raises(RuntimeError, match="Embedding batch call failed"):
+            await e.embed_many(["a", "b"])

@@ -151,8 +151,8 @@ class VaultRetriever:
         top_k: int,
     ) -> str:
         """Semantic search using vector embeddings."""
-        assert self._vector_store is not None
-        assert self._embedder is not None
+        if self._vector_store is None or self._embedder is None:
+            raise RuntimeError("Vector search requires vector_store and embedder")
 
         query_embedding = await self._embedder.embed(query)
         # Fetch more than top_k to allow directory filtering

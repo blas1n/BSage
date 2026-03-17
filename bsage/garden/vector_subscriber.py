@@ -38,6 +38,9 @@ class VectorSubscriber:
 
     async def on_event(self, event: Event) -> None:
         """Handle an event from the EventBus."""
+        if not self._embedder.enabled:
+            return
+
         if event.event_type == EventType.NOTE_DELETED:
             note_path = event.payload.get("path", "")
             if note_path:
