@@ -13,11 +13,12 @@ import structlog
 import yaml
 
 from bsage.core.events import emit_event
-from bsage.core.patterns import RELATED_RE
 from bsage.garden.vault import Vault
 
 if TYPE_CHECKING:
     from bsage.core.events import EventBus
+    from bsage.core.skill_context import GraphInterface
+    from bsage.garden.ontology import OntologyRegistry
     from bsage.garden.sync import SyncManager
 
 logger = structlog.get_logger(__name__)
@@ -25,23 +26,36 @@ logger = structlog.get_logger(__name__)
 
 @dataclass
 class GardenNote:
-    """Structured representation of a garden note.
+    """Structured representation of a garden note (v2.2).
 
     Attributes:
         title: Human-readable title for the note.
         content: Markdown body content.
-        note_type: Category of the note (seed / idea / project / insight).
+        note_type: Entity type (idea / insight / project / event / task / fact / etc.).
         source: Name of the skill or source that created this note.
-        related: List of related note titles for wiki-link references.
+        related: List of untyped related note titles for ``related:`` field.
         tags: List of tags for categorization.
+        confidence: Content confidence score (0.0-1.0).
+        knowledge_layer: Knowledge layer classification.
+        relations: Typed relations dict — key is relation type, value is list of targets.
+                   Example: {"attendees": ["[[Alice]]"], "belongs_to": ["[[Project X]]"]}
+        aliases: Alternative names for Obsidian search.
+        extra_fields: Additional frontmatter fields for specialized note types
+                      (fact: subject/predicate/object/valid_from/valid_to/supersedes/source_type,
+                       preference: subject/domain/context/source_type).
     """
 
     title: str
     content: str
-    note_type: str  # seed / idea / project / insight
+    note_type: str
     source: str
     related: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
+    confidence: float = 0.9
+    knowledge_layer: str = "semantic"
+    relations: dict[str, list[str]] = field(default_factory=dict)
+    aliases: list[str] = field(default_factory=list)
+    extra_fields: dict[str, Any] = field(default_factory=dict)
 
 
 def _slugify(title: str) -> str:
@@ -69,7 +83,7 @@ def _build_frontmatter(metadata: dict) -> str:
 
 _MAX_ACTION_SUMMARY = 200
 
-_VALID_NOTE_TYPES = {"idea", "insight", "project"}
+_VALID_NOTE_TYPES = {"idea", "insight", "project", "event", "task", "fact", "person", "preference"}
 
 WRITE_NOTE_TOOL: dict[str, Any] = {
     "type": "function",
@@ -257,16 +271,22 @@ class GardenWriter:
         vault: Vault,
         sync_manager: SyncManager | None = None,
         event_bus: EventBus | None = None,
+        ontology: OntologyRegistry | None = None,
     ) -> None:
         self._vault = vault
         self._sync_manager = sync_manager
         self._event_bus = event_bus
-        self._log_lock: asyncio.Lock | None = None
+        self._ontology = ontology
+        self._log_lock: asyncio.Lock = asyncio.Lock()
 
-    def _get_log_lock(self) -> asyncio.Lock:
-        if self._log_lock is None:
-            self._log_lock = asyncio.Lock()
-        return self._log_lock
+    def _resolve_folder(self, note_type: str) -> str:
+        """Resolve the vault folder for a note type using ontology mapping."""
+        if self._ontology:
+            folder = self._ontology.get_entity_folder(note_type)
+            if folder:
+                return folder.rstrip("/")
+        # Fallback: use type name as folder (e.g. "idea" → "ideas")
+        return f"{note_type}s" if not note_type.endswith("s") else note_type
 
     async def write_seed(self, source: str, data: dict) -> Path:
         """Write raw collected data as a seed note.
@@ -324,8 +344,9 @@ class GardenWriter:
     async def write_garden(self, note: GardenNote | dict) -> Path:
         """Write a processed garden note with deduplication.
 
-        Creates a file at garden/{note_type}/{slug}.md. If a file with the
-        same slug already exists, appends _001, _002, etc.
+        v2.2: Uses the ontology folder mapping (e.g. ``ideas/``, ``events/``)
+        instead of ``garden/{type}/``. Falls back to ``{note_type}/`` if no
+        mapping exists.
 
         Args:
             note: The GardenNote or dict with note fields to write.
@@ -339,21 +360,33 @@ class GardenWriter:
         date_str = now.strftime("%Y-%m-%d")
         slug = _slugify(note.title)
 
-        type_dir = self._vault.resolve_path(f"garden/{note.note_type}")
+        # v2.2: resolve folder from ontology or fall back to type name
+        folder = self._resolve_folder(note.note_type)
+        type_dir = self._vault.resolve_path(folder)
         type_dir.mkdir(parents=True, exist_ok=True)
 
         file_path = type_dir / f"{slug}.md"
         if file_path.exists():
             file_path = self._find_dedup_path(type_dir, slug)
 
-        related_links = [f"[[{r}]]" for r in note.related]
+        related_links = [f'"[[{r}]]"' for r in note.related]
 
         metadata: dict = {
             "type": note.note_type,
-            "status": "growing",
+            "status": "seed",
             "source": note.source,
             "captured_at": date_str,
+            "confidence": note.confidence,
+            "knowledge_layer": note.knowledge_layer,
         }
+        if note.aliases:
+            metadata["aliases"] = note.aliases
+        # Extra fields for specialized note types (fact, preference, etc.)
+        for key, value in note.extra_fields.items():
+            metadata[key] = value
+        # Typed relations — each key becomes a frontmatter key
+        for rel_type, targets in note.relations.items():
+            metadata[rel_type] = targets
         if related_links:
             metadata["related"] = related_links
         if note.tags:
@@ -407,7 +440,7 @@ class GardenWriter:
             else:
                 log_path.write_text(f"# Actions — {date_str}\n\n" + entry, encoding="utf-8")
 
-        async with self._get_log_lock():
+        async with self._log_lock:
             await asyncio.to_thread(_write)
         logger.info("action_logged", skill_name=skill_name, path=str(log_path))
         await self._notify_sync("action", log_path, skill_name)
@@ -443,9 +476,112 @@ class GardenWriter:
             else:
                 log_path.write_text(f"# Input Log — {date_str}\n\n" + entry, encoding="utf-8")
 
-        async with self._get_log_lock():
+        async with self._log_lock:
             await asyncio.to_thread(_write)
         logger.debug("input_log_written", source=source, path=str(log_path))
+
+    # ------------------------------------------------------------------
+    # Maturity lifecycle
+    # ------------------------------------------------------------------
+
+    _STATUS_RE = re.compile(r"^(status:\s*)\S+", re.MULTILINE)
+
+    async def update_frontmatter_status(self, note_path: Path, new_status: str) -> None:
+        """Update the ``status`` field in a note's YAML frontmatter in-place.
+
+        Args:
+            note_path: Absolute path to the markdown note.
+            new_status: New maturity status value.
+        """
+        content = await asyncio.to_thread(note_path.read_text, "utf-8")
+        updated = self._STATUS_RE.sub(rf"\g<1>{new_status}", content, count=1)
+        if updated == content:
+            return
+        await asyncio.to_thread(note_path.write_text, updated, encoding="utf-8")
+        rel_path = str(note_path.relative_to(self._vault.root))
+        await emit_event(
+            self._event_bus,
+            "NOTE_UPDATED",
+            {"path": rel_path, "field": "status", "new_value": new_status},
+        )
+        logger.info("maturity_status_updated", path=rel_path, new_status=new_status)
+
+    async def promote_maturity(
+        self,
+        graph: GraphInterface | None,
+        config: Any = None,
+    ) -> dict[str, Any]:
+        """Scan all garden notes and promote eligible ones.
+
+        Args:
+            graph: Graph interface for relationship/provenance queries.
+            config: Optional ``MaturityConfig`` override; uses Settings defaults if None.
+
+        Returns:
+            Dict with ``promoted`` count, ``checked`` count, and ``details`` list.
+        """
+        from bsage.garden.markdown_utils import extract_frontmatter
+        from bsage.garden.maturity import MaturityConfig, MaturityEvaluator
+
+        if graph is None:
+            return {"promoted": 0, "checked": 0, "details": []}
+
+        if config is None:
+            config = MaturityConfig()
+
+        evaluator = MaturityEvaluator(graph, config)
+
+        # v2.2: scan all entity-type folders, not just garden/
+        scan_dirs = [
+            "ideas",
+            "insights",
+            "projects",
+            "people",
+            "events",
+            "tasks",
+            "facts",
+            "preferences",
+        ]
+        # Also scan legacy garden/ if it exists
+        scan_dirs.append("garden")
+
+        def _collect_md() -> list[Path]:
+            files: list[Path] = []
+            for d in scan_dirs:
+                base = self._vault.root / d
+                if base.is_dir():
+                    files.extend(base.rglob("*.md"))
+            return sorted(files)
+
+        md_files = await asyncio.to_thread(_collect_md)
+        promoted = 0
+        details: list[dict[str, str]] = []
+
+        for md_file in md_files:
+            rel_path = str(md_file.relative_to(self._vault.root))
+            content = await asyncio.to_thread(md_file.read_text, "utf-8")
+            fm = extract_frontmatter(content)
+            current_status = fm.get("status", "seed")
+
+            new_status = await evaluator.evaluate(rel_path, current_status)
+            if new_status is not None:
+                await self.update_frontmatter_status(md_file, new_status.value)
+                promoted += 1
+                details.append(
+                    {
+                        "path": rel_path,
+                        "from": current_status,
+                        "to": new_status.value,
+                    }
+                )
+                logger.info(
+                    "note_promoted",
+                    path=rel_path,
+                    from_status=current_status,
+                    to_status=new_status.value,
+                )
+
+        return {"promoted": promoted, "checked": len(md_files), "details": details}
 
     async def handle_write_note(self, args: dict[str, Any]) -> dict[str, Any]:
         """Handle a write-note tool call from the LLM.
@@ -566,9 +702,7 @@ class GardenWriter:
     async def update_frontmatter_related(self, note_path: str, linked_paths: set[str]) -> None:
         """Merge auto-discovered links into the note's frontmatter ``related`` field.
 
-        Converts vault-relative paths to ``[[wiki-link]]`` format and merges
-        with any existing ``related`` entries using regex surgery on the raw
-        frontmatter string (preserves key ordering and quoting style).
+        Uses YAML parse/dump for clean frontmatter manipulation.
         Emits ``NOTE_UPDATED`` so output plugins can sync.
 
         Args:
@@ -603,21 +737,16 @@ class GardenWriter:
         if not isinstance(metadata, dict):
             return
 
-        new_links: set[str] = {f"[[{Path(lp).stem}]]" for lp in linked_paths}
+        new_links = {f'"[[{Path(lp).stem}]]"' for lp in linked_paths}
         existing_related = metadata.get("related", [])
         existing_set = set(existing_related) if isinstance(existing_related, list) else set()
         merged = sorted(existing_set | new_links)
-        if merged == sorted(existing_related if isinstance(existing_related, list) else []):
+        if merged == sorted(existing_set):
             return
 
-        related_lines = "related:\n" + "".join(f"- '{link}'\n" for link in merged)
-        if RELATED_RE.search(fm_str):
-            updated_fm = RELATED_RE.sub(related_lines, fm_str)
-        else:
-            sep = "" if fm_str.endswith("\n") else "\n"
-            updated_fm = fm_str + sep + related_lines
-
-        new_content = f"---\n{updated_fm}---\n{body}"
+        metadata["related"] = merged
+        new_fm = _build_frontmatter(metadata)
+        new_content = f"{new_fm}\n{body}"
         await asyncio.to_thread(abs_path.write_text, new_content, encoding="utf-8")
         logger.debug("note_related_updated", note_path=note_path, links=len(merged))
         await self._notify_sync("garden", abs_path, "update")

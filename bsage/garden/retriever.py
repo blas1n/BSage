@@ -9,9 +9,11 @@ import structlog
 from bsage.garden.index_reader import NoteSummary
 
 if TYPE_CHECKING:
+    from bsage.garden.embedder import Embedder
     from bsage.garden.graph_retriever import GraphRetriever
     from bsage.garden.index_reader import IndexReader
     from bsage.garden.vault import Vault
+    from bsage.garden.vector_store import VectorStore
 
 logger = structlog.get_logger(__name__)
 
@@ -30,10 +32,14 @@ class VaultRetriever:
         vault: Vault,
         index_reader: IndexReader | None = None,
         graph_retriever: GraphRetriever | None = None,
+        vector_store: VectorStore | None = None,
+        embedder: Embedder | None = None,
     ) -> None:
         self._vault = vault
         self._index_reader = index_reader
         self._graph_retriever = graph_retriever
+        self._vector_store = vector_store
+        self._embedder = embedder
 
     @property
     def index_available(self) -> bool:
@@ -75,19 +81,27 @@ class VaultRetriever:
         context_dirs: list[str] | None = None,
         top_k: int = 10,
     ) -> str:
-        """Search vault using index — returns index listing for LLM to interpret.
+        """Search vault using semantic similarity or index listing.
 
-        Used by the search-vault tool. Returns a formatted index listing
-        that the LLM can use to identify which notes are relevant.
+        When a vector store and embedder are available, ranks results by
+        cosine similarity to the query embedding. Otherwise falls back
+        to index-based listing for LLM to interpret.
 
         Args:
-            query: Search query (included in output for LLM context).
+            query: Search query.
             context_dirs: Optional filter by directories.
             top_k: Max results.
 
         Returns:
             Formatted search results string.
         """
+        # Try semantic search first
+        if self._vector_store is not None and self._embedder is not None and self._embedder.enabled:
+            try:
+                return await self._vector_search(query, context_dirs, top_k)
+            except (RuntimeError, OSError, ValueError):
+                logger.warning("vector_search_failed_fallback", exc_info=True)
+
         if self._index_reader is None:
             dirs = context_dirs or ["seeds", "garden/idea", "garden/insight"]
             return await self._fallback_retrieve(dirs, max_chars=20_000, max_notes_per_dir=top_k)
@@ -129,6 +143,63 @@ class VaultRetriever:
                 logger.debug("graph_search_failed", exc_info=True)
 
         return index_result
+
+    async def _vector_search(
+        self,
+        query: str,
+        context_dirs: list[str] | None,
+        top_k: int,
+    ) -> str:
+        """Semantic search using vector embeddings."""
+        if self._vector_store is None or self._embedder is None:
+            raise RuntimeError("Vector search requires vector_store and embedder")
+
+        query_embedding = await self._embedder.embed(query)
+        # Fetch more than top_k to allow directory filtering
+        results = await self._vector_store.search(query_embedding, top_k=top_k * 3)
+
+        if context_dirs:
+            results = [
+                (path, score)
+                for path, score in results
+                if any(path.startswith(d) for d in context_dirs)
+            ]
+
+        results = results[:top_k]
+
+        if not results:
+            return "No notes found."
+
+        # Enrich with index summaries if available
+        summary_map: dict[str, NoteSummary] = {}
+        if self._index_reader is not None:
+            all_summaries = await self._index_reader.get_all_summaries()
+            summary_map = {s.path: s for s in all_summaries}
+
+        lines = [f"Found {len(results)} notes by semantic similarity (query: {query}):"]
+        lines.append("")
+        for path, score in results:
+            summary = summary_map.get(path)
+            title = summary.title if summary else path
+            lines.append(f"- **{title}** ({path}) [similarity: {score:.3f}]")
+            if summary:
+                if summary.tags:
+                    lines.append(f"  Tags: {', '.join(f'#{t}' for t in summary.tags)}")
+                if summary.captured_at:
+                    lines.append(f"  Date: {summary.captured_at}")
+
+        search_result = "\n".join(lines)
+
+        # Append graph context if available
+        if self._graph_retriever is not None:
+            try:
+                graph_context = await self._graph_retriever.retrieve(query, top_k=top_k)
+                if graph_context:
+                    return search_result + "\n\n" + graph_context
+            except (FileNotFoundError, OSError, ValueError):
+                logger.debug("graph_search_failed", exc_info=True)
+
+        return search_result
 
     async def _index_retrieve(
         self,

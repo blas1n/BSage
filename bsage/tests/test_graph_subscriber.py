@@ -34,6 +34,7 @@ def mock_store():
     store.upsert_entity = AsyncMock(side_effect=lambda e: e.id)
     store.upsert_relationship = AsyncMock(return_value="rel-id")
     store.commit = AsyncMock()
+    store.confirm_entities_by_source = AsyncMock(return_value=0)
     return store
 
 

@@ -63,6 +63,59 @@ class TestSettings:
         settings = Settings(_env_file=None)
         assert settings.llm_api_base is None
 
+    def test_maturity_threshold_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Maturity lifecycle thresholds should have sensible defaults."""
+        monkeypatch.delenv("LLM_API_KEY", raising=False)
+        settings = Settings(_env_file=None)
+        assert settings.maturity_seedling_min_relationships == 2
+        assert settings.maturity_budding_min_sources == 3
+        assert settings.maturity_evergreen_min_days_stable == 14
+        assert settings.maturity_evergreen_min_relationships == 5
+
+    def test_embedding_config_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Embedding config should be disabled by default."""
+        monkeypatch.delenv("EMBEDDING_MODEL", raising=False)
+        settings = Settings(_env_file=None)
+        assert settings.embedding_model == ""
+        assert settings.embedding_api_key == ""
+        assert settings.embedding_api_base is None
+
+    def test_embedding_config_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Embedding config should be loadable from env vars."""
+        monkeypatch.setenv("EMBEDDING_MODEL", "text-embedding-3-small")
+        monkeypatch.setenv("EMBEDDING_API_KEY", "sk-embed-key")
+        monkeypatch.setenv("EMBEDDING_API_BASE", "http://localhost:11434")
+        settings = Settings(_env_file=None)
+        assert settings.embedding_model == "text-embedding-3-small"
+        assert settings.embedding_api_key == "sk-embed-key"
+        assert settings.embedding_api_base == "http://localhost:11434"
+
+    def test_maturity_thresholds_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Maturity thresholds should be configurable via env vars."""
+        monkeypatch.setenv("MATURITY_SEEDLING_MIN_RELATIONSHIPS", "5")
+        monkeypatch.setenv("MATURITY_BUDDING_MIN_SOURCES", "4")
+        settings = Settings(_env_file=None)
+        assert settings.maturity_seedling_min_relationships == 5
+        assert settings.maturity_budding_min_sources == 4
+
+    def test_rejects_zero_maturity_threshold(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Maturity thresholds must be positive."""
+        monkeypatch.setenv("MATURITY_SEEDLING_MIN_RELATIONSHIPS", "0")
+        with pytest.raises(ValueError):
+            Settings(_env_file=None)
+
+    def test_rejects_negative_decay_halflife(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Decay halflife must be positive."""
+        monkeypatch.setenv("DECAY_HALFLIFE_SEMANTIC", "-1")
+        with pytest.raises(ValueError):
+            Settings(_env_file=None)
+
+    def test_rejects_zero_edge_decay_days(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Edge decay days must be positive."""
+        monkeypatch.setenv("EDGE_DECAY_DAYS", "0")
+        with pytest.raises(ValueError):
+            Settings(_env_file=None)
+
 
 class TestGetSettings:
     """Test the get_settings() factory function."""

@@ -1,6 +1,5 @@
 """Tests for bsage.core.agent_loop — AgentLoop orchestration via trigger matching."""
 
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -8,29 +7,8 @@ import pytest
 from bsage.core.agent_loop import AgentLoop
 from bsage.core.exceptions import MissingCredentialError
 from bsage.core.plugin_loader import PluginMeta
-from bsage.core.skill_loader import SkillMeta
-
-
-def _make_plugin_meta(**overrides: Any) -> PluginMeta:
-    defaults: dict[str, Any] = {
-        "name": "test-plugin",
-        "version": "1.0.0",
-        "category": "process",
-        "description": "Test plugin",
-    }
-    defaults.update(overrides)
-    return PluginMeta(**defaults)
-
-
-def _make_skill_meta(**overrides: Any) -> SkillMeta:
-    defaults: dict[str, Any] = {
-        "name": "test-skill",
-        "version": "1.0.0",
-        "category": "process",
-        "description": "Test skill",
-    }
-    defaults.update(overrides)
-    return SkillMeta(**defaults)
+from bsage.tests.conftest import make_plugin_meta as _make_plugin_meta
+from bsage.tests.conftest import make_skill_meta as _make_skill_meta
 
 
 @pytest.fixture()

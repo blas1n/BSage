@@ -1,37 +1,14 @@
 """Tests for bsage.core.skill_runner — LLM pipeline execution (GATHER → LLM → APPLY)."""
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
 from bsage.core.exceptions import SkillRunError
-from bsage.core.skill_loader import OutputTarget, SkillMeta
+from bsage.core.skill_loader import OutputTarget
 from bsage.core.skill_runner import SkillRunner
-
-
-def _make_meta(**overrides) -> SkillMeta:
-    defaults = {
-        "name": "test-skill",
-        "version": "1.0.0",
-        "category": "process",
-        "description": "Test skill",
-    }
-    defaults.update(overrides)
-    return SkillMeta(**defaults)
-
-
-@pytest.fixture()
-def mock_context():
-    ctx = MagicMock()
-    ctx.logger = MagicMock()
-    ctx.credentials = {}
-    ctx.garden = AsyncMock()
-    ctx.llm = AsyncMock()
-    ctx.llm.chat = AsyncMock(return_value="LLM response text")
-    ctx.config = {}
-    ctx.input_data = None
-    return ctx
+from bsage.tests.conftest import make_skill_meta as _make_meta
 
 
 class TestSkillRunnerLLM:

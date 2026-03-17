@@ -15,7 +15,7 @@ from bsage.core.exceptions import MissingCredentialError
 from bsage.core.prompt_registry import PromptRegistry
 from bsage.core.runner import Runner
 from bsage.core.safe_mode import SafeModeGuard
-from bsage.core.skill_context import LLMClient, SchedulerInterface, SkillContext
+from bsage.core.skill_context import GraphInterface, LLMClient, SchedulerInterface, SkillContext
 from bsage.garden.writer import (
     APPEND_NOTE_TOOL,
     DELETE_NOTE_TOOL,
@@ -57,6 +57,7 @@ class AgentLoop:
         runtime_config: RuntimeConfig | None = None,
         retriever: VaultRetriever | None = None,
         scheduler_adapter: SchedulerInterface | None = None,
+        graph_store: GraphInterface | None = None,
     ) -> None:
         self._registry = registry
         self._runner = runner
@@ -69,6 +70,7 @@ class AgentLoop:
         self._runtime_config = runtime_config
         self._retriever = retriever
         self._scheduler_adapter = scheduler_adapter
+        self._graph_store = graph_store
 
     # ------------------------------------------------------------------
     # Public API
@@ -520,6 +522,7 @@ class AgentLoop:
             retriever=retriever_adapter,
             scheduler=self._scheduler_adapter,
             events=event_emitter,
+            graph=self._graph_store,
         )
 
     def _make_reply_fn(self, source_name: str) -> ReplyFn | None:

@@ -34,7 +34,8 @@ def test_extract_note_entity():
     extractor = GraphExtractor()
     entities, relationships = extractor.extract_from_note("garden/idea/bsage.md", content)
 
-    note_entities = [e for e in entities if e.entity_type == "note"]
+    # v2.2: frontmatter type is used directly as entity_type (no mapping)
+    note_entities = [e for e in entities if e.entity_type == "idea"]
     assert len(note_entities) == 1
     assert note_entities[0].name == "BSage Project"
     assert note_entities[0].source_path == "garden/idea/bsage.md"
@@ -47,7 +48,8 @@ def test_extract_note_entity_from_filename():
     extractor = GraphExtractor()
     entities, _ = extractor.extract_from_note("garden/idea/my-cool-idea.md", content)
 
-    note_entities = [e for e in entities if e.entity_type == "note"]
+    # v2.2: entity_type = frontmatter type directly
+    note_entities = [e for e in entities if e.entity_type == "idea"]
     assert note_entities[0].name == "my cool idea"
 
 
@@ -56,6 +58,20 @@ def test_extract_project_type():
     extractor = GraphExtractor()
     entities, _ = extractor.extract_from_note("garden/idea/bsage.md", content)
     assert entities[0].entity_type == "project"
+
+
+def test_extract_event_type():
+    content = _make_note(note_type="event", title="Team Standup")
+    extractor = GraphExtractor()
+    entities, _ = extractor.extract_from_note("garden/event/standup.md", content)
+    assert entities[0].entity_type == "event"
+
+
+def test_extract_task_type():
+    content = _make_note(note_type="task", title="Fix auth bug")
+    extractor = GraphExtractor()
+    entities, _ = extractor.extract_from_note("garden/task/fix-auth.md", content)
+    assert entities[0].entity_type == "task"
 
 
 def test_extract_tags():
@@ -90,8 +106,9 @@ def test_extract_related_wikilinks():
     extractor = GraphExtractor()
     entities, relationships = extractor.extract_from_note("a.md", content)
 
+    # v2.2: related targets get entity_type="concept" (not "note")
     related_entities = [
-        e for e in entities if e.entity_type == "note" and e.name in ("BSage", "Graph RAG")
+        e for e in entities if e.entity_type == "concept" and e.name in ("BSage", "Graph RAG")
     ]
     assert len(related_entities) == 2
 
@@ -170,3 +187,150 @@ def test_extract_properties_from_frontmatter():
     assert props["type"] == "idea"
     assert props["status"] == "growing"
     assert str(props["captured_at"]) == "2026-03-12"
+
+
+def test_extract_edge_types():
+    """v2.2: frontmatter relations are strong, body wikilinks are weak."""
+    body = "Also uses [[Docker]]."
+    content = _make_note(related=["BSage"], tags=["ai"], body=body)
+    extractor = GraphExtractor()
+    _, relationships = extractor.extract_from_note("a.md", content)
+
+    tagged = [r for r in relationships if r.rel_type == "tagged_with"]
+    assert all(r.edge_type == "strong" for r in tagged)
+
+    related = [r for r in relationships if r.rel_type == "related_to"]
+    assert all(r.edge_type == "strong" for r in related)
+
+    refs = [r for r in relationships if r.rel_type == "references"]
+    assert all(r.edge_type == "weak" for r in refs)
+    assert all(r.weight == 0.1 for r in refs)
+
+
+def test_extract_typed_relations_with_ontology():
+    """v2.2: frontmatter keys matching ontology relations create typed edges."""
+    import asyncio
+
+    from bsage.garden.ontology import OntologyRegistry
+
+    async def _run():
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            from pathlib import Path
+
+            registry = OntologyRegistry(Path(tmp) / "ontology.yaml")
+            await registry.load()
+            return registry
+
+    registry = asyncio.get_event_loop().run_until_complete(_run())
+
+    content = (
+        "---\n"
+        "type: event\n"
+        "title: Team Standup\n"
+        'attendees:\n  - "[[Alice]]"\n  - "[[Bob]]"\n'
+        'belongs_to:\n  - "[[Project X]]"\n'
+        "---\n"
+        "Meeting notes here.\n"
+    )
+    extractor = GraphExtractor(ontology=registry)
+    entities, relationships = extractor.extract_from_note("events/standup.md", content)
+
+    attendee_rels = [r for r in relationships if r.rel_type == "attendees"]
+    assert len(attendee_rels) == 2
+    assert all(r.edge_type == "strong" for r in attendee_rels)
+    assert all(r.weight == 1.0 for r in attendee_rels)
+
+    belongs_rels = [r for r in relationships if r.rel_type == "belongs_to"]
+    assert len(belongs_rels) == 1
+
+
+def test_extract_knowledge_layer_from_ontology():
+    """v2.2: knowledge_layer is derived from ontology entity type."""
+    import asyncio
+
+    from bsage.garden.ontology import OntologyRegistry
+
+    async def _run():
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            from pathlib import Path
+
+            registry = OntologyRegistry(Path(tmp) / "ontology.yaml")
+            await registry.load()
+            return registry
+
+    registry = asyncio.get_event_loop().run_until_complete(_run())
+
+    content = "---\ntype: event\ntitle: Standup\n---\n"
+    extractor = GraphExtractor(ontology=registry)
+    entities, _ = extractor.extract_from_note("events/standup.md", content)
+
+    assert entities[0].knowledge_layer == "episodic"
+
+
+def test_extract_fact_triple():
+    """v2.2: Fact notes produce subject→object typed edge + supersedes chain."""
+    content = (
+        "---\n"
+        "type: fact\n"
+        "title: Blasin의 현재 역할\n"
+        'subject: "[[Blasin]]"\n'
+        "predicate: has_role\n"
+        'object: "[[AX Team Lead]]"\n'
+        "valid_from: 2024-06\n"
+        "valid_to: present\n"
+        "source_type: explicit\n"
+        'supersedes: "[[fact-blasin-backend-dev]]"\n'
+        "confidence: 0.99\n"
+        "---\n"
+        "AX 팀 리드.\n"
+    )
+    extractor = GraphExtractor()
+    entities, relationships = extractor.extract_from_note("facts/blasin-role.md", content)
+
+    # Should have: fact note entity, Blasin, AX Team Lead, fact-blasin-backend-dev
+    entity_names = {e.name for e in entities}
+    assert "Blasin" in entity_names
+    assert "AX Team Lead" in entity_names
+    assert "fact-blasin-backend-dev" in entity_names
+
+    # has_role edge: Blasin → AX Team Lead
+    role_rels = [r for r in relationships if r.rel_type == "has_role"]
+    assert len(role_rels) == 1
+    assert role_rels[0].edge_type == "strong"
+
+    # supersedes edge: this fact → old fact
+    sup_rels = [r for r in relationships if r.rel_type == "supersedes"]
+    assert len(sup_rels) == 1
+    assert sup_rels[0].edge_type == "strong"
+
+
+def test_extract_fact_without_supersedes():
+    """Fact note without supersedes should still extract triple."""
+    content = (
+        "---\n"
+        "type: fact\n"
+        "title: Alice works at ACME\n"
+        'subject: "[[Alice]]"\n'
+        "predicate: works_at\n"
+        'object: "[[ACME Corp]]"\n'
+        "valid_from: 2024-01\n"
+        "valid_to: present\n"
+        "source_type: explicit\n"
+        "---\n"
+    )
+    extractor = GraphExtractor()
+    entities, relationships = extractor.extract_from_note("facts/alice-acme.md", content)
+
+    entity_names = {e.name for e in entities}
+    assert "Alice" in entity_names
+    assert "ACME Corp" in entity_names
+
+    works_rels = [r for r in relationships if r.rel_type == "works_at"]
+    assert len(works_rels) == 1
+
+    sup_rels = [r for r in relationships if r.rel_type == "supersedes"]
+    assert len(sup_rels) == 0

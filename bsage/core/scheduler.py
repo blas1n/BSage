@@ -18,6 +18,7 @@ from bsage.core.plugin_runner import MissingCredentialError
 
 if TYPE_CHECKING:
     from bsage.core.events import EventBus
+    from bsage.core.maintenance import MaintenanceTasks
     from bsage.core.protocols import SchedulerSupport
     from bsage.core.runner import Runner
     from bsage.core.safe_mode import SafeModeGuard
@@ -142,6 +143,38 @@ class Scheduler:
             )
             self._jobs[name] = job.id
             logger.info("trigger_hot_registered", name=name, schedule=schedule)
+
+    def register_maintenance(self, tasks: MaintenanceTasks) -> None:
+        """Register built-in maintenance tasks on fixed schedules.
+
+        These are core infrastructure tasks (not plugins) that must always run:
+        maturity promotion/demotion, edge lifecycle, ontology evolution.
+        """
+        from bsage.core.maintenance import MAINTENANCE_SCHEDULES
+
+        task_map = {
+            "maintenance:maturity": tasks.run_maturity,
+            "maintenance:edge-lifecycle": tasks.run_edge_lifecycle,
+            "maintenance:ontology-evolution": tasks.run_ontology_evolution,
+        }
+        for name, schedule in MAINTENANCE_SCHEDULES:
+            callback = task_map.get(name)
+            if callback is None:
+                continue
+            try:
+                cron_kwargs = self._parse_cron(schedule)
+            except ValueError:
+                logger.warning("invalid_maintenance_schedule", name=name, schedule=schedule)
+                continue
+            trigger = CronTrigger(**cron_kwargs)
+            job = self._scheduler.add_job(
+                callback,
+                trigger=trigger,
+                id=f"bsage-{name}",
+                name=f"BSage: {name}",
+            )
+            self._jobs[name] = job.id
+            logger.info("maintenance_task_registered", name=name, schedule=schedule)
 
     def _register_polling(self, name: str, meta: Any) -> None:
         """Register a polling trigger as a background asyncio task."""

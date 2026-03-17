@@ -12,13 +12,15 @@ class TestVaultEnsureDirs:
     """Test Vault.ensure_dirs creates required subdirectories."""
 
     def test_ensure_dirs_creates_subdirectories(self, tmp_path: Path) -> None:
-        """ensure_dirs should create seeds/, garden/, actions/ under vault_path."""
+        """ensure_dirs should create v2.2 entity-type folders under vault_path."""
         vault = Vault(tmp_path)
         vault.ensure_dirs()
 
         assert (tmp_path / "seeds").is_dir()
-        assert (tmp_path / "garden").is_dir()
+        assert (tmp_path / "ideas").is_dir()
+        assert (tmp_path / "events").is_dir()
         assert (tmp_path / "actions").is_dir()
+        assert (tmp_path / ".bsage").is_dir()
 
     def test_ensure_dirs_idempotent(self, tmp_path: Path) -> None:
         """Calling ensure_dirs multiple times should not raise."""
@@ -27,7 +29,7 @@ class TestVaultEnsureDirs:
         vault.ensure_dirs()
 
         assert (tmp_path / "seeds").is_dir()
-        assert (tmp_path / "garden").is_dir()
+        assert (tmp_path / "ideas").is_dir()
         assert (tmp_path / "actions").is_dir()
 
 

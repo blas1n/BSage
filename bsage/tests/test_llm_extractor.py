@@ -52,13 +52,14 @@ async def test_extract_entities(ontology, mock_llm_fn):
 
 
 async def test_extract_relationships(ontology, mock_llm_fn):
+    # v2.2: "uses" has domain=person, range=[tool, concept]
     mock_llm_fn.return_value = _llm_response(
         entities=[
-            {"name": "BSage", "entity_type": "project"},
+            {"name": "Alice", "entity_type": "person"},
             {"name": "Python", "entity_type": "tool"},
         ],
         relationships=[
-            {"source": "BSage", "target": "Python", "rel_type": "uses"},
+            {"source": "Alice", "target": "Python", "rel_type": "uses"},
         ],
     )
 
@@ -252,3 +253,80 @@ async def test_processed_hashes_lru_keeps_recent(ontology, mock_llm_fn):
 
     hash_a = hashlib.sha256(body_a.encode()).hexdigest()[:16]
     assert f"a.md:{hash_a}" in extractor._processed_hashes
+
+
+# ---------------------------------------------------------------------------
+# Relationship type auto-evolution tests
+# ---------------------------------------------------------------------------
+
+
+async def test_auto_evolve_relationship_type_after_threshold(ontology, mock_llm_fn):
+    """When auto_evolve=True and unknown rel_type appears >= threshold times, it is added."""
+    extractor = LLMExtractor(mock_llm_fn, ontology, auto_evolve=True)
+    extractor._unknown_threshold = 2
+
+    assert not ontology.is_valid_relationship_type("mentors")
+
+    for i in range(2):
+        mock_llm_fn.return_value = _llm_response(
+            entities=[
+                {"name": f"PersonA{i}", "entity_type": "person"},
+                {"name": f"PersonB{i}", "entity_type": "person"},
+            ],
+            relationships=[
+                {"source": f"PersonA{i}", "target": f"PersonB{i}", "rel_type": "mentors"},
+            ],
+        )
+        await extractor.extract(f"note{i}.md", f"{'R' * 200}{i}")
+
+    assert ontology.is_valid_relationship_type("mentors")
+
+
+async def test_auto_evolve_relationship_disabled_by_default(ontology, mock_llm_fn):
+    """When auto_evolve=False (default), unknown rel_types are not added."""
+    extractor = LLMExtractor(mock_llm_fn, ontology)
+
+    for i in range(5):
+        mock_llm_fn.return_value = _llm_response(
+            entities=[
+                {"name": f"A{i}", "entity_type": "concept"},
+                {"name": f"B{i}", "entity_type": "concept"},
+            ],
+            relationships=[
+                {"source": f"A{i}", "target": f"B{i}", "rel_type": "mentors"},
+            ],
+        )
+        await extractor.extract(f"note{i}.md", f"{'S' * 200}{i}")
+
+    assert not ontology.is_valid_relationship_type("mentors")
+
+
+async def test_auto_evolve_rel_type_uses_original_after_evolution(ontology, mock_llm_fn):
+    """After auto-evolving a rel_type, subsequent extractions use the original type."""
+    extractor = LLMExtractor(mock_llm_fn, ontology, auto_evolve=True)
+    extractor._unknown_threshold = 1
+
+    mock_llm_fn.return_value = _llm_response(
+        entities=[
+            {"name": "Alice", "entity_type": "person"},
+            {"name": "Bob", "entity_type": "person"},
+        ],
+        relationships=[
+            {"source": "Alice", "target": "Bob", "rel_type": "supervises"},
+        ],
+    )
+    await extractor.extract("note0.md", "T" * 200)
+
+    assert ontology.is_valid_relationship_type("supervises")
+
+    mock_llm_fn.return_value = _llm_response(
+        entities=[
+            {"name": "Carol", "entity_type": "person"},
+            {"name": "Dave", "entity_type": "person"},
+        ],
+        relationships=[
+            {"source": "Carol", "target": "Dave", "rel_type": "supervises"},
+        ],
+    )
+    _, rels = await extractor.extract("note1.md", "U" * 200)
+    assert rels[0].rel_type == "supervises"

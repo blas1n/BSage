@@ -11,16 +11,26 @@ from bsage.core.exceptions import VaultPathError
 
 logger = structlog.get_logger(__name__)
 
-VAULT_SUBDIRS = ("seeds", "garden", "actions")
+VAULT_SUBDIRS = (
+    "ideas",
+    "insights",
+    "projects",
+    "people",
+    "events",
+    "tasks",
+    "facts",
+    "preferences",
+    "actions",
+    "seeds",
+    ".bsage",
+)
 
 
 class Vault:
     """Manages the on-disk vault directory structure and enforces path boundaries.
 
-    The vault contains three top-level directories:
-    - seeds/   — raw data collected by InputSkills
-    - garden/  — processed knowledge notes
-    - actions/ — agent action logs
+    v2.2 vault structure — each entity type maps to a top-level folder.
+    System metadata lives in ``.bsage/``.
     """
 
     def __init__(self, vault_path: Path) -> None:

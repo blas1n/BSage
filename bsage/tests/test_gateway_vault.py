@@ -9,21 +9,9 @@ from fastapi.testclient import TestClient
 
 from bsage.core.prompt_registry import PromptRegistry
 from bsage.core.runtime_config import RuntimeConfig
-from bsage.core.skill_loader import SkillMeta
 from bsage.garden.sync import SyncManager
 from bsage.gateway.dependencies import AppState
 from bsage.gateway.routes import create_routes
-
-
-def _make_meta(**overrides) -> SkillMeta:
-    defaults = {
-        "name": "test-skill",
-        "version": "1.0.0",
-        "category": "process",
-        "description": "Test skill",
-    }
-    defaults.update(overrides)
-    return SkillMeta(**defaults)
 
 
 def _build_vault(tmp_path: Path) -> Path:

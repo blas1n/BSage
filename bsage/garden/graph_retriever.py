@@ -1,4 +1,4 @@
-"""GraphRetriever — graph-based note retrieval for knowledge graph RAG."""
+"""GraphRetriever — graph-based note retrieval for knowledge graph RAG (v2.2)."""
 
 from __future__ import annotations
 
@@ -6,12 +6,37 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from bsage.garden.confidence import DecayConfig, effective_confidence
+
 if TYPE_CHECKING:
-    from bsage.garden.graph_models import GraphEntity
+    from bsage.garden.graph_models import GraphEntity, GraphRelationship
     from bsage.garden.graph_store import GraphStore
+    from bsage.garden.ontology import OntologyRegistry
     from bsage.garden.vault import Vault
 
 logger = structlog.get_logger(__name__)
+
+
+def _score(confidence: float, weight: float, depth: int) -> float:
+    """Compute a retrieval relevance score.
+
+    Higher is better.  ``confidence * weight / depth`` ensures that
+    high-confidence, strong edges at shallow depth rank highest.
+    """
+    if depth <= 0:
+        depth = 1
+    return confidence * weight / depth
+
+
+def _decayed_confidence(rel: GraphRelationship, neighbor: GraphEntity) -> float:
+    """Apply time-based decay to relationship confidence using entity's knowledge layer."""
+    updated_at = neighbor.properties.get("updated_at")
+    return effective_confidence(
+        rel.confidence,
+        updated_at,
+        neighbor.knowledge_layer,
+        config=DecayConfig(),
+    )
 
 
 class GraphRetriever:
@@ -22,9 +47,15 @@ class GraphRetriever:
     and returns formatted context including relationship information.
     """
 
-    def __init__(self, graph_store: GraphStore, vault: Vault) -> None:
+    def __init__(
+        self,
+        graph_store: GraphStore,
+        vault: Vault,
+        ontology: OntologyRegistry | None = None,
+    ) -> None:
         self._store = graph_store
         self._vault = vault
+        self._ontology = ontology
 
     async def retrieve(
         self,
@@ -51,33 +82,49 @@ class GraphRetriever:
             return ""
 
         # 2. Multi-hop traversal from each matched entity
-        source_paths: dict[str, int] = {}  # path -> min depth
+        # v2.2: track score = confidence * weight / depth for ranking
+        source_scores: dict[str, float] = {}  # path -> best score
         graph_lines: list[str] = ["## Graph Context"]
 
         for entity in matched:
             neighbors = await self._store.query_neighbors(entity.id)
             graph_lines.append(f"\nEntity: **{entity.name}** ({entity.entity_type})")
             for rel, neighbor in neighbors:
-                direction = "->" if rel.source_id == entity.id else "<-"
+                if rel.source_id == entity.id:
+                    label = rel.rel_type
+                    direction = "->"
+                else:
+                    # v2.2: use inverse relation name for incoming edges
+                    label = self._resolve_inverse(rel.rel_type)
+                    direction = "<-"
                 graph_lines.append(
-                    f"  {direction} {rel.rel_type} {direction} "
+                    f"  {direction} {label} {direction} "
                     f"**{neighbor.name}** ({neighbor.entity_type})"
                 )
                 if neighbor.source_path:
-                    source_paths.setdefault(neighbor.source_path, 1)
+                    conf = _decayed_confidence(rel, neighbor)
+                    s = _score(conf, rel.weight, 1)
+                    source_scores[neighbor.source_path] = max(
+                        source_scores.get(neighbor.source_path, 0.0), s
+                    )
 
             # Deeper hops
             hops = await self._store.multi_hop_query(entity.id, max_hops=max_hops)
             for depth, hop_entity in hops:
                 if hop_entity.source_path:
-                    source_paths.setdefault(hop_entity.source_path, depth)
+                    s = _score(hop_entity.confidence, 0.5, depth)
+                    source_scores[hop_entity.source_path] = max(
+                        source_scores.get(hop_entity.source_path, 0.0), s
+                    )
 
-            # Include the matched entity's own source
+            # Include the matched entity's own source (highest priority)
             if entity.source_path:
-                source_paths.setdefault(entity.source_path, 0)
+                source_scores[entity.source_path] = max(
+                    source_scores.get(entity.source_path, 0.0), 10.0
+                )
 
-        # 3. Read note contents (sorted by depth, limited to top_k)
-        sorted_paths = sorted(source_paths.items(), key=lambda x: x[1])[:top_k]
+        # 3. Read note contents (sorted by score descending, limited to top_k)
+        sorted_paths = sorted(source_scores.items(), key=lambda x: -x[1])[:top_k]
 
         parts: list[str] = ["\n".join(graph_lines)]
         total = len(parts[0])
@@ -86,7 +133,7 @@ class GraphRetriever:
             parts.append("\n## Related Notes")
             total += len(parts[-1])
 
-        for path, _depth in sorted_paths:
+        for path, _score_val in sorted_paths:
             if total >= max_chars:
                 break
             try:
@@ -135,3 +182,11 @@ class GraphRetriever:
                         break
 
         return results[:limit]
+
+    def _resolve_inverse(self, rel_type: str) -> str:
+        """Return the inverse relation name, falling back to the original."""
+        if self._ontology:
+            inv = self._ontology.get_inverse(rel_type)
+            if inv:
+                return inv
+        return rel_type

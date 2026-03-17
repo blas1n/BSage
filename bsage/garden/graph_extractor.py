@@ -1,9 +1,9 @@
-"""GraphExtractor — rule-based entity and relationship extraction from vault notes."""
+"""GraphExtractor — rule-based entity and relationship extraction from vault notes (v2.2)."""
 
 from __future__ import annotations
 
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
@@ -13,17 +13,36 @@ from bsage.garden.markdown_utils import body_after_frontmatter, extract_frontmat
 
 if TYPE_CHECKING:
     from bsage.garden.llm_extractor import LLMExtractor
+    from bsage.garden.ontology import OntologyRegistry
 
 logger = structlog.get_logger(__name__)
 
-# Frontmatter type → entity_type mapping
-_TYPE_MAP: dict[str, str] = {
-    "idea": "note",
-    "insight": "note",
-    "project": "project",
-    "event": "note",
-    "seed": "note",
-}
+# Frontmatter keys that are NOT relation types (common metadata fields)
+_META_KEYS = frozenset(
+    {
+        "type",
+        "status",
+        "source",
+        "captured_at",
+        "confidence",
+        "knowledge_layer",
+        "last_confirmed",
+        "aliases",
+        "title",
+        "tags",
+        "related",
+        "subject",
+        "predicate",
+        "object",
+        "valid_from",
+        "valid_to",
+        "supersedes",
+        "source_type",
+        "domain",
+        "context",
+        "valid_at",
+    }
+)
 
 
 def _slug_from_path(path: str) -> str:
@@ -32,16 +51,35 @@ def _slug_from_path(path: str) -> str:
     return stem.replace("-", " ").replace("_", " ").strip()
 
 
+def _extract_wikilink_names(items: list[Any]) -> list[str]:
+    """Extract wikilink target names from a list of strings."""
+    names: list[str] = []
+    for item in items:
+        if isinstance(item, str):
+            found = WIKILINK_RE.findall(item)
+            names.extend(found if found else [item])
+    return names
+
+
 class GraphExtractor:
     """Extracts entities and relationships from vault note content.
 
     Primary extraction is deterministic rule-based (confidence=1.0).
     When an ``LLMExtractor`` is provided, also extracts from unstructured
     body text using LLM (confidence=0.8).
+
+    v2.2: Uses frontmatter type directly as entity_type (no _TYPE_MAP).
+    Extracts typed relations from frontmatter keys matching ontology relation types.
+    Distinguishes strong edges (frontmatter) from weak edges (body mentions).
     """
 
-    def __init__(self, llm_extractor: LLMExtractor | None = None) -> None:
+    def __init__(
+        self,
+        llm_extractor: LLMExtractor | None = None,
+        ontology: OntologyRegistry | None = None,
+    ) -> None:
         self._llm_extractor = llm_extractor
+        self._ontology = ontology
 
     def extract_from_note(
         self, rel_path: str, content: str
@@ -49,7 +87,7 @@ class GraphExtractor:
         """Extract entities and relationships from a single note.
 
         Args:
-            rel_path: Vault-relative path (e.g. ``garden/idea/bsage.md``).
+            rel_path: Vault-relative path (e.g. ``ideas/bsage.md``).
             content: Full markdown content of the note.
 
         Returns:
@@ -61,27 +99,94 @@ class GraphExtractor:
         fm = extract_frontmatter(content)
         body = body_after_frontmatter(content)
 
-        # 1. Note entity (every note becomes a node)
+        # Determine knowledge layer from ontology or frontmatter
+        fm_type = fm.get("type", "concept")
+        knowledge_layer = fm.get("knowledge_layer", "semantic")
+        if self._ontology and not fm.get("knowledge_layer"):
+            knowledge_layer = self._ontology.get_knowledge_layer(fm_type)
+
+        # 1. Note entity — use frontmatter type directly as entity_type (v2.2: no mapping)
         note_name = fm.get("title") or _slug_from_path(rel_path)
-        note_type = _TYPE_MAP.get(fm.get("type", ""), "note")
         note_entity = GraphEntity(
             name=note_name,
-            entity_type=note_type,
+            entity_type=fm_type,
             source_path=rel_path,
             properties={k: v for k, v in fm.items() if k in ("type", "status", "captured_at")},
+            confidence=float(fm.get("confidence", 1.0)),
+            knowledge_layer=knowledge_layer,
         )
         entities.append(note_entity)
 
-        # 2. Tags → tag entities + tagged_with relationships
-        raw_tags = fm.get("tags") or []
-        if isinstance(raw_tags, str):
-            tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
-        elif isinstance(raw_tags, list):
-            tags = [str(t).strip() for t in raw_tags if t]
-        else:
+        # Track all names captured via frontmatter to avoid body-link duplication
+        all_related_names: set[str] = set()
+
+        # 1b. Fact triple extraction (subject/predicate/object → typed edges)
+        if fm_type == "fact":
+            subject_raw = fm.get("subject", "")
+            predicate = fm.get("predicate", "")
+            object_raw = fm.get("object", "")
+            subject_names = _extract_wikilink_names([subject_raw]) if subject_raw else []
+            object_names = _extract_wikilink_names([object_raw]) if object_raw else []
+            if subject_names and predicate and object_names:
+                subj_entity = GraphEntity(
+                    name=subject_names[0], entity_type="concept", source_path=rel_path
+                )
+                obj_entity = GraphEntity(
+                    name=object_names[0], entity_type="concept", source_path=rel_path
+                )
+                entities.extend([subj_entity, obj_entity])
+                relationships.append(
+                    GraphRelationship(
+                        source_id=subj_entity.id,
+                        target_id=obj_entity.id,
+                        rel_type=predicate,
+                        source_path=rel_path,
+                        weight=self._get_relation_weight(predicate),
+                        edge_type="strong",
+                    )
+                )
+                # Link fact note to subject
+                relationships.append(
+                    GraphRelationship(
+                        source_id=note_entity.id,
+                        target_id=subj_entity.id,
+                        rel_type="related_to",
+                        source_path=rel_path,
+                        weight=0.8,
+                        edge_type="strong",
+                    )
+                )
+                all_related_names.update(subject_names + object_names)
+            # Supersedes chain
+            supersedes_raw = fm.get("supersedes", "")
+            if supersedes_raw:
+                sup_names = _extract_wikilink_names([supersedes_raw])
+                for sup_name in sup_names:
+                    sup_entity = GraphEntity(
+                        name=sup_name, entity_type="fact", source_path=rel_path
+                    )
+                    entities.append(sup_entity)
+                    relationships.append(
+                        GraphRelationship(
+                            source_id=note_entity.id,
+                            target_id=sup_entity.id,
+                            rel_type="supersedes",
+                            source_path=rel_path,
+                            weight=self._get_relation_weight("supersedes"),
+                            edge_type="strong",
+                        )
+                    )
+                    all_related_names.add(sup_name)
+
+        # 2. Tags → tag entities + tagged_with relationships (strong edges)
+        tags = fm.get("tags", [])
+        if not isinstance(tags, list):
             tags = []
         for tag in tags:
-            tag_entity = GraphEntity(name=tag, entity_type="tag", source_path=rel_path)
+            tag_str = str(tag).strip()
+            if not tag_str:
+                continue
+            tag_entity = GraphEntity(name=tag_str, entity_type="tag", source_path=rel_path)
             entities.append(tag_entity)
             relationships.append(
                 GraphRelationship(
@@ -89,13 +194,17 @@ class GraphExtractor:
                     target_id=tag_entity.id,
                     rel_type="tagged_with",
                     source_path=rel_path,
+                    weight=self._get_relation_weight("tagged_with"),
+                    edge_type="strong",
                 )
             )
 
-        # 3. Source → source entity + created_by relationship
+        # 3. Source → source entity + created_by relationship (strong edge)
         source = fm.get("source")
-        if source and isinstance(source, str):
-            source_entity = GraphEntity(name=source, entity_type="source", source_path=rel_path)
+        if source:
+            source_entity = GraphEntity(
+                name=str(source), entity_type="source", source_path=rel_path
+            )
             entities.append(source_entity)
             relationships.append(
                 GraphRelationship(
@@ -103,24 +212,50 @@ class GraphExtractor:
                     target_id=source_entity.id,
                     rel_type="created_by",
                     source_path=rel_path,
+                    weight=self._get_relation_weight("created_by"),
+                    edge_type="strong",
                 )
             )
 
-        # 4. Related wikilinks → related_to relationships
-        related = fm.get("related") or []
-        if isinstance(related, str):
-            related = WIKILINK_RE.findall(related)
-        elif isinstance(related, list):
-            # Extract from wikilink strings like "[[note-title]]"
-            extracted: list[str] = []
-            for item in related:
-                if isinstance(item, str):
-                    found = WIKILINK_RE.findall(item)
-                    extracted.extend(found if found else [item])
-            related = extracted
+        # 4. Typed relations from frontmatter keys (v2.2: key = relation type)
+        relation_types = self._get_known_relation_types()
 
-        for target_name in related:
-            target_entity = GraphEntity(name=target_name, entity_type="note", source_path=rel_path)
+        for key, value in fm.items():
+            if key in _META_KEYS or key not in relation_types:
+                continue
+            # Value must be a list of wikilinks
+            if not isinstance(value, list):
+                value = [value]
+            targets = _extract_wikilink_names(value)
+            for target_name in targets:
+                all_related_names.add(target_name)
+                target_entity = GraphEntity(
+                    name=target_name, entity_type="concept", source_path=rel_path
+                )
+                entities.append(target_entity)
+                relationships.append(
+                    GraphRelationship(
+                        source_id=note_entity.id,
+                        target_id=target_entity.id,
+                        rel_type=key,
+                        source_path=rel_path,
+                        weight=self._get_relation_weight(key),
+                        edge_type="strong",
+                    )
+                )
+
+        # 5. Untyped related wikilinks → related_to relationships (strong, weight 0.5)
+        related = fm.get("related", [])
+        if not isinstance(related, list):
+            related = []
+        related_names = _extract_wikilink_names(related)
+        for target_name in related_names:
+            if target_name in all_related_names:
+                continue
+            all_related_names.add(target_name)
+            target_entity = GraphEntity(
+                name=target_name, entity_type="concept", source_path=rel_path
+            )
             entities.append(target_entity)
             relationships.append(
                 GraphRelationship(
@@ -128,19 +263,19 @@ class GraphExtractor:
                     target_id=target_entity.id,
                     rel_type="related_to",
                     source_path=rel_path,
+                    weight=self._get_relation_weight("related_to"),
+                    edge_type="strong",
                 )
             )
 
-        # 5. Body wikilinks → references relationships
+        # 6. Body wikilinks → references relationships (weak edges, weight 0.1)
         body_links = WIKILINK_RE.findall(body)
-        # Deduplicate and exclude already-captured related links
-        related_set = set(related)
         seen: set[str] = set()
         for link_name in body_links:
-            if link_name in related_set or link_name in seen:
+            if link_name in all_related_names or link_name in seen:
                 continue
             seen.add(link_name)
-            link_entity = GraphEntity(name=link_name, entity_type="note", source_path=rel_path)
+            link_entity = GraphEntity(name=link_name, entity_type="concept", source_path=rel_path)
             entities.append(link_entity)
             relationships.append(
                 GraphRelationship(
@@ -148,6 +283,8 @@ class GraphExtractor:
                     target_id=link_entity.id,
                     rel_type="references",
                     source_path=rel_path,
+                    weight=0.1,
+                    edge_type="weak",
                 )
             )
 
@@ -175,3 +312,15 @@ class GraphExtractor:
             relationships.extend(llm_rels)
 
         return entities, relationships
+
+    def _get_known_relation_types(self) -> set[str]:
+        """Return known relation type names from ontology."""
+        if self._ontology is None:
+            return set()
+        return set(self._ontology.get_relation_types().keys())
+
+    def _get_relation_weight(self, rel_type: str) -> float:
+        """Get the default weight for a relation type from ontology."""
+        if self._ontology is None:
+            return 0.5
+        return self._ontology.get_relation_weight(rel_type)

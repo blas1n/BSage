@@ -65,7 +65,10 @@ class LLMExtractor:
         self._auto_evolve = auto_evolve
         self._processed_hashes: OrderedDict[str, None] = OrderedDict()
         self._unknown_type_counts: dict[str, int] = {}
-        self._unknown_threshold: int = 3
+        self._unknown_rel_type_counts: dict[str, int] = {}
+        # Read threshold from ontology evolution_config, fallback to 3
+        evo_config = ontology.get_evolution_config()
+        self._unknown_threshold: int = int(evo_config.get("create_threshold", 3))
 
     async def extract(
         self, rel_path: str, body_text: str
@@ -157,8 +160,10 @@ class LLMExtractor:
             if not source_name or not target_name:
                 continue
 
-            # Validate type against ontology
-            rel_type = self._ontology.validate_relationship_type(rel_type)
+            # Validate type against ontology; track unknowns for evolution
+            if not self._ontology.is_valid_relationship_type(rel_type):
+                await self._track_unknown_rel_type(rel_type)
+                rel_type = self._ontology.validate_relationship_type(rel_type)
 
             source_id = entity_name_map.get(source_name)
             target_id = entity_name_map.get(target_name)
@@ -170,6 +175,18 @@ class LLMExtractor:
                     target=target_name,
                     source_found=bool(source_id),
                     target_found=bool(target_id),
+                )
+                continue
+
+            # v2.2: Domain/range validation — reject structurally invalid edges
+            if not self._check_domain_range(
+                rel_type, source_name, target_name, entity_name_map, entities
+            ):
+                logger.debug(
+                    "llm_relationship_domain_range_rejected",
+                    rel_type=rel_type,
+                    source=source_name,
+                    target=target_name,
                 )
                 continue
 
@@ -191,6 +208,46 @@ class LLMExtractor:
         )
         return entities, relationships
 
+    def _check_domain_range(
+        self,
+        rel_type: str,
+        source_name: str,
+        target_name: str,
+        entity_name_map: dict[str, str],
+        entities: list[GraphEntity],
+    ) -> bool:
+        """Validate that source/target entity types match the relation's domain/range.
+
+        Returns True if valid or if no constraints exist.
+        """
+        rel_info = self._ontology.get_relation_types().get(rel_type)
+        if not rel_info:
+            return True  # unknown type, let fallback handle it
+
+        domain = rel_info.get("domain", "*")
+        range_ = rel_info.get("range", "*")
+        if domain == "*" and range_ == "*":
+            return True
+
+        # Build entity type lookup from current extraction
+        type_lookup: dict[str, str] = {}
+        for e in entities:
+            type_lookup[e.name] = e.entity_type
+
+        source_type = type_lookup.get(source_name, "concept")
+        target_type = type_lookup.get(target_name, "concept")
+
+        def _matches(constraint: str | list[str], actual: str) -> bool:
+            if constraint == "*":
+                return True
+            if isinstance(constraint, list):
+                return actual in constraint
+            return actual == constraint
+
+        if not _matches(domain, source_type):
+            return False
+        return _matches(range_, target_type)
+
     async def _track_unknown_type(self, entity_type: str) -> None:
         """Track unknown entity types and auto-evolve ontology when threshold is reached."""
         if not self._auto_evolve:
@@ -203,3 +260,16 @@ class LLMExtractor:
             if added:
                 logger.info("ontology_auto_evolved", new_type=entity_type)
                 del self._unknown_type_counts[entity_type]
+
+    async def _track_unknown_rel_type(self, rel_type: str) -> None:
+        """Track unknown relationship types and auto-evolve ontology when threshold is reached."""
+        if not self._auto_evolve:
+            return
+        self._unknown_rel_type_counts[rel_type] = self._unknown_rel_type_counts.get(rel_type, 0) + 1
+        if self._unknown_rel_type_counts[rel_type] >= self._unknown_threshold:
+            added = await self._ontology.add_relationship_type(
+                rel_type, f"Auto-discovered relationship: {rel_type}"
+            )
+            if added:
+                logger.info("ontology_rel_type_auto_evolved", new_type=rel_type)
+                del self._unknown_rel_type_counts[rel_type]

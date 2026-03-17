@@ -5,30 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from bsage.core.exceptions import CredentialNotFoundError, MissingCredentialError, PluginRunError
-from bsage.core.plugin_loader import PluginMeta
 from bsage.core.plugin_runner import PluginRunner
-
-
-def _make_plugin_meta(**overrides) -> PluginMeta:
-    defaults = {
-        "name": "test-plugin",
-        "version": "1.0.0",
-        "category": "process",
-        "description": "Test plugin",
-    }
-    defaults.update(overrides)
-    return PluginMeta(**defaults)
-
-
-@pytest.fixture()
-def mock_context():
-    ctx = MagicMock()
-    ctx.credentials = {}
-    ctx.config = {}
-    ctx.input_data = None
-    ctx.garden = AsyncMock()
-    ctx.llm = AsyncMock()
-    return ctx
+from bsage.tests.conftest import make_plugin_meta as _make_plugin_meta
 
 
 class TestPluginRunnerRun:

@@ -10,23 +10,12 @@ from bsage.core.config import Settings
 from bsage.core.plugin_loader import PluginMeta
 from bsage.core.prompt_registry import PromptRegistry
 from bsage.core.runtime_config import RuntimeConfig
-from bsage.core.skill_loader import SkillMeta
 from bsage.garden.sync import SyncManager
 from bsage.gateway.app import create_app
 from bsage.gateway.dependencies import AppState
 from bsage.gateway.routes import create_routes
 from bsage.gateway.ws import ConnectionManager
-
-
-def _make_meta(**overrides) -> SkillMeta:
-    defaults = {
-        "name": "test-skill",
-        "version": "1.0.0",
-        "category": "process",
-        "description": "Test skill",
-    }
-    defaults.update(overrides)
-    return SkillMeta(**defaults)
+from bsage.tests.conftest import make_skill_meta as _make_meta
 
 
 @pytest.fixture()

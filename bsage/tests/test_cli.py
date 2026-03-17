@@ -244,7 +244,7 @@ class TestInitCommand:
             assert result.exit_code == 0
             assert "Vault initialized" in result.output
             assert (tmp_path / "vault" / "seeds").is_dir()
-            assert (tmp_path / "vault" / "garden").is_dir()
+            assert (tmp_path / "vault" / "ideas").is_dir()
             assert (tmp_path / "vault" / "actions").is_dir()
 
 

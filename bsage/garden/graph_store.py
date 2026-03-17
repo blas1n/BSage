@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS entities (
     source_path TEXT NOT NULL,
     properties TEXT NOT NULL DEFAULT '{}',
     confidence REAL NOT NULL DEFAULT 1.0,
+    knowledge_layer TEXT NOT NULL DEFAULT 'semantic',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -50,6 +51,8 @@ CREATE TABLE IF NOT EXISTS relationships (
     source_path TEXT NOT NULL,
     properties TEXT NOT NULL DEFAULT '{}',
     confidence REAL NOT NULL DEFAULT 1.0,
+    weight REAL NOT NULL DEFAULT 0.5,
+    edge_type TEXT NOT NULL DEFAULT 'weak',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (source_id) REFERENCES entities(id) ON DELETE CASCADE,
     FOREIGN KEY (target_id) REFERENCES entities(id) ON DELETE CASCADE
@@ -58,6 +61,7 @@ CREATE TABLE IF NOT EXISTS relationships (
 CREATE INDEX IF NOT EXISTS idx_rel_source ON relationships (source_id);
 CREATE INDEX IF NOT EXISTS idx_rel_target ON relationships (target_id);
 CREATE INDEX IF NOT EXISTS idx_rel_source_path ON relationships (source_path);
+CREATE INDEX IF NOT EXISTS idx_rel_edge_type ON relationships (edge_type);
 
 CREATE TABLE IF NOT EXISTS provenance (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -155,12 +159,13 @@ class GraphStore:
             await self._conn.execute(
                 """UPDATE entities
                    SET source_path = ?, properties = ?, confidence = ?,
-                       updated_at = datetime('now')
+                       knowledge_layer = ?, updated_at = datetime('now')
                    WHERE id = ?""",
                 (
                     entity.source_path,
                     json.dumps(entity.properties),
                     entity.confidence,
+                    entity.knowledge_layer,
                     existing_id,
                 ),
             )
@@ -175,8 +180,8 @@ class GraphStore:
 
         await self._conn.execute(
             """INSERT INTO entities (id, name, name_normalized, entity_type,
-                                    source_path, properties, confidence)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                                    source_path, properties, confidence, knowledge_layer)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 entity.id,
                 entity.name,
@@ -185,6 +190,7 @@ class GraphStore:
                 entity.source_path,
                 json.dumps(entity.properties),
                 entity.confidence,
+                entity.knowledge_layer,
             ),
         )
         # Record provenance for this source
@@ -212,8 +218,9 @@ class GraphStore:
 
         await self._conn.execute(
             """INSERT INTO relationships
-               (id, source_id, target_id, rel_type, source_path, properties, confidence)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               (id, source_id, target_id, rel_type, source_path, properties,
+                confidence, weight, edge_type)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 rel.id,
                 rel.source_id,
@@ -222,6 +229,8 @@ class GraphStore:
                 rel.source_path,
                 json.dumps(rel.properties),
                 rel.confidence,
+                rel.weight,
+                rel.edge_type,
             ),
         )
         return rel.id
@@ -335,16 +344,18 @@ class GraphStore:
         sql = f"""
             SELECT r.id, r.source_id, r.target_id, r.rel_type,
                    r.source_path, r.properties, r.confidence,
+                   r.weight, r.edge_type,
                    e.id, e.name, e.name_normalized, e.entity_type,
-                   e.source_path, e.properties, e.confidence
+                   e.source_path, e.properties, e.confidence, e.knowledge_layer
             FROM relationships r
             JOIN entities e ON e.id = r.target_id
             WHERE r.source_id = ? {type_filter}
             UNION ALL
             SELECT r.id, r.source_id, r.target_id, r.rel_type,
                    r.source_path, r.properties, r.confidence,
+                   r.weight, r.edge_type,
                    e.id, e.name, e.name_normalized, e.entity_type,
-                   e.source_path, e.properties, e.confidence
+                   e.source_path, e.properties, e.confidence, e.knowledge_layer
             FROM relationships r
             JOIN entities e ON e.id = r.source_id
             WHERE r.target_id = ? {type_filter}
@@ -360,14 +371,17 @@ class GraphStore:
                 id=row[0],
                 properties=json.loads(row[5]),
                 confidence=row[6],
+                weight=row[7],
+                edge_type=row[8],
             )
             ent = GraphEntity(
-                name=row[8],
-                entity_type=row[10],
-                source_path=row[11],
-                id=row[7],
-                properties=json.loads(row[12]),
-                confidence=row[13],
+                name=row[10],
+                entity_type=row[12],
+                source_path=row[13],
+                id=row[9],
+                properties=json.loads(row[14]),
+                confidence=row[15],
+                knowledge_layer=row[16],
             )
             results.append((rel, ent))
         return results
@@ -408,6 +422,100 @@ class GraphStore:
         """Return the total number of relationships."""
         row = await self._fetchone("SELECT COUNT(*) FROM relationships")
         return row[0] if row else 0
+
+    # ------------------------------------------------------------------
+    # Maturity-related queries
+    # ------------------------------------------------------------------
+
+    async def count_entities_of_type(self, entity_type: str) -> int:
+        """Count entities with a given entity_type."""
+        row = await self._fetchone(
+            "SELECT COUNT(*) FROM entities WHERE entity_type = ?",
+            (entity_type,),
+        )
+        return row[0] if row else 0
+
+    async def count_relationships_for_entity(self, entity_name: str) -> int:
+        """Count all relationships (inbound + outbound) for an entity by source_path."""
+        norm = _normalize(entity_name)
+        row = await self._fetchone(
+            """SELECT COUNT(*) FROM relationships r
+               JOIN entities e ON e.id = r.source_id OR e.id = r.target_id
+               WHERE e.source_path = ?""",
+            (entity_name,),
+        )
+        if row and row[0]:
+            return row[0]
+        # Fallback: try by normalized name
+        row = await self._fetchone(
+            """SELECT COUNT(*) FROM (
+                   SELECT r.id FROM relationships r
+                   JOIN entities e ON e.id = r.source_id
+                   WHERE e.name_normalized = ?
+                   UNION ALL
+                   SELECT r.id FROM relationships r
+                   JOIN entities e ON e.id = r.target_id
+                   WHERE e.name_normalized = ?
+               )""",
+            (norm, norm),
+        )
+        return row[0] if row else 0
+
+    async def count_distinct_sources(self, entity_name: str) -> int:
+        """Count distinct source_path entries in provenance for an entity."""
+        norm = _normalize(entity_name)
+        row = await self._fetchone(
+            """SELECT COUNT(DISTINCT p.source_path) FROM provenance p
+               JOIN entities e ON e.id = p.entity_id
+               WHERE e.source_path = ?""",
+            (entity_name,),
+        )
+        if row and row[0]:
+            return row[0]
+        row = await self._fetchone(
+            """SELECT COUNT(DISTINCT p.source_path) FROM provenance p
+               JOIN entities e ON e.id = p.entity_id
+               WHERE e.name_normalized = ?""",
+            (norm,),
+        )
+        return row[0] if row else 0
+
+    async def get_entity_updated_at(self, entity_name: str) -> str | None:
+        """Return the updated_at timestamp for an entity."""
+        norm = _normalize(entity_name)
+        row = await self._fetchone(
+            "SELECT updated_at FROM entities WHERE source_path = ? LIMIT 1",
+            (entity_name,),
+        )
+        if row:
+            return row[0]
+        row = await self._fetchone(
+            "SELECT updated_at FROM entities WHERE name_normalized = ? LIMIT 1",
+            (norm,),
+        )
+        return row[0] if row else None
+
+    # ------------------------------------------------------------------
+    # Source of Truth — confirmation
+    # ------------------------------------------------------------------
+
+    async def confirm_entities_by_source(self, source_path: str) -> int:
+        """Mark all entities from a source as freshly confirmed (updated_at = now).
+
+        Called when a note is manually edited — the user's edits are
+        the source of truth, so confidence resets its decay clock.
+
+        Returns:
+            Number of entities confirmed.
+        """
+        async with self._write_lock:
+            cursor = await self._conn.execute(
+                """UPDATE entities SET updated_at = datetime('now')
+                   WHERE source_path = ?""",
+                (source_path,),
+            )
+            await self._conn.commit()
+            return cursor.rowcount
 
     # ------------------------------------------------------------------
     # Source content hashing (incremental rebuild)
@@ -453,7 +561,20 @@ class GraphStore:
     ) -> dict[str, int]:
         count = 0
         skipped = 0
-        for subdir in ("seeds", "garden"):
+        # v2.2: scan entity-type folders + seeds + legacy garden
+        scan_dirs = (
+            "seeds",
+            "ideas",
+            "insights",
+            "projects",
+            "people",
+            "events",
+            "tasks",
+            "facts",
+            "preferences",
+            "garden",
+        )
+        for subdir in scan_dirs:
             base = vault.resolve_path(subdir)
 
             def _collect_md(p: Path = base) -> list[Path]:
@@ -504,17 +625,41 @@ class GraphStore:
     # Helpers
     # ------------------------------------------------------------------
 
-    async def _fetchone(self, sql: str, params: tuple = ()) -> tuple[Any, ...] | None:
+    async def query(self, sql: str, params: tuple = ()) -> list[aiosqlite.Row]:
+        """Execute a read query and return all result rows."""
+        return await self._fetchall(sql, params)
+
+    async def execute_batch(
+        self, statements: list[tuple[str, tuple]], *, commit: bool = True
+    ) -> int:
+        """Execute multiple write statements within the write lock.
+
+        Returns total number of affected rows.
+        """
+        total = 0
+        async with self._write_lock:
+            for sql, params in statements:
+                cursor = await self._conn.execute(sql, params)
+                total += cursor.rowcount
+            if commit and total:
+                await self._conn.commit()
+        return total
+
+    async def _fetchone(self, sql: str, params: tuple = ()) -> aiosqlite.Row | None:
         cursor = await self._conn.execute(sql, params)
         return await cursor.fetchone()
 
-    async def _fetchall(self, sql: str, params: tuple = ()) -> list[tuple[Any, ...]]:
+    async def _fetchall(self, sql: str, params: tuple = ()) -> list[aiosqlite.Row]:
         cursor = await self._conn.execute(sql, params)
-        return await cursor.fetchall()
+        return list(await cursor.fetchall())
 
     @staticmethod
     def _row_to_entity(row: Any) -> GraphEntity:
-        """Convert a raw SQLite row to a GraphEntity."""
+        """Convert a raw SQLite row to a GraphEntity.
+
+        Expected column order: id, name, name_normalized, entity_type,
+        source_path, properties, confidence, knowledge_layer, created_at, updated_at.
+        """
         return GraphEntity(
             name=row[1],
             entity_type=row[3],
@@ -522,4 +667,5 @@ class GraphStore:
             id=row[0],
             properties=json.loads(row[5]),
             confidence=row[6],
+            knowledge_layer=row[7],
         )
