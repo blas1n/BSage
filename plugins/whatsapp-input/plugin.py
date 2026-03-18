@@ -1,0 +1,200 @@
+"""WhatsApp message input Plugin — receives messages via webhook from Meta WhatsApp Cloud API."""
+
+import hashlib
+import hmac
+import json
+from typing import Optional
+
+from bsage.plugin import plugin
+
+
+def _verify_webhook_signature(payload: str, signature: str, verify_token: str) -> bool:
+    """Verify WhatsApp webhook signature using SHA256 HMAC."""
+    expected = hmac.new(
+        verify_token.encode(),
+        payload.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(signature, expected)
+
+
+def _parse_incoming_message(webhook_event: dict) -> dict | None:
+    """Extract message from WhatsApp webhook entry object."""
+    entry = webhook_event.get("entry", [{}])[0]
+    changes = entry.get("changes", [{}])[0]
+    value = changes.get("value", {})
+    messages = value.get("messages", [])
+
+    if not messages:
+        return None
+
+    msg = messages[0]
+    if msg.get("type") != "text":
+        return None
+
+    text_obj = msg.get("text", {})
+    if not text_obj.get("body"):
+        return None
+
+    return {
+        "from": msg.get("from"),
+        "id": msg.get("id"),
+        "timestamp": msg.get("timestamp"),
+        "text": text_obj.get("body", ""),
+    }
+
+
+@plugin(
+    name="whatsapp-input",
+    version="1.0.0",
+    category="input",
+    description="Receives WhatsApp messages via webhook from Meta Cloud API",
+    trigger={"type": "webhook"},
+    credentials=[
+        {
+            "name": "access_token",
+            "description": "WhatsApp Business Account access token (from Meta Business Platform)",
+            "required": True,
+        },
+        {
+            "name": "phone_number_id",
+            "description": "Phone number ID associated with your WhatsApp Business Account",
+            "required": True,
+        },
+        {
+            "name": "verify_token",
+            "description": "Token for webhook signature verification (set in Meta app config)",
+            "required": True,
+        },
+    ],
+)
+async def execute(context) -> dict:
+    """Process incoming WhatsApp webhook event."""
+    webhook_data = context.input_data or {}
+
+    # Handle challenge verification (GET request from Meta during setup)
+    if "hub.challenge" in webhook_data:
+        challenge = webhook_data.get("hub.challenge")
+        return {"challenge": challenge}
+
+    # Verify webhook signature
+    creds = context.credentials or {}
+    verify_token = creds.get("verify_token", "")
+
+    signature = webhook_data.get("x-hub-signature-256", "")
+    # Strip "sha256=" prefix from Meta's webhook signature format
+    if signature.startswith("sha256="):
+        signature = signature[7:]
+    payload_str = json.dumps(webhook_data.get("body", {}))
+
+    if signature and not _verify_webhook_signature(payload_str, signature, verify_token):
+        context.logger.warning("whatsapp_signature_invalid")
+        return {"success": False, "error": "Invalid signature"}
+
+    # Parse message
+    body = webhook_data.get("body", {})
+    parsed = _parse_incoming_message(body)
+
+    if not parsed:
+        return {"collected": 0, "reason": "no text message"}
+
+    # Write to seed
+    await context.garden.write_seed("whatsapp", {"message": parsed})
+
+    # Auto-reply via ChatBridge
+    if context.chat:
+        reply = await context.chat.chat(message=parsed["text"])
+        if reply and reply.strip():
+            context.logger.info("auto_reply_sent", length=len(reply))
+        else:
+            context.logger.warning("auto_reply_empty")
+
+    return {"collected": 1, "from": parsed["from"]}
+
+
+@execute.setup
+def setup(cred_store):
+    """Configure WhatsApp credentials."""
+    import asyncio
+
+    import click
+
+    click.echo("WhatsApp Business Account Setup")
+    click.echo("Get these from https://developers.facebook.com/")
+    click.echo("")
+
+    access_token = click.prompt("  Access Token")
+    phone_number_id = click.prompt("  Phone Number ID")
+    verify_token = click.prompt("  Webhook Verify Token (for signature verification)")
+
+    click.echo("")
+    click.echo("After saving, configure your webhook in Meta App Dashboard:")
+    click.echo("  Callback URL: https://your-domain/api/webhooks/whatsapp-input")
+    click.echo("  Verify Token: (use the same token you entered above)")
+    click.echo("  Subscribe to: messages")
+
+    data = {
+        "access_token": access_token,
+        "phone_number_id": phone_number_id,
+        "verify_token": verify_token,
+    }
+
+    asyncio.run(cred_store.store("whatsapp-input", data))
+    click.echo("  Credentials saved.")
+
+
+@execute.notify
+async def notify(context) -> dict:
+    """Send a WhatsApp message via Cloud API."""
+    import httpx
+
+    creds = context.credentials
+    message_text = (context.input_data or {}).get("message", "")
+
+    if not message_text:
+        return {"sent": False, "reason": "no message provided"}
+
+    access_token = creds.get("access_token", "")
+    phone_number_id = creds.get("phone_number_id", "")
+
+    if not access_token or not phone_number_id:
+        return {"sent": False, "reason": "missing credentials"}
+
+    # Get recipient phone number from context (set by on_input handler)
+    recipient = (context.input_data or {}).get("to_phone", "")
+    if not recipient:
+        return {"sent": False, "reason": "no recipient phone number"}
+
+    # Remove special characters
+    recipient = "".join(c for c in recipient if c.isdigit())
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": recipient,
+        "type": "text",
+        "text": {
+            "body": message_text,
+        },
+    }
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {access_token}",
+    }
+
+    url = f"https://graph.instagram.com/v18.0/{phone_number_id}/messages"
+
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.post(url, json=payload, headers=headers, timeout=10.0)
+            data = resp.json()
+
+            if data.get("messages"):
+                message_id = data["messages"][0].get("id")
+                return {"sent": True, "message_id": message_id}
+            else:
+                error = data.get("error", {}).get("message", "unknown error")
+                return {"sent": False, "error": error}
+
+        except Exception as e:
+            return {"sent": False, "error": f"API error: {e}"}

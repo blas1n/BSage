@@ -279,6 +279,25 @@ class GardenWriter:
         self._ontology = ontology
         self._log_lock: asyncio.Lock = asyncio.Lock()
 
+    def resolve_plugin_state_path(self, plugin_name: str, subpath: str = "_state.json") -> Path:
+        """Resolve a plugin state file path within the vault.
+
+        Plugins use this to safely store persistent state (e.g., polling cursors, offsets)
+        without accessing private vault APIs.
+
+        Args:
+            plugin_name: Plugin name (e.g. "slack-input", "discord-input").
+            subpath: Relative path within seeds/{plugin_name}/ (default: "_state.json").
+
+        Returns:
+            Resolved Path object pointing to seeds/{plugin_name}/{subpath}.
+
+        Example:
+            state_path = context.garden.resolve_plugin_state_path("slack-input")
+            # → vault/seeds/slack-input/_state.json
+        """
+        return self._vault.resolve_path(f"seeds/{plugin_name}/{subpath}")
+
     def _resolve_folder(self, note_type: str) -> str:
         """Resolve the vault folder for a note type using ontology mapping."""
         if self._ontology:

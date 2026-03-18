@@ -294,6 +294,7 @@ class GraphStore:
                 record.extracted_at,
             ),
         )
+        await self._conn.commit()
 
     # ------------------------------------------------------------------
     # Queries
@@ -536,10 +537,12 @@ class GraphStore:
                VALUES (?, ?, datetime('now'))""",
             (source_path, content_hash),
         )
+        await self._conn.commit()
 
     async def remove_source_hash(self, source_path: str) -> None:
         """Remove the stored content hash for a source."""
         await self._conn.execute("DELETE FROM source_hashes WHERE source_path = ?", (source_path,))
+        await self._conn.commit()
 
     # ------------------------------------------------------------------
     # Vault rebuild

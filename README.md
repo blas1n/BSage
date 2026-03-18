@@ -10,6 +10,7 @@ Personal AI agent that records everything about you in a 2nd Brain (Obsidian Vau
 ┌─────────────────────────────────────────────────┐
 │              INTERFACE LAYER                     │
 │   CLI  │  GUI chatbot  │  Telegram  │  WhatsApp │
+│   Slack  │  Discord  │  Signal  │  iMessage    │
 └─────────────────────┬───────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────┐
@@ -20,30 +21,33 @@ Personal AI agent that records everything about you in a 2nd Brain (Obsidian Vau
 ┌─────────────────────▼───────────────────────────┐
 │                CORE ENGINE                       │
 │  Scheduler → AgentLoop → SafeModeGuard          │
-│  SkillLoader / SkillRunner / CredentialStore     │
-│  GardenWriter                                    │
+│  PluginLoader / PluginRunner (14 plugins)        │
+│  SkillLoader / SkillRunner (4 skills)            │
+│  GardenWriter  │  CredentialStore                │
 └──────────────────────┬──────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────┐
-│                  SKILLS                          │
-│  input (data collection + API connections)       │
-│  process (analysis, formatting, actions)         │
-│  output (vault sync backends)                    │
-│  meta (skill creation, debugging)                │
+│            PLUGINS & SKILLS LAYER                │
+│  input (data collection + integrations)          │
+│  process (analysis, tools, actions)              │
+│  output (vault sync backends: git, S3, etc.)     │
 └──────────────────────┬──────────────────────────┘
                        │
 ┌──────▼──────────────────────────────────────────┐
 │           2ND BRAIN  (Obsidian Vault)            │
-│   /seeds  /garden  /actions  /skills            │
+│   /seeds  /garden  /actions  /.bsage             │
+│   (ontology, knowledge graph, vectors)           │
 └─────────────────────────────────────────────────┘
 ```
 
 ## Key Principles
 
-- **2nd Brain-bound**: All data stays in your Obsidian Vault. Nothing leaves without explicit OutputSkill.
-- **Transparent**: Agent's knowledge = Obsidian notes. Agent's actions = logged in `/actions/`.
-- **Safe**: SafeMode approval for dangerous Skills. User controls which Skills to install.
-- **Extensible**: Everything is a Skill (Input/Process/Output/Meta). YAML + optional Python.
+- **2nd Brain-bound**: All knowledge stored in Obsidian Vault (seeds, garden, ontology graph). Data syncs to external storage only via Output Plugins.
+- **Transparent**: Agent knowledge = vault notes. Agent actions = logged in `/actions/`. Full audit trail, always browsable.
+- **Safe**: DangerAnalyzer auto-classifies dangerous Plugins (subprocess, external APIs). SafeMode approval gate before execution. User controls which Plugins/Skills to install.
+- **Extensible**:
+  - **Plugins** (Python): Direct code execution, external API calls, bidirectional channels (input, process, output)
+  - **Skills** (Markdown): LLM-only pipeline (GATHER vault context → LLM → APPLY result). Structurally safe, no code execution.
 
 ## Quick Start
 
@@ -54,14 +58,18 @@ uv sync --all-extras
 # Initialize vault structure
 bsage init
 
-# Start the Gateway
+# Configure a Plugin (e.g. Telegram)
+bsage setup telegram-input
+
+# Start the Gateway (server + REPL)
 bsage run
 
-# List loaded skills
+# List loaded Plugins and Skills
+bsage plugins
 bsage skills
 
-# Run a skill manually
-bsage run-skill garden-writer
+# Run a Skill manually
+bsage run-skill insight-linker
 ```
 
 ## Development

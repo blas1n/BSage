@@ -11,7 +11,7 @@ STATE_SUBPATH = "seeds/telegram-input/_state.json"
 
 def _state_path(context) -> Path:
     """Resolve the offset state file path within the vault."""
-    return context.garden._vault.resolve_path(STATE_SUBPATH)
+    return context.garden.resolve_plugin_state_path("telegram-input")
 
 
 def _load_offset(path: Path) -> int | None:
@@ -49,7 +49,7 @@ def _parse_update(update: dict) -> dict | None:
     version="1.1.0",
     category="input",
     description="Polls Telegram Bot API for new messages and stores them in the vault",
-    trigger={"type": "polling"},
+    trigger={"type": "cron", "schedule": "*/5 * * * *"},
     credentials=[
         {"name": "bot_token", "description": "Telegram Bot API token", "required": True},
         {"name": "chat_id", "description": "Target chat ID for notifications", "required": True},

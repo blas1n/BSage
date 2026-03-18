@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 from typing import TYPE_CHECKING, Any
 
@@ -36,11 +37,15 @@ class ConnectionManager:
     async def broadcast(self, message: dict[str, Any]) -> None:
         """Send a message to all connected clients."""
         data = json.dumps(message)
-        for conn in self._connections:
+        # Snapshot connections list to avoid concurrent modification during iteration
+        for conn in self._connections[:]:
             try:
                 await conn.send_text(data)
             except Exception:
                 logger.warning("ws_send_failed")
+                # Remove failed connection to prevent memory leaks
+                with contextlib.suppress(ValueError):
+                    self._connections.remove(conn)
 
 
 manager = ConnectionManager()
@@ -72,6 +77,8 @@ def create_ws_routes(
 
                 await websocket.send_text(json.dumps({"type": "ack", "received": msg_type}))
         except WebSocketDisconnect:
+            pass
+        finally:
             manager.disconnect(websocket)
 
     return ws_router
