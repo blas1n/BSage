@@ -342,8 +342,11 @@ async def test_count_relationships_for_entity(store: GraphStore):
     await store.upsert_relationship(r2)
     await store.commit()
 
+    # NoteA and Concept1 share source_path "garden/idea/a.md"
+    # r1: NoteA→Concept1 (both in a.md), r2: Concept2→NoteA (NoteA in a.md)
+    # Should count exactly 2 distinct relationships, not double-count
     count = await store.count_relationships_for_entity("garden/idea/a.md")
-    assert count >= 2
+    assert count == 2
 
 
 async def test_count_relationships_for_entity_zero(store: GraphStore):
@@ -403,6 +406,54 @@ async def test_get_entity_updated_at_missing(store: GraphStore):
 # ------------------------------------------------------------------
 # count_entities_of_type
 # ------------------------------------------------------------------
+
+
+async def test_count_relationships_for_entity_fallback_normalized(store: GraphStore):
+    """Fallback to normalized name when source_path doesn't match."""
+    e1 = GraphEntity(name="FallbackEntity", entity_type="concept", source_path="x.md")
+    e2 = GraphEntity(name="Other", entity_type="concept", source_path="y.md")
+    id1 = await store.upsert_entity(e1)
+    id2 = await store.upsert_entity(e2)
+
+    await store.upsert_relationship(
+        GraphRelationship(source_id=id1, target_id=id2, rel_type="references", source_path="x.md")
+    )
+    await store.commit()
+
+    # Query by entity name (not source_path) — triggers fallback
+    count = await store.count_relationships_for_entity("FallbackEntity")
+    assert count >= 1
+
+
+async def test_count_distinct_sources_fallback_normalized(store: GraphStore):
+    """Fallback to normalized name when source_path doesn't match."""
+    e = GraphEntity(name="SourcedConcept", entity_type="concept", source_path="z.md")
+    eid = await store.upsert_entity(e)
+
+    p = ProvenanceRecord(
+        entity_id=eid,
+        source_path="z.md",
+        extraction_method="rule",
+        confidence=1.0,
+        extracted_at="2026-01-01T00:00:00",
+    )
+    await store.add_provenance(p)
+    await store.commit()
+
+    # Query by entity name, not the actual source_path — triggers fallback
+    count = await store.count_distinct_sources("SourcedConcept")
+    assert count >= 1
+
+
+async def test_get_entity_updated_at_fallback_normalized(store: GraphStore):
+    """Fallback to normalized name when source_path doesn't match."""
+    e = GraphEntity(name="TimedConcept", entity_type="concept", source_path="abc.md")
+    await store.upsert_entity(e)
+    await store.commit()
+
+    # Query by name, not source_path — triggers fallback
+    ts = await store.get_entity_updated_at("TimedConcept")
+    assert ts is not None
 
 
 async def test_count_entities_of_type(store: GraphStore):

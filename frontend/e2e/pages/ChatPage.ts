@@ -12,7 +12,7 @@ export class ChatPage {
     this.input = page.getByPlaceholder(
       "Type a message... (Shift+Enter for new line)"
     );
-    this.sendButton = page.locator("button.bg-green-600");
+    this.sendButton = page.getByRole("button", { name: /send/i });
   }
 
   async goto() {
@@ -22,6 +22,7 @@ export class ChatPage {
 
   async sendMessage(text: string) {
     await this.input.fill(text);
+    await this.sendButton.waitFor({ state: "visible" });
     await this.sendButton.click();
   }
 
@@ -37,7 +38,10 @@ export class ChatPage {
   }
 
   async waitForAssistantMessage() {
-    await this.page.locator("div.prose").first().waitFor({ timeout: 10000 });
+    await this.page
+      .locator("[data-testid='assistant-message'], div.prose")
+      .first()
+      .waitFor({ timeout: 10000 });
   }
 
   async waitForResponse() {

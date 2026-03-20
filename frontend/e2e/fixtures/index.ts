@@ -47,31 +47,29 @@ const MOCK_CHAT_RESPONSE = {
   response: "Hello! I am BSage, your AI assistant. How can I help you today?",
 };
 
-const MOCK_VAULT_TREE_RESPONSE = {
-  name: "vault",
-  type: "directory",
-  children: [
-    {
-      name: "garden",
-      type: "directory",
-      children: [
-        { name: "index.md", type: "file" },
-        { name: "idea-1.md", type: "file" },
-      ],
-    },
-    {
-      name: "seeds",
-      type: "directory",
-      children: [
-        {
-          name: "slack-input",
-          type: "directory",
-          children: [{ name: "messages.md", type: "file" }],
-        },
-      ],
-    },
-  ],
-};
+// Matches VaultTreeEntry[] = {path, dirs, files}[]
+const MOCK_VAULT_TREE_RESPONSE = [
+  {
+    path: "",
+    dirs: ["garden", "seeds"],
+    files: [],
+  },
+  {
+    path: "garden",
+    dirs: [],
+    files: ["index.md", "idea-1.md"],
+  },
+  {
+    path: "seeds",
+    dirs: ["slack-input"],
+    files: [],
+  },
+  {
+    path: "seeds/slack-input",
+    dirs: [],
+    files: ["messages.md"],
+  },
+];
 
 const MOCK_VAULT_FILE_RESPONSE = {
   path: "garden/index.md",

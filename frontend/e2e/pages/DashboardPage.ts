@@ -15,7 +15,11 @@ export class DashboardPage {
   }
 
   getPluginCard(name: string): Locator {
-    return this.page.locator("h4", { hasText: name }).locator("../..");
+    // Card is a .border.rounded-lg div containing an h4 with the plugin name
+    // Go up from h4 → flex wrapper → card container (3 levels)
+    return this.page
+      .locator("h4", { hasText: name })
+      .locator("../../..");
   }
 
   async isPluginVisible(name: string): Promise<boolean> {

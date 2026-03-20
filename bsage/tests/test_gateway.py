@@ -261,7 +261,7 @@ class TestConnectionManager:
         mgr = ConnectionManager()
         ws = AsyncMock()
         await mgr.connect(ws)
-        mgr.disconnect(ws)
+        await mgr.disconnect(ws)
         assert len(mgr._connections) == 0
 
     async def test_has_connections_false_when_empty(self) -> None:

@@ -1,11 +1,9 @@
 """Shell/Code execution Plugin — run shell commands or Python code with configurable sandboxing."""
 
 import asyncio
-import json
 import shlex
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 from bsage.plugin import plugin
 
@@ -29,7 +27,9 @@ def _validate_command(command: str, allowed_commands: list[str]) -> bool:
     return any(allowed.lower() == base_cmd.lower() for allowed in allowed_commands)
 
 
-def _escape_working_dir(working_dir: str, sandbox_mode: str, vault_path: Path, tmp_dir: Path) -> tuple[bool, str]:
+def _escape_working_dir(
+    working_dir: str, sandbox_mode: str, vault_path: Path, tmp_dir: Path
+) -> tuple[bool, str]:
     """
     Validate working_dir based on sandbox mode.
 
@@ -60,12 +60,14 @@ def _escape_working_dir(working_dir: str, sandbox_mode: str, vault_path: Path, t
     name="shell-executor",
     version="1.0.0",
     category="process",
-    description="Execute shell commands or Python code with configurable sandboxing (vault-only or system)",
+    description="Execute shell commands or Python code with configurable sandboxing",
     trigger={"type": "on_demand", "hint": "run command, execute code, terminal"},
     credentials=[
         {
             "name": "sandbox_mode",
-            "description": "Sandboxing level: 'vault_only' (default, safe) or 'system' (full access, requires approval)",
+            "description": (
+                "Sandboxing: 'vault_only' (default, safe) or 'system' (full, needs approval)"
+            ),
             "required": False,
         },
         {
@@ -174,7 +176,7 @@ async def execute(context) -> dict:
             "stderr": result["stderr"],
         }
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return {"success": False, "error": f"Command timed out after {timeout_s}s"}
     except Exception as e:
         context.logger.exception("shell_execute_error", command=command, error=str(e))
@@ -201,8 +203,8 @@ def _run_subprocess(command: str, cwd: str, timeout_s: float) -> dict:
             "stdout": result.stdout,
             "stderr": result.stderr,
         }
-    except subprocess.TimeoutExpired:
-        raise asyncio.TimeoutError(f"Command timed out after {timeout_s}s")
+    except subprocess.TimeoutExpired as exc:
+        raise TimeoutError(f"Command timed out after {timeout_s}s") from exc
 
 
 @execute.setup

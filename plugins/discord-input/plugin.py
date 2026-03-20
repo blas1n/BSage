@@ -2,7 +2,6 @@
 
 import json
 from pathlib import Path
-from typing import Optional
 
 from bsage.plugin import plugin
 
@@ -14,7 +13,7 @@ def _state_path(context) -> Path:
     return context.garden.resolve_plugin_state_path("discord-input")
 
 
-def _load_timestamp(path: Path) -> Optional[int]:
+def _load_timestamp(path: Path) -> int | None:
     """Load last message timestamp from state file."""
     if not path.exists():
         return None
@@ -112,13 +111,13 @@ async def execute(context) -> dict:
         try:
             ts_str = msg_data.get("timestamp", "")
             ts = dateutil_parser.isoparse(ts_str).timestamp()
-            if ts_int := int(ts * 1000):
-                if last_timestamp is None or ts_int > last_timestamp:
-                    parsed = _parse_message(msg_data)
-                    if parsed:
-                        parsed_messages.append(parsed)
-                        if ts_int > highest_timestamp:
-                            highest_timestamp = ts_int
+            ts_int = int(ts * 1000)
+            if ts_int and (last_timestamp is None or ts_int > last_timestamp):
+                parsed = _parse_message(msg_data)
+                if parsed:
+                    parsed_messages.append(parsed)
+                    if ts_int > highest_timestamp:
+                        highest_timestamp = ts_int
         except Exception:
             pass
 
@@ -212,7 +211,8 @@ async def setup(cred_store):
                     channel_id = click.prompt("  Channel ID")
                 else:
                     channels = [
-                        ch for ch in resp.json()
+                        ch
+                        for ch in resp.json()
                         if ch.get("type") == 0  # 0 = text channel
                     ]
                     if not channels:

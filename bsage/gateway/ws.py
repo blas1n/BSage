@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 from typing import TYPE_CHECKING, Any
@@ -20,14 +21,18 @@ class ConnectionManager:
 
     def __init__(self) -> None:
         self._connections: list[WebSocket] = []
+        self._lock = asyncio.Lock()
 
     async def connect(self, websocket: WebSocket) -> None:
         await websocket.accept()
-        self._connections.append(websocket)
+        async with self._lock:
+            self._connections.append(websocket)
         logger.info("ws_connected", count=len(self._connections))
 
-    def disconnect(self, websocket: WebSocket) -> None:
-        self._connections.remove(websocket)
+    async def disconnect(self, websocket: WebSocket) -> None:
+        async with self._lock:
+            with contextlib.suppress(ValueError):
+                self._connections.remove(websocket)
         logger.info("ws_disconnected", count=len(self._connections))
 
     def has_connections(self) -> bool:
@@ -37,15 +42,14 @@ class ConnectionManager:
     async def broadcast(self, message: dict[str, Any]) -> None:
         """Send a message to all connected clients."""
         data = json.dumps(message)
-        # Snapshot connections list to avoid concurrent modification during iteration
-        for conn in self._connections[:]:
-            try:
-                await conn.send_text(data)
-            except Exception:
-                logger.warning("ws_send_failed")
-                # Remove failed connection to prevent memory leaks
-                with contextlib.suppress(ValueError):
-                    self._connections.remove(conn)
+        async with self._lock:
+            for conn in self._connections[:]:
+                try:
+                    await conn.send_text(data)
+                except Exception:
+                    logger.warning("ws_send_failed")
+                    with contextlib.suppress(ValueError):
+                        self._connections.remove(conn)
 
 
 manager = ConnectionManager()
@@ -79,6 +83,6 @@ def create_ws_routes(
         except WebSocketDisconnect:
             pass
         finally:
-            manager.disconnect(websocket)
+            await manager.disconnect(websocket)
 
     return ws_router

@@ -26,7 +26,9 @@ def _make_context(
     if vault_root:
         mock_vault.resolve_path.side_effect = lambda subpath: vault_root / subpath
         ctx.garden.resolve_plugin_state_path = MagicMock(
-            side_effect=lambda plugin_name, subpath="_state.json": vault_root / "seeds" / plugin_name / subpath
+            side_effect=lambda plugin_name, subpath="_state.json": (
+                vault_root / "seeds" / plugin_name / subpath
+            )
         )
     else:
         mock_vault.resolve_path.return_value = Path("/tmp/test_state.json")

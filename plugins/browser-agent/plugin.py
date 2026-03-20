@@ -1,8 +1,5 @@
 """Browser automation Plugin — scrape web pages, fill forms, interact with web interfaces."""
 
-import asyncio
-from typing import Optional
-
 from bsage.plugin import plugin
 
 
@@ -28,11 +25,16 @@ from bsage.plugin import plugin
             },
             "task": {
                 "type": "string",
-                "description": "What to do (e.g. 'extract all article titles', 'fill login form', 'click the submit button')",
+                "description": (
+                    "What to do (e.g. 'extract all article titles',"
+                    " 'fill login form', 'click the submit button')"
+                ),
             },
             "extract_selector": {
                 "type": "string",
-                "description": "CSS selector to extract specific content (optional, e.g. '.article-title')",
+                "description": (
+                    "CSS selector to extract specific content (optional, e.g. '.article-title')"
+                ),
             },
             "wait_for_selector": {
                 "type": "string",

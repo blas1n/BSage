@@ -3,7 +3,6 @@
 import hashlib
 import hmac
 import json
-from typing import Optional
 
 from bsage.plugin import plugin
 
@@ -165,8 +164,10 @@ async def notify(context) -> dict:
     if not recipient:
         return {"sent": False, "reason": "no recipient phone number"}
 
-    # Remove special characters
-    recipient = "".join(c for c in recipient if c.isdigit())
+    # Normalize: keep digits and leading '+'
+    recipient = "".join(c for c in recipient if c.isdigit() or c == "+")
+    if not recipient.startswith("+"):
+        recipient = "+" + recipient
 
     payload = {
         "messaging_product": "whatsapp",
@@ -182,7 +183,7 @@ async def notify(context) -> dict:
         "Authorization": f"Bearer {access_token}",
     }
 
-    url = f"https://graph.instagram.com/v18.0/{phone_number_id}/messages"
+    url = f"https://graph.facebook.com/v18.0/{phone_number_id}/messages"
 
     async with httpx.AsyncClient() as client:
         try:

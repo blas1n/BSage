@@ -26,7 +26,10 @@ def _make_context(input_data: dict | None = None) -> MagicMock:
 def _load_plugin():
     """Import the plugin module and return execute function."""
     import importlib.util
-    spec = importlib.util.spec_from_file_location("whatsapp_input", "plugins/whatsapp-input/plugin.py")
+
+    spec = importlib.util.spec_from_file_location(
+        "whatsapp_input", "plugins/whatsapp-input/plugin.py"
+    )
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

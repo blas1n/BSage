@@ -2,7 +2,6 @@
 
 import json
 from pathlib import Path
-from typing import Optional
 
 from bsage.plugin import plugin
 
@@ -14,7 +13,7 @@ def _state_path(context) -> Path:
     return context.garden.resolve_plugin_state_path("slack-input")
 
 
-def _load_cursor(path: Path) -> Optional[str]:
+def _load_cursor(path: Path) -> str | None:
     """Load last cursor from state file."""
     if not path.exists():
         return None
@@ -54,7 +53,11 @@ def _parse_message(event: dict) -> dict | None:
             "description": "Slack Bot User OAuth Token (starts with xoxb-)",
             "required": True,
         },
-        {"name": "channel_id", "description": "Channel ID to monitor (starts with C)", "required": True},
+        {
+            "name": "channel_id",
+            "description": "Channel ID to monitor (starts with C)",
+            "required": True,
+        },
     ],
 )
 async def execute(context) -> dict:
@@ -101,10 +104,11 @@ async def execute(context) -> dict:
     latest_ts = cursor
 
     for msg_event in reversed(messages):
+        # Always advance cursor, even for unparseable messages
+        latest_ts = msg_event.get("ts") or latest_ts
         parsed = _parse_message(msg_event)
         if parsed:
             parsed_messages.append(parsed)
-            latest_ts = msg_event.get("ts")
 
     if parsed_messages:
         await context.garden.write_seed("slack", {"messages": parsed_messages})
@@ -171,7 +175,9 @@ async def setup(cred_store):
 
         channels_data = resp.json()
         if not channels_data.get("ok"):
-            click.echo("  Warning: Could not fetch channels, please enter channel ID manually", err=True)
+            click.echo(
+                "  Warning: Could not fetch channels, please enter channel ID manually", err=True
+            )
             channel_id = click.prompt("  Channel ID (C...)")
         else:
             channels = channels_data.get("channels", [])
@@ -186,8 +192,10 @@ async def setup(cred_store):
                 choice = click.prompt("  Select channel number", type=int, default=1)
                 channel_id = channels[min(choice - 1, len(channels) - 1)]["id"]
 
-    if not channel_id.startswith("C"):
-        click.echo(f"Error: channel_id must start with 'C', got '{channel_id}'", err=True)
+    if channel_id[0:1] not in ("C", "G", "D"):
+        click.echo(
+            f"Error: channel_id must start with 'C', 'G', or 'D', got '{channel_id}'", err=True
+        )
         raise SystemExit(1)
 
     await cred_store.store("slack-input", {"bot_token": bot_token, "channel_id": channel_id})

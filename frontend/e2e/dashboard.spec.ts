@@ -39,24 +39,21 @@ test.describe("Dashboard", () => {
   });
 
   test("Run ボタン クリック → API リクエスト 確認", async ({ page }) => {
-    let runApiCalled = false;
-
-    // Monitor for run plugin request
-    page.on("response", (response) => {
-      if (
-        response.url().includes("/api/plugins") &&
-        response.request().method() === "POST"
-      ) {
-        runApiCalled = true;
-      }
-    });
-
-    // The Run button might trigger an API call or navigation
-    // For now just verify the button is present and clickable
     const card = dashboardPage.getPluginCard("shell-executor");
     const runButton = card.locator("button:has-text('Run')");
 
-    const isVisible = await runButton.isVisible();
-    expect(isVisible).toBeTruthy();
+    await expect(runButton).toBeVisible();
+
+    // Monitor for run plugin request after click
+    const responsePromise = page.waitForResponse(
+      (r) =>
+        r.url().includes("/api/plugins") &&
+        r.request().method() === "POST"
+    );
+
+    await runButton.click();
+
+    const response = await responsePromise;
+    expect(response.status()).toBe(200);
   });
 });

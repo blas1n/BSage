@@ -158,7 +158,8 @@ async def setup(cred_store):
                 click.echo(f"  Auto-selected chat ID: {chat_id}")
             else:
                 choice = click.prompt("  Select chat number", type=int, default=1)
-                chat_id = str(detected_ids[min(choice, len(detected_ids)) - 1][0])
+                idx = max(0, min(choice - 1, len(detected_ids) - 1))
+                chat_id = str(detected_ids[idx][0])
         else:
             click.echo("  No recent messages found. Please enter chat ID manually.")
             chat_id = click.prompt("  Chat ID (numeric)")

@@ -46,16 +46,12 @@ test.describe("Vault", () => {
   });
 
   test("空の vault ガイダンス メッセージ", async ({ page }) => {
-    // Mock empty vault response
+    // Mock empty vault response (VaultTreeEntry[] format)
     await page.route("**/api/vault/tree", (route) => {
       route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({
-          name: "vault",
-          type: "directory",
-          children: [],
-        }),
+        body: JSON.stringify([{ path: "", dirs: [], files: [] }]),
       });
     });
 

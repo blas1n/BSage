@@ -440,7 +440,7 @@ class GraphStore:
         """Count all relationships (inbound + outbound) for an entity by source_path."""
         norm = _normalize(entity_name)
         row = await self._fetchone(
-            """SELECT COUNT(*) FROM relationships r
+            """SELECT COUNT(DISTINCT r.id) FROM relationships r
                JOIN entities e ON e.id = r.source_id OR e.id = r.target_id
                WHERE e.source_path = ?""",
             (entity_name,),

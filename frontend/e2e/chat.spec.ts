@@ -32,7 +32,7 @@ test.describe("Chat", () => {
   });
 
   test("送信中 loading state", async ({ page }) => {
-    // Mock delayed response
+    // Mock delayed response to reliably observe disabled state
     await page.route("**/api/chat", (route) => {
       setTimeout(() => {
         route.fulfill({
@@ -42,16 +42,17 @@ test.describe("Chat", () => {
             response: "Delayed response",
           }),
         });
-      }, 1000);
+      }, 2000);
     });
 
     await chatPage.sendMessage("Test");
 
-    // Input should be disabled during send
-    const isDisabled = await chatPage.isInputDisabled();
-    // May not always catch the disabled state due to timing
-    // Just verify it eventually processes
+    // Playwright auto-polls until the assertion passes or times out
+    await expect(chatPage.input).toBeDisabled({ timeout: 3000 });
+
+    // Eventually the response arrives and input is re-enabled
     await chatPage.waitForAssistantMessage();
+    await expect(chatPage.input).toBeEnabled({ timeout: 5000 });
   });
 
   test("API エラー時の復旧 (500 response)", async ({ page }) => {

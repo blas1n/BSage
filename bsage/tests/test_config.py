@@ -12,9 +12,11 @@ class TestSettings:
 
     def test_default_values(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Settings should have sensible defaults."""
-        monkeypatch.delenv("LLM_API_KEY", raising=False)
-        monkeypatch.delenv("LLM_API_BASE", raising=False)
-        monkeypatch.delenv("VAULT_PATH", raising=False)
+        for key in (
+            "LLM_API_KEY", "LLM_API_BASE", "VAULT_PATH",
+            "GATEWAY_HOST", "GATEWAY_PORT", "LOG_LEVEL", "SAFE_MODE",
+        ):
+            monkeypatch.delenv(key, raising=False)
         monkeypatch.setenv("LLM_MODEL", "anthropic/claude-sonnet-4-20250514")
 
         settings = Settings(_env_file=None)
@@ -74,7 +76,8 @@ class TestSettings:
 
     def test_embedding_config_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Embedding config should be disabled by default."""
-        monkeypatch.delenv("EMBEDDING_MODEL", raising=False)
+        for key in ("EMBEDDING_MODEL", "EMBEDDING_API_KEY", "EMBEDDING_API_BASE"):
+            monkeypatch.delenv(key, raising=False)
         settings = Settings(_env_file=None)
         assert settings.embedding_model == ""
         assert settings.embedding_api_key == ""

@@ -15,19 +15,24 @@ export class VaultPage {
   constructor(page: Page) {
     this.page = page;
     this.heading = page.getByRole("heading", { name: "Vault" });
-    this.fileTree = page.locator("[data-testid='file-tree']");
-    this.fileContent = page.locator("[data-testid='file-content']");
+    // Left panel = sidebar with directory tree
+    this.fileTree = page.locator(
+      ".w-56.shrink-0.border-r"
+    );
+    // Right panel content area
+    this.fileContent = page.locator(".flex-1.overflow-y-auto.px-6");
+    // Toggle button text changes between Raw/Rendered
     this.rawToggle = page.locator("button:has-text('Raw')");
     this.renderedToggle = page.locator("button:has-text('Rendered')");
   }
 
   async goto() {
-    await this.page.goto("/vault");
+    await this.page.goto("/#/vault");
     await this.heading.waitFor({ timeout: 10000 });
   }
 
   async getFileEntry(name: string): Promise<Locator> {
-    return this.page.locator(`text=${name}`).first();
+    return this.fileTree.locator(`text=${name}`).first();
   }
 
   async isFileEntryVisible(name: string): Promise<boolean> {
@@ -53,15 +58,13 @@ export class VaultPage {
   }
 
   async isRawMode(): Promise<boolean> {
-    const classAttr = await this.fileContent.getAttribute("class");
-    return classAttr?.includes("whitespace-pre-wrap") ?? false;
+    // In raw mode, a <pre> with whitespace-pre-wrap is rendered
+    const pre = this.fileContent.locator("pre.whitespace-pre-wrap");
+    return await pre.isVisible();
   }
 
   async isEmptyState(): Promise<boolean> {
-    const message = await this.page
-      .locator("text=Your vault is empty")
-      .isVisible();
-    return message;
+    // VaultView shows "Vault is empty" text
+    return await this.page.locator("text=Vault is empty").isVisible();
   }
-
 }
