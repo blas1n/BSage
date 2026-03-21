@@ -56,6 +56,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
       <button
         onClick={handleSend}
         disabled={disabled || !value.trim()}
+        aria-label="Send"
         className="flex items-center justify-center w-9 h-9 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         <Send className="w-4 h-4" />

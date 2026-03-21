@@ -42,6 +42,9 @@ export class VaultPage {
   async clickFileEntry(name: string) {
     const entry = await this.getFileEntry(name);
     await entry.click();
+    // Wait for loading state to finish
+    const loading = this.page.locator("text=Loading...");
+    await loading.waitFor({ state: "hidden", timeout: 10000 }).catch(() => {});
   }
 
   async getFileContentText(): Promise<string | null> {

@@ -189,8 +189,8 @@ export const test = base.extend<CustomFixtures>({
         });
       });
 
-      // Vault file endpoints
-      await page.route("**/api/vault/file/**", (route) => {
+      // Vault file endpoints (query param: ?path=...)
+      await page.route("**/api/vault/file**", (route) => {
         route.fulfill({
           status: 200,
           contentType: "application/json",

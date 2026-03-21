@@ -14,7 +14,7 @@ export class ChatPage {
       "Type a message... (Shift+Enter for new line)"
     );
     this.sendButton = page.getByRole("button", { name: /send/i });
-    this.chatArea = page.locator("[data-testid='chat-messages'], [role='log']").first();
+    this.chatArea = page.locator("[data-testid='chat-messages']").or(page.locator("[role='log']")).or(page.locator("main .space-y-3")).first();
   }
 
   async goto() {
@@ -29,9 +29,7 @@ export class ChatPage {
   }
 
   async getLastAssistantMessage() {
-    const locator = this.chatArea.locator(
-      "[data-testid='assistant-message'], div.prose"
-    );
+    const locator = this.page.locator("[data-testid='assistant-message']");
     const msg = locator.last();
     await msg.waitFor({ timeout: 10000 });
     return await msg.textContent();
@@ -43,8 +41,8 @@ export class ChatPage {
   }
 
   async waitForAssistantMessage() {
-    await this.chatArea
-      .locator("[data-testid='assistant-message'], div.prose")
+    await this.page
+      .locator("[data-testid='assistant-message']")
       .first()
       .waitFor({ timeout: 10000 });
   }

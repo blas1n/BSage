@@ -18,19 +18,18 @@ export class SettingsPage {
   }
 
   private getLLMModelSection(): Locator {
-    // Use filter to find a section/div that contains the "LLM Model" heading
     return this.page
-      .locator("section, div")
+      .locator("section")
       .filter({ has: this.page.locator("h3", { hasText: "LLM Model" }) })
       .first();
   }
 
   get llmModelInput(): Locator {
-    return this.getLLMModelSection().getByRole("textbox");
+    return this.getLLMModelSection().locator("input[type='text']").first();
   }
 
   get saveButton(): Locator {
-    return this.getLLMModelSection().getByRole("button", { name: "Save" });
+    return this.getLLMModelSection().getByRole("button", { name: "Save" }).first();
   }
 
   async getLLMModel(): Promise<string> {
@@ -47,7 +46,8 @@ export class SettingsPage {
   }
 
   async toggleSafeMode() {
-    await this.safeModeToggle.click();
+    // sr-only checkbox is covered by visual div; use force to bypass
+    await this.safeModeToggle.click({ force: true });
   }
 
   async isSafeModeEnabled(): Promise<boolean> {

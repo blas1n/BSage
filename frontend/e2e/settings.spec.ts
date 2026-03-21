@@ -18,13 +18,12 @@ test.describe("Settings", () => {
   });
 
   test("Safe Mode toggle sends PATCH request", async ({ page }) => {
-    await Promise.all([
-      page.waitForResponse(
-        (r) =>
-          r.url().includes("/api/config") && r.request().method() === "PATCH"
-      ),
-      settingsPage.toggleSafeMode(),
-    ]);
+    const responsePromise = page.waitForResponse(
+      (r) =>
+        r.url().includes("/api/config") && r.request().method() === "PATCH"
+    );
+    await settingsPage.toggleSafeMode();
+    await responsePromise;
   });
 
   test("LLM model change + Save sends correct PATCH body", async ({ page }) => {
