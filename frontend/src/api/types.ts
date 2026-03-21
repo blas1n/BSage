@@ -37,6 +37,8 @@ export interface RuntimeConfig {
   disabled_entries: string[];
   has_llm_api_key: boolean;
   has_embedding_api_key: boolean;
+  vault_path: string;
+  index_available: boolean;
 }
 
 /** PATCH /api/config request body. */
@@ -117,6 +119,7 @@ export interface VaultBacklink {
 export interface VaultGraph {
   nodes: VaultGraphNode[];
   links: VaultGraphLink[];
+  truncated: boolean;
 }
 
 export interface VaultGraphNode {
@@ -133,4 +136,5 @@ export interface VaultGraphLink {
 /** GET /api/vault/tags response. */
 export interface VaultTags {
   tags: Record<string, string[]>;
+  truncated: boolean;
 }

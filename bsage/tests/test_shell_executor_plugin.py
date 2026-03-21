@@ -12,7 +12,7 @@ _DEFAULT_CREDS = {"allowed_commands": "echo,cat", "sandbox_mode": "vault_only"}
 
 
 def _make_context(vault_root: Path | None = None) -> MagicMock:
-    root = vault_root or Path("/tmp/vault")
+    root = vault_root or Path("/nonexistent/vault")
     return make_plugin_context(
         input_data={"command": "echo hello"},
         credentials=_DEFAULT_CREDS,
@@ -21,7 +21,7 @@ def _make_context(vault_root: Path | None = None) -> MagicMock:
         include_notify=True,
         config_overrides={
             "vault_path": root,
-            "tmp_dir": vault_root or Path("/tmp"),
+            "tmp_dir": vault_root or Path("/nonexistent"),
             "safe_mode": True,
         },
     )
@@ -207,10 +207,10 @@ async def test_execute_symlink_escape_blocked(tmp_path: Path) -> None:
     assert "outside vault/tmp" in result.get("error", "")
 
 
-def test_run_subprocess_malformed_command() -> None:
+def test_run_subprocess_malformed_command(tmp_path: Path) -> None:
     """Test _run_subprocess handles malformed command strings."""
     _, mod = _load_plugin()
-    result = mod._run_subprocess("echo 'unterminated", "/tmp", 5.0)
+    result = mod._run_subprocess("echo 'unterminated", str(tmp_path), 5.0)
 
     assert result["returncode"] == 1
     assert "Invalid command syntax" in result["stderr"]

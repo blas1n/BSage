@@ -119,10 +119,10 @@ async def test_execute_no_messages(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_execute_skips_subtypes() -> None:
+async def test_execute_skips_subtypes(tmp_path: Path) -> None:
     """Test that execute skips messages with subtypes (bot, join, etc.)."""
     execute_fn, _, _ = _load_plugin()
-    ctx = _make_context()
+    ctx = _make_context(vault_root=tmp_path)
 
     api_response = {
         "ok": True,
@@ -257,9 +257,14 @@ async def test_execute_corrupted_state_file(tmp_path: Path) -> None:
 
     ctx = _make_context(vault_root=tmp_path)
 
-    mock_resp = _mock_response({"ok": True, "messages": [
-        {"ts": "1700000000.000100", "text": "hello", "user": "U123", "type": "message"},
-    ]})
+    mock_resp = _mock_response(
+        {
+            "ok": True,
+            "messages": [
+                {"ts": "1700000000.000100", "text": "hello", "user": "U123", "type": "message"},
+            ],
+        }
+    )
 
     with make_httpx_mock(get_response=mock_resp):
         result = await execute_fn(ctx)

@@ -23,7 +23,7 @@ test.describe("Dashboard", () => {
 
     const card = dashboardPage.getPluginCard("slack-input");
     const setupButton = await card
-      .locator("button:has-text('Setup')")
+      .getByRole("button", { name: "Setup" })
       .isVisible();
     expect(setupButton).toBeTruthy();
   });
@@ -40,7 +40,7 @@ test.describe("Dashboard", () => {
 
   test("Run button click sends API request", async ({ page }) => {
     const card = dashboardPage.getPluginCard("shell-executor");
-    const runButton = card.locator("button:has-text('Run')");
+    const runButton = card.getByRole("button", { name: "Run" });
 
     await expect(runButton).toBeVisible();
 

@@ -37,7 +37,7 @@ def _save_timestamp(path: Path, timestamp: int) -> None:
 
 def _is_valid_channel_id(channel_id: str) -> bool:
     """Check that channel_id is a numeric Discord snowflake."""
-    return str(channel_id).isdigit() and len(channel_id) > 0
+    return str(channel_id).isdigit() and 0 < len(channel_id) <= 20
 
 
 def _parse_message(msg: dict) -> dict | None:

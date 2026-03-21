@@ -43,7 +43,7 @@ def make_plugin_context(
     include_write_action: bool = False,
     include_state_path: bool = False,
     config_overrides: dict[str, Any] | None = None,
-) -> MagicMock:
+) -> "MagicMock":
     """Create a mock plugin context with configurable attributes.
 
     Args:
@@ -68,7 +68,7 @@ def make_plugin_context(
     if include_write_action:
         ctx.garden.write_action = AsyncMock()
     if include_state_path:
-        root = vault_root or Path("/tmp")
+        root = vault_root or Path("/nonexistent")
         ctx.garden.resolve_plugin_state_path = MagicMock(
             side_effect=lambda plugin_name, subpath="_state.json": (
                 root / "seeds" / plugin_name / subpath
@@ -79,7 +79,11 @@ def make_plugin_context(
     ctx.chat = AsyncMock() if include_chat else None
 
     # Notify
-    ctx.notify = AsyncMock() if include_notify else None
+    if include_notify:
+        ctx.notify = AsyncMock()
+        ctx.notify.send = AsyncMock()
+    else:
+        ctx.notify = None
 
     # Config
     if config_overrides:
