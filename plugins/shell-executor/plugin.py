@@ -206,11 +206,19 @@ async def execute(context: Any) -> dict:
             },
         )
 
+        max_output = 50000
+        stdout = result["stdout"]
+        stderr = result["stderr"]
+        if len(stdout) > max_output:
+            stdout = stdout[:max_output] + f"\n... (truncated, {len(stdout)} total chars)"
+        if len(stderr) > max_output:
+            stderr = stderr[:max_output] + f"\n... (truncated, {len(stderr)} total chars)"
+
         return {
             "success": success,
             "return_code": result["returncode"],
-            "stdout": result["stdout"],
-            "stderr": result["stderr"],
+            "stdout": stdout,
+            "stderr": stderr,
         }
 
     except TimeoutError:

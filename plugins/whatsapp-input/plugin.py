@@ -243,15 +243,24 @@ async def notify(context: Any) -> dict:
     async with httpx.AsyncClient() as client:
         try:
             resp = await client.post(url, json=payload, headers=headers, timeout=10.0)
-            data = resp.json()
-
-            if data.get("messages"):
-                message_id = data["messages"][0].get("id")
-                return {"sent": True, "message_id": message_id}
-            else:
-                error = data.get("error", {}).get("message", "unknown error")
-                return {"sent": False, "error": error}
-
         except Exception:
             context.logger.warning("notify_api_request_failed", exc_info=True)
             return {"sent": False, "error": "API request failed"}
+
+        try:
+            data = resp.json()
+        except (ValueError, UnicodeDecodeError):
+            context.logger.warning(
+                "notify_json_parse_failed", status=resp.status_code
+            )
+            return {
+                "sent": False,
+                "error": f"Invalid JSON response (HTTP {resp.status_code})",
+            }
+
+        if data.get("messages"):
+            message_id = data["messages"][0].get("id")
+            return {"sent": True, "message_id": message_id}
+
+        error = data.get("error", {}).get("message", "unknown error")
+        return {"sent": False, "error": error}

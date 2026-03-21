@@ -253,7 +253,7 @@ export function VaultView() {
 
             <TagCloud activeTag={activeTag} onSelectTag={handleTagSelect} />
 
-            {tree.length === 0 ? (
+            {tree.length === 0 || (tree.length === 1 && tree[0].dirs.length === 0 && tree[0].files.length === 0) ? (
               <div className="text-center py-8 text-gray-400">
                 <FolderOpen className="w-6 h-6 mx-auto mb-2 opacity-50" />
                 <p className="text-xs">Vault is empty</p>

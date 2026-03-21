@@ -221,7 +221,8 @@ async def setup(cred_store: Any):
                     click.echo(f"    [{i}] {guild['name']} ({guild['id']})")
 
                 guild_choice = click.prompt("  Select guild number", type=int, default=1)
-                selected_guild = guilds[min(guild_choice - 1, len(guilds) - 1)]["id"]
+                idx = min(max(guild_choice - 1, 0), min(len(guilds), 10) - 1)
+                selected_guild = guilds[idx]["id"]
 
                 # Fetch channels in guild
                 click.echo("  Fetching channels...")
@@ -249,7 +250,8 @@ async def setup(cred_store: Any):
                             click.echo(f"    [{i}] #{ch['name']} ({ch['id']})")
 
                         ch_choice = click.prompt("  Select channel number", type=int, default=1)
-                        channel_id = channels[min(ch_choice - 1, len(channels) - 1)]["id"]
+                        idx = min(max(ch_choice - 1, 0), min(len(channels), 20) - 1)
+                        channel_id = channels[idx]["id"]
 
     if not _is_valid_channel_id(channel_id):
         click.echo(f"Error: channel_id must be numeric, got '{channel_id}'", err=True)

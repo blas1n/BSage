@@ -210,12 +210,18 @@ async def notify(context: Any) -> dict:
 
     url = f"{TELEGRAM_API.format(token=bot_token)}/sendMessage"
     async with httpx.AsyncClient() as client:
-        response = await client.post(
-            url,
-            json={"chat_id": chat_id, "text": message},
-            timeout=10.0,
-        )
-        response.raise_for_status()
+        try:
+            response = await client.post(
+                url,
+                json={"chat_id": chat_id, "text": message},
+                timeout=10.0,
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            return {"sent": False, "reason": f"HTTP {e.response.status_code}"}
+        except (httpx.TimeoutException, httpx.NetworkError) as e:
+            context.logger.warning("notify_network_error", error=str(e))
+            return {"sent": False, "reason": "Network error"}
         try:
             body = response.json()
         except (ValueError, UnicodeDecodeError):

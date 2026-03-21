@@ -315,13 +315,8 @@ async def test_notify_missing_credentials() -> None:
 
 
 @pytest.mark.asyncio
-async def test_notify_http_error_raises() -> None:
-    """HTTP errors from Telegram API propagate as-is.
-
-    This is intentional: unlike missing credentials (which return
-    ``{"sent": False}``), transport/server errors should surface to the
-    caller so the notification router can handle retries or alerting.
-    """
+async def test_notify_http_error_returns_failure() -> None:
+    """HTTP errors from Telegram API are caught and returned as failure dict."""
     _, notify_fn, _ = _load_plugin()
     ctx = _make_context(input_data={"message": "hi"})
 
@@ -336,8 +331,11 @@ async def test_notify_http_error_raises() -> None:
         )
     )
 
-    with make_httpx_mock(post_response=mock_response), pytest.raises(httpx.HTTPStatusError):
-        await notify_fn(ctx)
+    with make_httpx_mock(post_response=mock_response):
+        result = await notify_fn(ctx)
+
+    assert result["sent"] is False
+    assert "403" in result["reason"]
 
 
 @pytest.mark.asyncio

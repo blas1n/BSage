@@ -140,7 +140,11 @@ async def execute(context: Any) -> dict:
             parsed_messages.append(parsed)
 
     if parsed_messages:
-        await context.garden.write_seed("slack", {"messages": parsed_messages})
+        try:
+            await context.garden.write_seed("slack", {"messages": parsed_messages})
+        except Exception:
+            context.logger.exception("slack_seed_write_failed")
+            return {"collected": 0, "error": "failed to write seed"}
 
         # Auto-reply via ChatBridge
         user_texts = [m["text"] for m in parsed_messages if m.get("text")]
@@ -222,7 +226,7 @@ async def setup(cred_store: Any):
                     click.echo(f"    [{i}] #{ch['name']} ({ch['id']})")
 
                 choice = click.prompt("  Select channel number", type=int, default=1)
-                channel_id = channels[min(choice - 1, len(channels) - 1)]["id"]
+                channel_id = channels[min(max(choice - 1, 0), min(len(channels), 20) - 1)]["id"]
 
     if not _is_valid_channel_id(channel_id):
         click.echo(f"Error: invalid channel_id format, got '{channel_id}'", err=True)
