@@ -5,6 +5,7 @@ import os
 import shlex
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from bsage.plugin import plugin
 
@@ -253,7 +254,7 @@ def _run_subprocess(command: str, cwd: str, timeout_s: float) -> dict:
 
 
 @execute.setup
-def setup(cred_store):
+def setup(cred_store: Any) -> None:
     """Configure shell-executor credentials with sandboxing level and command whitelist."""
     import asyncio
 
@@ -288,8 +289,10 @@ def setup(cred_store):
 @execute.notify
 async def notify(context) -> dict:
     """Send command output back to the user's active channel."""
-    output = (context.input_data or {}).get("output", "")
-    command = (context.input_data or {}).get("command", "")
+    data = context.input_data or {}
+    stdout = data.get("stdout", "")
+    stderr = data.get("stderr", "")
+    output = stdout or stderr
 
     if not output:
         return {"sent": False, "reason": "no output to send"}
@@ -299,7 +302,8 @@ async def notify(context) -> dict:
     if len(output) > max_len:
         output = output[: max_len - 20] + f"\n... (truncated, {len(output)} total chars)"
 
-    message = f"Command: {command}\n\n{output}"
+    rc = data.get("return_code", "?")
+    message = f"Shell (rc={rc}):\n\n{output}"
 
     if context.notify:
         await context.notify.send(message)

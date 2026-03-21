@@ -5,8 +5,6 @@ from pathlib import Path
 
 from bsage.plugin import plugin
 
-STATE_SUBPATH = "seeds/discord-input/_state.json"
-
 
 def _state_path(context) -> Path:
     """Resolve the state file path within the vault."""
@@ -128,11 +126,14 @@ async def execute(context) -> dict:
         user_texts = [m["content"] for m in parsed_messages if m.get("content")]
         if user_texts and context.chat:
             combined = "\n".join(user_texts)
-            reply = await context.chat.chat(message=combined)
-            if reply and reply.strip():
-                context.logger.info("auto_reply_sent", length=len(reply))
-            else:
-                context.logger.warning("auto_reply_empty")
+            try:
+                reply = await context.chat.chat(message=combined)
+                if reply and reply.strip():
+                    context.logger.info("auto_reply_sent", length=len(reply))
+                else:
+                    context.logger.warning("auto_reply_empty")
+            except Exception:
+                context.logger.warning("auto_reply_failed", exc_info=True)
 
     if highest_timestamp > (last_timestamp or 0):
         _save_timestamp(state_file, highest_timestamp)
@@ -226,7 +227,7 @@ async def setup(cred_store):
                         ch_choice = click.prompt("  Select channel number", type=int, default=1)
                         channel_id = channels[min(ch_choice - 1, len(channels) - 1)]["id"]
 
-    if not str(channel_id).isdigit():
+    if not str(channel_id).lstrip("-").isdigit():
         click.echo(f"Error: channel_id must be numeric, got '{channel_id}'", err=True)
         raise SystemExit(1)
 

@@ -6,7 +6,6 @@ from pathlib import Path
 from bsage.plugin import plugin
 
 TELEGRAM_API = "https://api.telegram.org/bot{token}"
-STATE_SUBPATH = "seeds/telegram-input/_state.json"
 
 
 def _state_path(context) -> Path:
@@ -102,11 +101,14 @@ async def execute(context) -> dict:
         user_texts = [m["text"] for m in messages if m.get("text")]
         if user_texts and context.chat:
             combined = "\n".join(user_texts)
-            reply = await context.chat.chat(message=combined)
-            if reply and reply.strip():
-                context.logger.info("auto_reply_sent", length=len(reply))
-            else:
-                context.logger.warning("auto_reply_empty")
+            try:
+                reply = await context.chat.chat(message=combined)
+                if reply and reply.strip():
+                    context.logger.info("auto_reply_sent", length=len(reply))
+                else:
+                    context.logger.warning("auto_reply_empty")
+            except Exception:
+                context.logger.warning("auto_reply_failed", exc_info=True)
 
     if highest_update_id is not None:
         _save_offset(state_file, highest_update_id)

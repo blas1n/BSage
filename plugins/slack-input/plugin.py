@@ -5,8 +5,6 @@ from pathlib import Path
 
 from bsage.plugin import plugin
 
-STATE_SUBPATH = "seeds/slack-input/_state.json"
-
 
 def _state_path(context) -> Path:
     """Resolve the offset state file path within the vault."""
@@ -117,11 +115,14 @@ async def execute(context) -> dict:
         user_texts = [m["text"] for m in parsed_messages if m.get("text")]
         if user_texts and context.chat:
             combined = "\n".join(user_texts)
-            reply = await context.chat.chat(message=combined)
-            if reply and reply.strip():
-                context.logger.info("auto_reply_sent", length=len(reply))
-            else:
-                context.logger.warning("auto_reply_empty")
+            try:
+                reply = await context.chat.chat(message=combined)
+                if reply and reply.strip():
+                    context.logger.info("auto_reply_sent", length=len(reply))
+                else:
+                    context.logger.warning("auto_reply_empty")
+            except Exception:
+                context.logger.warning("auto_reply_failed", exc_info=True)
 
     if latest_ts:
         _save_cursor(state_file, latest_ts)

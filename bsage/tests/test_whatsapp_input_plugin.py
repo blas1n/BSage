@@ -3,24 +3,24 @@
 import hashlib
 import hmac
 import json
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
+from bsage.tests.conftest import make_plugin_context
+
+_DEFAULT_CREDS = {
+    "access_token": "whatsapp_token_123",
+    "phone_number_id": "123456789",
+    "verify_token": "my_verify_token",
+}
+
 
 def _make_context(input_data: dict | None = None) -> MagicMock:
-    ctx = MagicMock()
-    ctx.input_data = input_data or {}
-    ctx.credentials = {
-        "access_token": "whatsapp_token_123",
-        "phone_number_id": "123456789",
-        "verify_token": "my_verify_token",
-    }
-    ctx.garden = AsyncMock()
-    ctx.garden.write_seed = AsyncMock()
-    ctx.chat = None
-    ctx.logger = MagicMock()
-    return ctx
+    return make_plugin_context(
+        input_data=input_data or {},
+        credentials=_DEFAULT_CREDS,
+    )
 
 
 def _load_plugin():

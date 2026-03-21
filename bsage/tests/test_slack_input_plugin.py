@@ -5,28 +5,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from bsage.tests.conftest import make_plugin_context
+
+_DEFAULT_CREDS = {"bot_token": "xoxb-test", "channel_id": "C123"}
+
 
 def _make_context(
     input_data: dict | None = None,
     credentials: dict | None = None,
     vault_root: Path | None = None,
 ) -> MagicMock:
-    ctx = MagicMock()
-    ctx.input_data = input_data
-    ctx.credentials = credentials or {
-        "bot_token": "xoxb-test",
-        "channel_id": "C123",
-    }
-    ctx.garden = AsyncMock()
-    ctx.garden.write_seed = AsyncMock()
-    ctx.garden.resolve_plugin_state_path = MagicMock(
-        side_effect=lambda plugin_name, subpath="_state.json": (
-            (vault_root or Path("/tmp")) / "seeds" / plugin_name / subpath
-        ),
+    return make_plugin_context(
+        input_data=input_data,
+        credentials=credentials or _DEFAULT_CREDS,
+        vault_root=vault_root,
+        include_state_path=True,
     )
-    ctx.chat = None
-    ctx.logger = MagicMock()
-    return ctx
 
 
 def _load_plugin():

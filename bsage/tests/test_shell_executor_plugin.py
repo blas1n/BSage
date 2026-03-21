@@ -1,30 +1,29 @@
 """Tests for the shell-executor plugin."""
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bsage.tests.conftest import make_plugin_context
+
+_DEFAULT_CREDS = {"allowed_commands": "echo,cat", "sandbox_mode": "vault_only"}
+
 
 def _make_context(vault_root: Path | None = None) -> MagicMock:
-    ctx = MagicMock()
-    ctx.input_data = {"command": "echo hello"}
-    ctx.credentials = {
-        "allowed_commands": "echo,cat",
-        "sandbox_mode": "vault_only",
-    }
-    # Plugin accesses config as attributes (context.config.vault_path)
-    config = MagicMock()
-    config.vault_path = vault_root or Path("/tmp/vault")
-    config.tmp_dir = vault_root or Path("/tmp")
-    config.safe_mode = True
-    ctx.config = config
-    ctx.garden = AsyncMock()
-    ctx.garden.write_action = AsyncMock()
-    ctx.garden.write_seed = AsyncMock()
-    ctx.logger = MagicMock()
-    ctx.notify = AsyncMock()
-    return ctx
+    root = vault_root or Path("/tmp/vault")
+    return make_plugin_context(
+        input_data={"command": "echo hello"},
+        credentials=_DEFAULT_CREDS,
+        vault_root=vault_root,
+        include_write_action=True,
+        include_notify=True,
+        config_overrides={
+            "vault_path": root,
+            "tmp_dir": vault_root or Path("/tmp"),
+            "safe_mode": True,
+        },
+    )
 
 
 def _load_plugin():
@@ -221,7 +220,7 @@ async def test_notify_sends_output() -> None:
     """Test notify handler sends command output."""
     _, mod = _load_plugin()
     ctx = _make_context()
-    ctx.input_data = {"output": "hello world", "command": "echo hello"}
+    ctx.input_data = {"stdout": "hello world", "return_code": 0}
 
     result = await mod.notify(ctx)
 
@@ -234,7 +233,7 @@ async def test_notify_no_output() -> None:
     """Test notify returns not sent when output is empty."""
     _, mod = _load_plugin()
     ctx = _make_context()
-    ctx.input_data = {"output": "", "command": "echo"}
+    ctx.input_data = {"stdout": "", "stderr": ""}
 
     result = await mod.notify(ctx)
 
@@ -246,7 +245,7 @@ async def test_notify_truncates_long_output() -> None:
     """Test notify truncates output longer than 4000 chars."""
     _, mod = _load_plugin()
     ctx = _make_context()
-    ctx.input_data = {"output": "x" * 5000, "command": "cmd"}
+    ctx.input_data = {"stdout": "x" * 5000, "return_code": 0}
 
     result = await mod.notify(ctx)
 
@@ -261,7 +260,7 @@ async def test_notify_no_channel() -> None:
     _, mod = _load_plugin()
     ctx = _make_context()
     ctx.notify = None
-    ctx.input_data = {"output": "hello", "command": "echo"}
+    ctx.input_data = {"stdout": "hello", "return_code": 0}
 
     result = await mod.notify(ctx)
 

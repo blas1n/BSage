@@ -17,10 +17,10 @@ export class VaultPage {
     this.heading = page.getByRole("heading", { name: "Vault" });
     // Use data-testid for stable selectors; fall back to role-based
     this.fileTree = page.locator(
-      "[data-testid='vault-file-tree'], nav[aria-label='File tree'], .w-56.shrink-0.border-r"
+      "[data-testid='vault-file-tree'], nav[aria-label='File tree']"
     );
     this.fileContent = page.locator(
-      "[data-testid='vault-file-content'], [role='main'], .flex-1.overflow-y-auto.px-6"
+      "[data-testid='vault-file-content'], [role='main']"
     );
     // Toggle button text changes between Raw/Rendered
     this.rawToggle = page.getByRole("button", { name: "Raw" });

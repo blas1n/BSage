@@ -18,10 +18,8 @@ export class DashboardPage {
     // Find the card container that contains the plugin name
     // Use a locator chain: find h4 with plugin name, then closest card ancestor
     return this.page
-      .locator("[data-testid='plugin-card'], .border.rounded-lg", {
-        has: this.page.locator("h4", { hasText: name }),
-      })
-      .first();
+      .locator("[data-testid='plugin-card']")
+      .filter({ has: this.page.locator("h4", { hasText: name }) });
   }
 
   async isPluginVisible(name: string): Promise<boolean> {

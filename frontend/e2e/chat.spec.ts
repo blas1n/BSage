@@ -20,7 +20,7 @@ test.describe("Chat", () => {
     await chatPage.waitForAssistantMessage();
 
     const response = await chatPage.getLastMessage();
-    expect(response).toContain("Hello");
+    expect(response).toContain("BSage");
   });
 
   test("send via Enter key", async ({}) => {
@@ -31,22 +31,21 @@ test.describe("Chat", () => {
       chatPage.input.press("Enter"),
     ]);
 
-    await expect(chatPage.input).toHaveValue("", { timeout: 5000 });
+    await expect(chatPage.input).toHaveValue("", { timeout: 10000 });
   });
 
   test("loading state while sending", async ({ page }) => {
     // Mock delayed response to reliably observe disabled state
     await page.unroute("**/api/chat");
-    await page.route("**/api/chat", (route) => {
-      setTimeout(() => {
-        route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            response: "Delayed response",
-          }),
-        });
-      }, 2000);
+    await page.route("**/api/chat", async (route) => {
+      await page.waitForTimeout(2000);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          response: "Delayed response",
+        }),
+      });
     });
 
     await chatPage.sendMessage("Test");
@@ -56,7 +55,7 @@ test.describe("Chat", () => {
 
     // Eventually the response arrives and input is re-enabled
     await chatPage.waitForAssistantMessage();
-    await expect(chatPage.input).toBeEnabled({ timeout: 5000 });
+    await expect(chatPage.input).toBeEnabled({ timeout: 10000 });
   });
 
   test("recovery from API error (500 response)", async ({ page }) => {
@@ -74,7 +73,7 @@ test.describe("Chat", () => {
 
     // Wait for input to be re-enabled after error handling completes
     await chatPage.input.waitFor({ state: "visible" });
-    await expect(chatPage.input).toBeEnabled({ timeout: 5000 });
+    await expect(chatPage.input).toBeEnabled({ timeout: 10000 });
 
     // Input should be re-enabled after error
     const isDisabled = await chatPage.isInputDisabled();

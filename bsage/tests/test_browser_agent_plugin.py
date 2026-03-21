@@ -4,20 +4,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from bsage.tests.conftest import make_plugin_context
+
+_DEFAULT_INPUT = {"url": "https://example.com", "task": "extract page title"}
+
 
 def _make_context() -> MagicMock:
-    ctx = MagicMock()
-    ctx.input_data = {
-        "url": "https://example.com",
-        "task": "extract page title",
-    }
-    ctx.credentials = {}
-    ctx.garden = AsyncMock()
-    ctx.garden.write_action = AsyncMock()
-    ctx.garden.write_seed = AsyncMock()
-    ctx.logger = MagicMock()
-    ctx.notify = AsyncMock()
-    return ctx
+    return make_plugin_context(
+        input_data=_DEFAULT_INPUT,
+        include_write_action=True,
+        include_notify=True,
+    )
 
 
 def _load_plugin():

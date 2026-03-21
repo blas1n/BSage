@@ -120,13 +120,8 @@ export const test = base.extend<CustomFixtures>({
             body: JSON.stringify(MOCK_CONFIG_RESPONSE),
           });
         } else if (route.request().method() === "PATCH") {
-          const postData = route.request().postData();
-          if (!postData) {
-            route.fulfill({ status: 400, body: "Missing request body" });
-            return;
-          }
           try {
-            const body = JSON.parse(postData);
+            const body = route.request().postDataJSON();
             const updatedConfig = { ...MOCK_CONFIG_RESPONSE, ...body };
             route.fulfill({
               status: 200,

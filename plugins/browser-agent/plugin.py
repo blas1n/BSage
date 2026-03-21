@@ -1,11 +1,14 @@
 """Browser automation Plugin — scrape web pages, fill forms, interact with web interfaces."""
 
 import re
+from typing import Any
 
 from bsage.plugin import plugin
 
 # CSS selector validation: block obvious injection patterns
-_SELECTOR_SAFE_RE = re.compile(r"^[a-zA-Z0-9\s\.\#\-\_\[\]\=\'\"\:\(\)\,\*\>\+\~\^\\$\|\/]+$")
+_SELECTOR_SAFE_RE = re.compile(
+    r"^[a-zA-Z0-9\s\.\#\-\_\[\]\=\'\"\:\(\)\,\*\>\+\~\^\$\|\/\@\!\%\;]+$"
+)
 
 
 @plugin(
@@ -123,7 +126,7 @@ async def _browser_task(
     extract_selector: str,
     wait_for_selector: str,
     headless: bool,
-    logger,
+    logger: Any,
 ) -> dict:
     """Execute browser automation task using Playwright."""
     try:
@@ -184,7 +187,7 @@ async def _browser_task(
 
 
 @execute.setup
-def setup(cred_store):
+def setup(cred_store: Any) -> None:
     """Configure browser-agent preferences."""
     import asyncio
 

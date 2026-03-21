@@ -110,11 +110,14 @@ async def execute(context) -> dict:
 
     # Auto-reply via ChatBridge
     if context.chat:
-        reply = await context.chat.chat(message=parsed["text"])
-        if reply and reply.strip():
-            context.logger.info("auto_reply_sent", length=len(reply))
-        else:
-            context.logger.warning("auto_reply_empty")
+        try:
+            reply = await context.chat.chat(message=parsed["text"])
+            if reply and reply.strip():
+                context.logger.info("auto_reply_sent", length=len(reply))
+            else:
+                context.logger.warning("auto_reply_empty")
+        except Exception:
+            context.logger.warning("auto_reply_failed", exc_info=True)
 
     return {"collected": 1, "from": parsed["from"]}
 
