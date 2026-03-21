@@ -28,11 +28,11 @@ export class DashboardPage {
 
   async hasNeedsSetupBadge(name: string): Promise<boolean> {
     const card = this.getPluginCard(name);
-    return await card.getByText("needs setup").isVisible();
+    return await card.getByText(/needs setup/i).isVisible();
   }
 
   async hasDangerousBadge(name: string): Promise<boolean> {
     const card = this.getPluginCard(name);
-    return await card.getByText("dangerous").isVisible();
+    return await card.getByText(/dangerous/i).isVisible();
   }
 }

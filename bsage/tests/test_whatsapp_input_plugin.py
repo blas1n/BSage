@@ -53,7 +53,8 @@ async def test_execute_missing_signature_rejected() -> None:
     """Test that execute rejects requests without a webhook signature."""
     execute_fn = _load_plugin()
     payload = {"entry": [{"changes": [{"value": {"messages": []}}]}]}
-    input_data = {"body": payload}  # No x-hub-signature-256 header
+    raw_body = json.dumps(payload)
+    input_data = {"body": payload, "raw_body": raw_body}  # No x-hub-signature-256 header
     ctx = _make_context(input_data=input_data)
 
     result = await execute_fn(ctx)
@@ -67,9 +68,11 @@ async def test_execute_invalid_signature() -> None:
     """Test that execute rejects invalid webhook signatures."""
     execute_fn = _load_plugin()
     payload = {"entry": [{"changes": [{"value": {"messages": []}}]}]}
+    raw_body = json.dumps(payload)
     input_data = {
         "x-hub-signature-256": "sha256=invalid_signature",
         "body": payload,
+        "raw_body": raw_body,
     }
     ctx = _make_context(input_data=input_data)
 
@@ -106,24 +109,29 @@ async def test_execute_processes_valid_message() -> None:
         ]
     }
 
-    # Create valid signature
-    payload_str = json.dumps(payload)
+    # Create valid signature against raw body string
+    raw_body = json.dumps(payload)
     expected_signature = hmac.new(
         verify_token.encode(),
-        payload_str.encode(),
+        raw_body.encode(),
         hashlib.sha256,
     ).hexdigest()
 
     input_data = {
         "x-hub-signature-256": f"sha256={expected_signature}",
         "body": payload,
+        "raw_body": raw_body,
     }
     ctx = _make_context(input_data=input_data)
 
     result = await execute_fn(ctx)
 
     assert result["collected"] == 1
+    assert result["from"] == "1234567890"
     ctx.garden.write_seed.assert_awaited_once()
+    # Verify reply_phone is stored in seed for notify()
+    seed_data = ctx.garden.write_seed.call_args[0][1]
+    assert seed_data["reply_phone"] == "1234567890"
 
 
 @pytest.mark.asyncio
@@ -153,19 +161,38 @@ async def test_execute_ignores_non_text_messages() -> None:
         ]
     }
 
-    payload_str = json.dumps(payload)
+    raw_body = json.dumps(payload)
     signature = hmac.new(
         verify_token.encode(),
-        payload_str.encode(),
+        raw_body.encode(),
         hashlib.sha256,
     ).hexdigest()
 
     input_data = {
         "x-hub-signature-256": f"sha256={signature}",
         "body": payload,
+        "raw_body": raw_body,
     }
     ctx = _make_context(input_data=input_data)
 
     result = await execute_fn(ctx)
 
     assert result["collected"] == 0
+
+
+@pytest.mark.asyncio
+async def test_execute_missing_raw_body() -> None:
+    """Test that execute rejects requests without raw_body."""
+    execute_fn = _load_plugin()
+    payload = {"entry": [{"changes": [{"value": {"messages": []}}]}]}
+    input_data = {
+        "x-hub-signature-256": "sha256=something",
+        "body": payload,
+        # No raw_body — signature cannot be verified
+    }
+    ctx = _make_context(input_data=input_data)
+
+    result = await execute_fn(ctx)
+
+    assert result["success"] is False
+    assert "raw" in result.get("error", "").lower()

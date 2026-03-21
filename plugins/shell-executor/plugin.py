@@ -74,8 +74,7 @@ def _escape_working_dir(
                         return True, str(requested)
                 except ValueError:
                     pass
-                if not in_vault:
-                    return False, f"path {requested} outside vault/tmp (sandbox_mode=vault_only)"
+                return False, f"path {requested} outside vault/tmp (sandbox_mode=vault_only)"
 
             return True, str(requested)
 

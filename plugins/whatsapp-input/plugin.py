@@ -2,7 +2,6 @@
 
 import hashlib
 import hmac
-import json
 
 from bsage.plugin import plugin
 
@@ -84,17 +83,19 @@ async def execute(context) -> dict:
     # Strip "sha256=" prefix from Meta's webhook signature format
     if signature.startswith("sha256="):
         signature = signature[7:]
-    try:
-        payload_str = json.dumps(webhook_data.get("body", {}))
-    except (TypeError, ValueError) as e:
-        context.logger.warning("whatsapp_payload_invalid", error=str(e))
-        return {"success": False, "error": "Invalid webhook payload"}
+
+    # Use raw_body for signature verification — re-serializing parsed JSON
+    # produces different bytes (key order, whitespace) and breaks HMAC.
+    raw_body = webhook_data.get("raw_body", "")
+    if not raw_body:
+        context.logger.warning("whatsapp_raw_body_missing")
+        return {"success": False, "error": "Missing raw request body"}
 
     if not signature:
         context.logger.warning("whatsapp_signature_missing")
         return {"success": False, "error": "Missing webhook signature"}
 
-    if not _verify_webhook_signature(payload_str, signature, verify_token):
+    if not _verify_webhook_signature(raw_body, signature, verify_token):
         context.logger.warning("whatsapp_signature_invalid")
         return {"success": False, "error": "Invalid signature"}
 
@@ -105,8 +106,11 @@ async def execute(context) -> dict:
     if not parsed:
         return {"collected": 0, "reason": "no text message"}
 
-    # Write to seed
-    await context.garden.write_seed("whatsapp", {"message": parsed})
+    # Write to seed — include sender phone so notify() can reply
+    await context.garden.write_seed("whatsapp", {
+        "message": parsed,
+        "reply_phone": parsed.get("from"),
+    })
 
     # Auto-reply via ChatBridge
     if context.chat:

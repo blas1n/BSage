@@ -1,5 +1,6 @@
 """Tests for the slack-input plugin."""
 
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -193,3 +194,82 @@ async def test_notify_sends_message() -> None:
     assert result["sent"] is True
     assert result["ts"] == "1700000001.000100"
     mock_client.post.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_saves_cursor_state(tmp_path: Path) -> None:
+    """Test that execute persists latest timestamp to state file."""
+    execute_fn, _, _ = _load_plugin()
+    ctx = _make_context(vault_root=tmp_path)
+
+    api_response = {
+        "ok": True,
+        "messages": [
+            {
+                "type": "message",
+                "user": "U123",
+                "text": "Hello",
+                "ts": "1700000000.000200",
+            },
+        ],
+    }
+
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = api_response
+
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        await execute_fn(ctx)
+
+    state_file = tmp_path / "seeds" / "slack-input" / "_state.json"
+    assert state_file.exists()
+    state = json.loads(state_file.read_text())
+    assert state["cursor"] == "1700000000.000200"
+
+
+@pytest.mark.asyncio
+async def test_execute_uses_existing_cursor(tmp_path: Path) -> None:
+    """Test that execute passes saved cursor as 'latest' param."""
+    execute_fn, _, _ = _load_plugin()
+
+    # Pre-populate state
+    state_dir = tmp_path / "seeds" / "slack-input"
+    state_dir.mkdir(parents=True)
+    (state_dir / "_state.json").write_text(json.dumps({"cursor": "1700000000.000100"}))
+
+    ctx = _make_context(vault_root=tmp_path)
+
+    api_response = {"ok": True, "messages": []}
+
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = api_response
+
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        await execute_fn(ctx)
+
+    # Verify cursor was passed as 'latest' param
+    call_args = mock_client.get.call_args
+    assert call_args[1]["params"]["latest"] == "1700000000.000100"
+
+
+@pytest.mark.asyncio
+async def test_execute_rejects_invalid_channel_id() -> None:
+    """Test that execute rejects channel_id not starting with C/G/D."""
+    execute_fn, _, _ = _load_plugin()
+    ctx = _make_context(credentials={"bot_token": "xoxb-test", "channel_id": "INVALID"})
+
+    result = await execute_fn(ctx)
+
+    assert result["collected"] == 0
+    assert "invalid" in result.get("error", "").lower()

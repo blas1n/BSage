@@ -6,34 +6,24 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from bsage.tests.conftest import make_plugin_context
+
+_DEFAULT_CREDS = {"bot_token": "tok123", "chat_id": "456"}
+
 
 def _make_context(
     input_data: dict | None = None,
     credentials: dict | None = None,
     vault_root: Path | None = None,
 ) -> MagicMock:
-    ctx = MagicMock()
-    ctx.input_data = input_data
-    ctx.credentials = credentials or {"bot_token": "tok123", "chat_id": "456"}
-    ctx.garden = AsyncMock()
-    ctx.garden.write_seed = AsyncMock()
-    ctx.llm = AsyncMock()
-    ctx.llm.chat = AsyncMock(return_value="LLM reply")
-    ctx.chat = AsyncMock()
+    ctx = make_plugin_context(
+        input_data=input_data,
+        credentials=credentials or _DEFAULT_CREDS,
+        vault_root=vault_root,
+        include_chat=True,
+        include_state_path=True,
+    )
     ctx.chat.chat = AsyncMock(return_value="ChatBridge reply")
-    # Set up vault for state file access
-    mock_vault = MagicMock()
-    if vault_root:
-        mock_vault.resolve_path.side_effect = lambda subpath: vault_root / subpath
-        ctx.garden.resolve_plugin_state_path = MagicMock(
-            side_effect=lambda plugin_name, subpath="_state.json": (
-                vault_root / "seeds" / plugin_name / subpath
-            )
-        )
-    else:
-        mock_vault.resolve_path.return_value = Path("/tmp/test_state.json")
-        ctx.garden.resolve_plugin_state_path = MagicMock(return_value=Path("/tmp/test_state.json"))
-    ctx.garden._vault = mock_vault
     return ctx
 
 

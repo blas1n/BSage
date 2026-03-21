@@ -237,7 +237,7 @@ export function VaultView() {
         /* Notes mode */
         <div className="flex-1 min-h-0 flex">
           {/* Left panel: title + search + tags + directory tree */}
-          <div className="w-56 shrink-0 border-r border-gray-200 dark:border-gray-700 overflow-y-auto p-3 scrollbar-thin">
+          <div data-testid="vault-file-tree" className="w-56 shrink-0 border-r border-gray-200 dark:border-gray-700 overflow-y-auto p-3 scrollbar-thin">
             <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-3">Vault</h2>
             <SearchPanel onSelectFile={handleSelectFile} />
 
@@ -259,7 +259,7 @@ export function VaultView() {
           </div>
 
           {/* Right panel: tabs + file viewer */}
-          <div className="flex-1 flex flex-col min-w-0">
+          <div data-testid="vault-file-content" className="flex-1 flex flex-col min-w-0">
             <div className="px-6 pt-3 pb-2 shrink-0 flex items-center justify-end">
               <ViewModeTabs
                 current={viewMode}

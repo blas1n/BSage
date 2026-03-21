@@ -5,6 +5,7 @@ export class ChatPage {
   readonly heading: Locator;
   readonly input: Locator;
   readonly sendButton: Locator;
+  readonly chatArea: Locator;
 
   constructor(page: Page) {
     this.page = page;
@@ -13,6 +14,7 @@ export class ChatPage {
       "Type a message... (Shift+Enter for new line)"
     );
     this.sendButton = page.getByRole("button", { name: /send/i });
+    this.chatArea = page.locator("[data-testid='chat-messages'], main, [role='log']").first();
   }
 
   async goto() {
@@ -27,7 +29,7 @@ export class ChatPage {
   }
 
   async getLastAssistantMessage() {
-    const msg = this.page
+    const msg = this.chatArea
       .locator("[data-testid='assistant-message'], div.prose")
       .last();
     await msg.waitFor({ timeout: 10000 });
@@ -40,7 +42,7 @@ export class ChatPage {
   }
 
   async waitForAssistantMessage() {
-    await this.page
+    await this.chatArea
       .locator("[data-testid='assistant-message'], div.prose")
       .first()
       .waitFor({ timeout: 10000 });

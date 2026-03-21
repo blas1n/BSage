@@ -25,6 +25,11 @@ def _save_timestamp(path: Path, timestamp: int) -> None:
     path.write_text(json.dumps({"last_message_timestamp": timestamp}), encoding="utf-8")
 
 
+def _is_valid_channel_id(channel_id: str) -> bool:
+    """Check that channel_id is a numeric Discord snowflake."""
+    return str(channel_id).isdigit() and len(channel_id) > 0
+
+
 def _parse_message(msg: dict) -> dict | None:
     """Extract normalized message dict from Discord message object."""
     if not msg.get("content"):
@@ -70,6 +75,10 @@ async def execute(context) -> dict:
     if not bot_token or not channel_id:
         return {"collected": 0, "error": "missing bot_token or channel_id"}
 
+    # Re-validate channel_id at execution time (credential file may be edited externally)
+    if not _is_valid_channel_id(channel_id):
+        return {"collected": 0, "error": f"invalid channel_id: {channel_id}"}
+
     state_file = _state_path(context)
     last_timestamp = _load_timestamp(state_file)
 
@@ -80,10 +89,6 @@ async def execute(context) -> dict:
     }
 
     params = {"limit": 50}
-    if last_timestamp:
-        # Discord API uses snowflake IDs, not timestamps
-        # Instead, we'll get recent messages and filter by timestamp
-        pass
 
     url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
 
@@ -227,7 +232,7 @@ async def setup(cred_store):
                         ch_choice = click.prompt("  Select channel number", type=int, default=1)
                         channel_id = channels[min(ch_choice - 1, len(channels) - 1)]["id"]
 
-    if not str(channel_id).lstrip("-").isdigit():
+    if not _is_valid_channel_id(channel_id):
         click.echo(f"Error: channel_id must be numeric, got '{channel_id}'", err=True)
         raise SystemExit(1)
 
@@ -251,6 +256,9 @@ async def notify(context) -> dict:
 
     if not bot_token or not channel_id:
         return {"sent": False, "reason": "missing bot_token or channel_id"}
+
+    if not _is_valid_channel_id(channel_id):
+        return {"sent": False, "reason": f"invalid channel_id: {channel_id}"}
 
     headers = {
         "Authorization": f"Bot {bot_token}",

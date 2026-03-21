@@ -1,5 +1,6 @@
 """Tests for the discord-input plugin."""
 
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -162,3 +163,79 @@ async def test_notify_sends_message() -> None:
     assert result["sent"] is True
     assert result["message_id"] == "msg_99"
     mock_client.post.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_saves_timestamp_state(tmp_path: Path) -> None:
+    """Test that execute persists highest timestamp to state file."""
+    execute_fn, _, _ = _load_plugin()
+    ctx = _make_context(vault_root=tmp_path)
+
+    api_messages = [
+        _discord_message("msg_1", "hello", "2024-01-15T10:30:00+00:00"),
+    ]
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = api_messages
+
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        await execute_fn(ctx)
+
+    state_file = tmp_path / "seeds" / "discord-input" / "_state.json"
+    assert state_file.exists()
+    state = json.loads(state_file.read_text())
+    assert state["last_message_timestamp"] > 0
+
+
+@pytest.mark.asyncio
+async def test_execute_uses_existing_timestamp(tmp_path: Path) -> None:
+    """Test that execute filters messages using saved timestamp."""
+    execute_fn, _, _ = _load_plugin()
+
+    # Pre-populate state: timestamp after msg_1 (10:30:00) but before msg_2 (10:31:00)
+    state_dir = tmp_path / "seeds" / "discord-input"
+    state_dir.mkdir(parents=True)
+    # 2024-01-15T10:30:00+00:00 = 1705314600000 ms, set state to 30s after
+    (state_dir / "_state.json").write_text(json.dumps({"last_message_timestamp": 1705314630000}))
+
+    ctx = _make_context(vault_root=tmp_path)
+
+    api_messages = [
+        _discord_message("msg_2", "new", "2024-01-15T10:31:00+00:00"),
+        _discord_message("msg_1", "old", "2024-01-15T10:30:00+00:00"),
+    ]
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = api_messages
+
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        result = await execute_fn(ctx)
+
+    # Only msg_2 should be collected (msg_1 timestamp < saved timestamp)
+    assert result["collected"] == 1
+
+
+@pytest.mark.asyncio
+async def test_execute_rejects_invalid_channel_id() -> None:
+    """Test that execute rejects non-numeric channel_id."""
+    execute_fn, _, _ = _load_plugin()
+    ctx = _make_context(credentials={"bot_token": "tok", "channel_id": "../../etc/passwd"})
+
+    result = await execute_fn(ctx)
+
+    assert result["collected"] == 0
+    assert "invalid" in result.get("error", "").lower()

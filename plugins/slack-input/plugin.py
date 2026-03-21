@@ -69,6 +69,10 @@ async def execute(context) -> dict:
     if not bot_token or not channel_id:
         return {"collected": 0, "error": "missing bot_token or channel_id"}
 
+    # Re-validate channel_id at execution time (credential file may be edited externally)
+    if channel_id[0:1] not in ("C", "G", "D"):
+        return {"collected": 0, "error": f"invalid channel_id: {channel_id}"}
+
     state_file = _state_path(context)
     cursor = _load_cursor(state_file)
 
@@ -99,11 +103,13 @@ async def execute(context) -> dict:
 
     # Parse messages (reverse order to get oldest first)
     parsed_messages = []
-    latest_ts = cursor
+    latest_ts: str | None = cursor
 
     for msg_event in reversed(messages):
         # Always advance cursor, even for unparseable messages
-        latest_ts = msg_event.get("ts") or latest_ts
+        ts = msg_event.get("ts")
+        if ts:
+            latest_ts = ts
         parsed = _parse_message(msg_event)
         if parsed:
             parsed_messages.append(parsed)
@@ -124,7 +130,7 @@ async def execute(context) -> dict:
             except Exception:
                 context.logger.warning("auto_reply_failed", exc_info=True)
 
-    if latest_ts:
+    if latest_ts and latest_ts != cursor:
         _save_cursor(state_file, latest_ts)
 
     return {"collected": len(parsed_messages)}
