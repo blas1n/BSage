@@ -70,6 +70,11 @@ async def execute(context) -> dict:
         ("wait_for_selector", wait_for_selector),
     ]
     for sel_name, sel_val in selector_pairs:
+        if sel_val and ("\x00" in sel_val or len(sel_val) > 500):
+            return {
+                "success": False,
+                "error": f"invalid {sel_name}: disallowed characters or too long",
+            }
         if sel_val and not _SELECTOR_SAFE_RE.match(sel_val):
             return {
                 "success": False,

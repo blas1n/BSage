@@ -149,6 +149,7 @@ class GraphStore:
             return await self._upsert_entity_locked(entity)
 
     async def _upsert_entity_locked(self, entity: GraphEntity) -> str:
+        # Caller must hold _write_lock
         norm = _normalize(entity.name)
         row = await self._fetchone(
             "SELECT id FROM entities WHERE name_normalized = ? AND entity_type = ?",
@@ -208,6 +209,7 @@ class GraphStore:
             return await self._upsert_relationship_locked(rel)
 
     async def _upsert_relationship_locked(self, rel: GraphRelationship) -> str:
+        # Caller must hold _write_lock
         row = await self._fetchone(
             """SELECT id FROM relationships
                WHERE source_id = ? AND target_id = ? AND rel_type = ?""",
@@ -251,6 +253,7 @@ class GraphStore:
             return await self._delete_by_source_locked(source_path)
 
     async def _delete_by_source_locked(self, source_path: str) -> int:
+        # Caller must hold _write_lock
         # 1. Delete relationships from this source
         await self._conn.execute("DELETE FROM relationships WHERE source_path = ?", (source_path,))
 
@@ -440,37 +443,20 @@ class GraphStore:
     async def count_relationships_for_entity(self, entity_name: str) -> int:
         """Count all relationships (inbound + outbound) for an entity.
 
-        Tries source_path match first (callers typically pass note paths),
-        then falls back to normalized entity name.
+        Matches by source_path or normalized entity name in a single query.
         """
-        # Primary: lookup by source_path (matches maturity.py usage)
-        row = await self._fetchone(
-            """SELECT COUNT(*) FROM (
-                   SELECT r.id FROM relationships r
-                   JOIN entities e ON e.id = r.source_id
-                   WHERE e.source_path = ?
-                   UNION
-                   SELECT r.id FROM relationships r
-                   JOIN entities e ON e.id = r.target_id
-                   WHERE e.source_path = ?
-               )""",
-            (entity_name, entity_name),
-        )
-        if row and row[0]:
-            return row[0]
-        # Fallback: try by normalized name
         norm = _normalize(entity_name)
         row = await self._fetchone(
             """SELECT COUNT(*) FROM (
                    SELECT r.id FROM relationships r
                    JOIN entities e ON e.id = r.source_id
-                   WHERE e.name_normalized = ?
+                   WHERE e.source_path = ? OR e.name_normalized = ?
                    UNION
                    SELECT r.id FROM relationships r
                    JOIN entities e ON e.id = r.target_id
-                   WHERE e.name_normalized = ?
+                   WHERE e.source_path = ? OR e.name_normalized = ?
                )""",
-            (norm, norm),
+            (entity_name, norm, entity_name, norm),
         )
         return row[0] if row else 0
 
@@ -549,7 +535,7 @@ class GraphStore:
             await self._conn.commit()
 
     async def _set_source_hash_locked(self, source_path: str, content_hash: str) -> None:
-        """Store or update content hash (caller must hold _write_lock)."""
+        """Store or update content hash. Caller must hold _write_lock."""
         await self._conn.execute(
             """INSERT OR REPLACE INTO source_hashes (source_path, content_hash, updated_at)
                VALUES (?, ?, datetime('now'))""",
@@ -582,6 +568,7 @@ class GraphStore:
     async def _rebuild_from_vault_locked(
         self, vault: Vault, extractor: GraphExtractor
     ) -> dict[str, int]:
+        # Caller must hold _rebuild_lock
         count = 0
         skipped = 0
         # v2.2: scan entity-type folders + seeds + legacy garden

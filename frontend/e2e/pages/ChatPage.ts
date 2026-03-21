@@ -14,7 +14,7 @@ export class ChatPage {
       "Type a message... (Shift+Enter for new line)"
     );
     this.sendButton = page.getByRole("button", { name: /send/i });
-    this.chatArea = page.locator("[data-testid='chat-messages'], main, [role='log']").first();
+    this.chatArea = page.locator("[data-testid='chat-messages'], [role='log']").first();
   }
 
   async goto() {

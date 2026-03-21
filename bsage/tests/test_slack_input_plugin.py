@@ -274,5 +274,8 @@ async def test_execute_handles_http_status_error() -> None:
         )
     )
 
-    with make_httpx_mock(get_response=mock_resp), pytest.raises(httpx.HTTPStatusError):
-        await execute_fn(ctx)
+    with make_httpx_mock(get_response=mock_resp):
+        result = await execute_fn(ctx)
+
+    assert result["collected"] == 0
+    assert "error" in result

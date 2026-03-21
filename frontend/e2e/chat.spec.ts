@@ -38,7 +38,8 @@ test.describe("Chat", () => {
     // Mock delayed response to reliably observe disabled state
     await page.unroute("**/api/chat");
     await page.route("**/api/chat", async (route) => {
-      await page.waitForTimeout(2000);
+      // Short delay to simulate slow response so loading state is observable
+      await page.waitForTimeout(500);
       await route.fulfill({
         status: 200,
         contentType: "application/json",

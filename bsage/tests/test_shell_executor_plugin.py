@@ -289,6 +289,30 @@ def test_is_path_within_boundary_allows_normal_path(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_execute_symlink_chain_escape_blocked(tmp_path: Path) -> None:
+    """Test that chained symlinks escaping vault boundary are blocked."""
+    execute_fn, _ = _load_plugin()
+
+    # Create chain: link_a -> link_b -> outside (outside vault)
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link_b = vault / "link_b"
+    link_b.symlink_to(outside)
+    link_a = vault / "link_a"
+    link_a.symlink_to(link_b)
+
+    ctx = _make_context(vault_root=vault)
+    ctx.input_data = {"command": "echo hello", "working_dir": str(link_a)}
+
+    result = await execute_fn(ctx)
+
+    assert result["success"] is False
+    assert "outside vault/tmp" in result.get("error", "")
+
+
+@pytest.mark.asyncio
 async def test_invalid_sandbox_mode_defaults_to_vault_only(tmp_path: Path) -> None:
     """Test that invalid sandbox_mode values default to vault_only behavior."""
     execute_fn, _ = _load_plugin()

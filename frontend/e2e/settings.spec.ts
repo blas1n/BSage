@@ -29,24 +29,24 @@ test.describe("Settings", () => {
 
   test("LLM model change + Save sends correct PATCH body", async ({ page }) => {
     const originalModel = await settingsPage.getLLMModel();
-    const newModel = "claude-sonnet-4-6";
+    const newModel = originalModel === "claude-sonnet-4-6"
+      ? "claude-opus-4-5"
+      : "claude-sonnet-4-6";
 
-    if (originalModel !== newModel) {
-      await settingsPage.setLLMModel(newModel);
+    await settingsPage.setLLMModel(newModel);
 
-      const [response] = await Promise.all([
-        page.waitForResponse(
-          (r) =>
-            r.url().includes("/api/config") && r.request().method() === "PATCH"
-        ),
-        settingsPage.clickSave(),
-      ]);
+    const [response] = await Promise.all([
+      page.waitForResponse(
+        (r) =>
+          r.url().includes("/api/config") && r.request().method() === "PATCH"
+      ),
+      settingsPage.clickSave(),
+    ]);
 
-      const patchBody = await response.json();
+    const patchBody = await response.json();
 
-      expect(patchBody).toHaveProperty("llm_model");
-      expect(patchBody.llm_model).toBe(newModel);
-    }
+    expect(patchBody).toHaveProperty("llm_model");
+    expect(patchBody.llm_model).toBe(newModel);
   });
 
   test("Save button is visible", async ({}) => {

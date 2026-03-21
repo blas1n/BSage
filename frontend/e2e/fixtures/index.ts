@@ -199,6 +199,9 @@ export const test = base.extend<CustomFixtures>({
       });
 
       await use();
+
+      // Clean up all routes after each test to ensure isolation
+      await page.unrouteAll({ behavior: "ignoreErrors" });
     },
     { auto: true },
   ],

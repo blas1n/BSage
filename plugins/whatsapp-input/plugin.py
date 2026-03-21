@@ -206,6 +206,8 @@ async def notify(context) -> dict:
     digits = "".join(c for c in recipient if c.isdigit())
     if not digits or len(digits) < 7 or len(digits) > 15:
         return {"sent": False, "reason": f"invalid phone number: {recipient}"}
+    if digits[0] == "0":
+        return {"sent": False, "reason": "invalid phone number: missing country code"}
     recipient = "+" + digits
 
     payload = {

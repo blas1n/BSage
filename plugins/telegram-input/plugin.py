@@ -1,6 +1,8 @@
 """Telegram message input Plugin — polls getUpdates for new messages."""
 
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from bsage.plugin import plugin
@@ -22,9 +24,16 @@ def _load_offset(path: Path) -> int | None:
 
 
 def _save_offset(path: Path, update_id: int) -> None:
-    """Persist last_update_id to the state file."""
+    """Persist last_update_id to the state file atomically."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"last_update_id": update_id}), encoding="utf-8")
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps({"last_update_id": update_id}))
+        Path(tmp_path).replace(path)
+    except BaseException:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
 
 
 def _parse_update(update: dict) -> dict | None:

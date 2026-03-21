@@ -1,6 +1,8 @@
 """Discord message input Plugin — polls Discord channel for new messages."""
 
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from bsage.plugin import plugin
@@ -20,9 +22,16 @@ def _load_timestamp(path: Path) -> int | None:
 
 
 def _save_timestamp(path: Path, timestamp: int) -> None:
-    """Persist last message timestamp to state file."""
+    """Persist last message timestamp to state file atomically."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"last_message_timestamp": timestamp}), encoding="utf-8")
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps({"last_message_timestamp": timestamp}))
+        Path(tmp_path).replace(path)
+    except BaseException:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
 
 
 def _is_valid_channel_id(channel_id: str) -> bool:
@@ -102,8 +111,12 @@ async def execute(context) -> dict:
                 error = messages.get("message", "unknown error")
                 return {"collected": 0, "error": error}
 
+        except httpx.HTTPStatusError as e:
+            context.logger.error("discord_api_error", status_code=e.response.status_code)
+            return {"collected": 0, "error": f"API error: HTTP {e.response.status_code}"}
         except Exception as e:
-            return {"collected": 0, "error": f"API error: {e}"}
+            context.logger.error("discord_api_error", error=str(e))
+            return {"collected": 0, "error": "Failed to fetch messages"}
 
     # Parse messages (Discord returns newest first, so reverse for chronological order)
     parsed_messages = []

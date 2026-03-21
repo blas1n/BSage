@@ -47,12 +47,7 @@ export class SettingsPage {
   }
 
   async toggleSafeMode() {
-    // The toggle is a visual div wrapping a hidden checkbox; use check/uncheck
-    if (await this.safeModeToggle.isChecked()) {
-      await this.safeModeToggle.uncheck();
-    } else {
-      await this.safeModeToggle.check();
-    }
+    await this.safeModeToggle.click();
   }
 
   async isSafeModeEnabled(): Promise<boolean> {

@@ -47,7 +47,7 @@ test.describe("Dashboard", () => {
     // Monitor for run plugin request after click
     const responsePromise = page.waitForResponse(
       (r) =>
-        r.url().includes("/api/plugins") &&
+        r.url().includes("/api/run/") &&
         r.request().method() === "POST"
     );
 

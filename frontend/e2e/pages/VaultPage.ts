@@ -16,9 +16,7 @@ export class VaultPage {
     this.page = page;
     this.heading = page.getByRole("heading", { name: "Vault" });
     // Use data-testid for stable selectors; fall back to role-based
-    this.fileTree = page.locator(
-      "[data-testid='vault-file-tree'], nav[aria-label='File tree']"
-    );
+    this.fileTree = page.locator("[data-testid='vault-file-tree']");
     this.fileContent = page.locator(
       "[data-testid='vault-file-content'], [role='main']"
     );

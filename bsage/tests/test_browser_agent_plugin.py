@@ -189,6 +189,23 @@ async def test_browser_task_playwright_not_installed() -> None:
 
 
 @pytest.mark.asyncio
+async def test_execute_playwright_timeout() -> None:
+    """Test that Playwright timeout is handled and returns proper error dict."""
+    execute_fn, mod = _load_plugin()
+
+    side_effect = TimeoutError("page.goto: Timeout 30000ms exceeded.")
+    with patch.object(
+        mod, "_browser_task", new_callable=AsyncMock, side_effect=side_effect,
+    ):
+        ctx = _make_context()
+        result = await execute_fn(ctx)
+
+    assert result["success"] is False
+    assert "error" in result
+    assert "Timeout" in result["error"] or "timeout" in result["error"].lower()
+
+
+@pytest.mark.asyncio
 async def test_notify_sends_content() -> None:
     """Test notify handler sends content via context.notify."""
     _, mod = _load_plugin()

@@ -1,6 +1,8 @@
 """Slack message input Plugin — polls Slack channels for new messages."""
 
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from bsage.plugin import plugin
@@ -20,9 +22,16 @@ def _load_cursor(path: Path) -> str | None:
 
 
 def _save_cursor(path: Path, cursor: str) -> None:
-    """Persist cursor to state file."""
+    """Persist cursor to state file atomically."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"cursor": cursor}), encoding="utf-8")
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps({"cursor": cursor}))
+        Path(tmp_path).replace(path)
+    except BaseException:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
 
 
 def _parse_message(event: dict) -> dict | None:
@@ -89,9 +98,16 @@ async def execute(context) -> dict:
     url = "https://slack.com/api/conversations.history"
 
     async with httpx.AsyncClient() as client:
-        resp = await client.get(url, params=params, headers=headers, timeout=30.0)
-        resp.raise_for_status()
-        data = resp.json()
+        try:
+            resp = await client.get(url, params=params, headers=headers, timeout=30.0)
+            resp.raise_for_status()
+            data = resp.json()
+        except httpx.HTTPStatusError as e:
+            context.logger.error("slack_api_error", status_code=e.response.status_code)
+            return {"collected": 0, "error": f"API error: HTTP {e.response.status_code}"}
+        except Exception as e:
+            context.logger.error("slack_api_error", error=str(e))
+            return {"collected": 0, "error": "Failed to fetch messages"}
 
     if not data.get("ok"):
         error = data.get("error", "unknown")

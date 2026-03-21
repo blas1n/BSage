@@ -283,10 +283,7 @@ async def test_notify_api_error() -> None:
     _, notify_fn = _load_plugin()
     ctx = _make_context(input_data={"message": "hello", "reply_phone": "+1234567890"})
 
-    mock_resp = MagicMock()
-    mock_resp.side_effect = Exception("connection refused")
-
-    with make_httpx_mock(post_response=mock_resp) as mock_client:
+    with make_httpx_mock() as mock_client:
         mock_client.post = AsyncMock(side_effect=Exception("connection refused"))
         result = await notify_fn(ctx)
 
