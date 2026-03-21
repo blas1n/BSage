@@ -9,13 +9,13 @@ test.describe("Chat", () => {
     await chatPage.goto();
   });
 
-  test("初期ロード — input visible, send button present", async ({ page }) => {
+  test("initial load — input visible, send button present", async ({ page }) => {
     await expect(chatPage.heading).toBeVisible();
     await expect(chatPage.input).toBeVisible();
     await expect(chatPage.sendButton).toBeVisible();
   });
 
-  test("メッセージ送信 → 応答表示 (mock LLM)", async ({}) => {
+  test("send message — displays response (mock LLM)", async ({}) => {
     await chatPage.sendMessage("Hello!");
     await chatPage.waitForAssistantMessage();
 
@@ -23,7 +23,7 @@ test.describe("Chat", () => {
     expect(response).toContain("Hello");
   });
 
-  test("Enter キー送信", async ({}) => {
+  test("send via Enter key", async ({}) => {
     await chatPage.input.fill("Test message");
 
     await Promise.all([
@@ -34,7 +34,7 @@ test.describe("Chat", () => {
     await expect(chatPage.input).toHaveValue("", { timeout: 5000 });
   });
 
-  test("送信中 loading state", async ({ page }) => {
+  test("loading state while sending", async ({ page }) => {
     // Mock delayed response to reliably observe disabled state
     await page.unroute("**/api/chat");
     await page.route("**/api/chat", (route) => {
@@ -59,7 +59,7 @@ test.describe("Chat", () => {
     await expect(chatPage.input).toBeEnabled({ timeout: 5000 });
   });
 
-  test("API エラー時の復旧 (500 response)", async ({ page }) => {
+  test("recovery from API error (500 response)", async ({ page }) => {
     // Mock error response — unroute first to avoid handler collision
     await page.unroute("**/api/chat");
     await page.route("**/api/chat", (route) => {

@@ -281,10 +281,17 @@ def test_is_symlink_escape_allows_normal_path(tmp_path: Path) -> None:
     assert mod._is_symlink_escape(subdir, boundary) is False
 
 
-def test_invalid_sandbox_mode_defaults_to_vault_only() -> None:
-    """Test that invalid sandbox_mode values default to vault_only."""
-    # This is validated inside execute() — just check the parsing logic
-    _, mod = _load_plugin()
-    # _escape_working_dir with unknown mode would fall through to "system"
-    # but execute() normalizes before calling it
-    assert True  # The normalize logic is tested via integration in execute tests
+@pytest.mark.asyncio
+async def test_invalid_sandbox_mode_defaults_to_vault_only(tmp_path: Path) -> None:
+    """Test that invalid sandbox_mode values default to vault_only behavior."""
+    execute_fn, _ = _load_plugin()
+    ctx = _make_context(vault_root=tmp_path)
+    ctx.credentials = {"sandbox_mode": "INVALID_MODE", "allowed_commands": "echo"}
+    ctx.config.safe_mode = False
+
+    # With invalid mode defaulting to vault_only, paths outside vault should be blocked
+    ctx.input_data = {"command": "echo hello", "working_dir": "/etc"}
+    result = await execute_fn(ctx)
+
+    assert result["success"] is False
+    assert "outside vault/tmp" in result.get("error", "")

@@ -63,8 +63,7 @@ export class VaultPage {
   }
 
   async isRawMode(): Promise<boolean> {
-    // In raw mode, a <pre> with whitespace-pre-wrap is rendered
-    const pre = this.fileContent.locator("pre.whitespace-pre-wrap");
+    const pre = this.fileContent.locator("[data-testid='vault-raw-content']");
     return await pre.isVisible();
   }
 

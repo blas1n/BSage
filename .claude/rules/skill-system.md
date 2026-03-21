@@ -228,6 +228,7 @@ context.garden.write_garden(...)  # write to garden/
 context.garden.write_action(...)  # write to actions/ log
 context.garden.read_notes(...)    # read existing notes
 context.llm.chat(...)             # call the LLM
+context.chat                      # ChatInterface | None — vault-aware conversational chat (ChatBridge)
 context.config                    # configuration values
 context.logger                    # structlog logger
 context.input_data                # input payload (when triggered by on_input)

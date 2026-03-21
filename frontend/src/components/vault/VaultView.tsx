@@ -304,7 +304,7 @@ export function VaultView() {
                 </div>
 
                 {rawMode ? (
-                  <pre className="text-xs text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 rounded-lg p-4 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
+                  <pre data-testid="vault-raw-content" className="text-xs text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 rounded-lg p-4 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
                     {fileContent}
                   </pre>
                 ) : (

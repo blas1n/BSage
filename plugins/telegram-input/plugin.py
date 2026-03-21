@@ -153,20 +153,20 @@ async def setup(cred_store):
         click.echo(f"Error: Network error during setup — {e}", err=True)
         raise SystemExit(1) from e
 
-        if detected_ids:
-            click.echo("  Detected chats:")
-            for i, (cid, name) in enumerate(detected_ids, 1):
-                click.echo(f"    [{i}] {name} (ID: {cid})")
-            if len(detected_ids) == 1:
-                chat_id = str(detected_ids[0][0])
-                click.echo(f"  Auto-selected chat ID: {chat_id}")
-            else:
-                choice = click.prompt("  Select chat number", type=int, default=1)
-                idx = max(0, min(choice - 1, len(detected_ids) - 1))
-                chat_id = str(detected_ids[idx][0])
+    if detected_ids:
+        click.echo("  Detected chats:")
+        for i, (cid, name) in enumerate(detected_ids, 1):
+            click.echo(f"    [{i}] {name} (ID: {cid})")
+        if len(detected_ids) == 1:
+            chat_id = str(detected_ids[0][0])
+            click.echo(f"  Auto-selected chat ID: {chat_id}")
         else:
-            click.echo("  No recent messages found. Please enter chat ID manually.")
-            chat_id = click.prompt("  Chat ID (numeric)")
+            choice = click.prompt("  Select chat number", type=int, default=1)
+            idx = max(0, min(choice - 1, len(detected_ids) - 1))
+            chat_id = str(detected_ids[idx][0])
+    else:
+        click.echo("  No recent messages found. Please enter chat ID manually.")
+        chat_id = click.prompt("  Chat ID (numeric)")
 
     if not chat_id.lstrip("-").isdigit():
         click.echo(f"Error: chat_id must be numeric, got '{chat_id}'", err=True)

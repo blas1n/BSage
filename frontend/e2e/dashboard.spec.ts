@@ -9,7 +9,7 @@ test.describe("Dashboard", () => {
     await dashboardPage.goto();
   });
 
-  test("プラグイン/スキル目록 レンダリング", async ({}) => {
+  test("renders plugin and skill list", async ({}) => {
     const slackVisible = await dashboardPage.isPluginVisible("slack-input");
     const shellVisible = await dashboardPage.isPluginVisible("shell-executor");
 
@@ -17,7 +17,7 @@ test.describe("Dashboard", () => {
     expect(shellVisible).toBeTruthy();
   });
 
-  test("needs-setup バッジ + Setup ボタン", async ({}) => {
+  test("needs-setup badge and Setup button", async ({}) => {
     const hasBadge = await dashboardPage.hasNeedsSetupBadge("slack-input");
     expect(hasBadge).toBeTruthy();
 
@@ -28,7 +28,7 @@ test.describe("Dashboard", () => {
     expect(setupButton).toBeTruthy();
   });
 
-  test("dangerous バッジ 表示", async ({}) => {
+  test("dangerous badge display", async ({}) => {
     const hasDangerousBadge =
       await dashboardPage.hasDangerousBadge("slack-input");
     expect(hasDangerousBadge).toBeTruthy();
@@ -38,7 +38,7 @@ test.describe("Dashboard", () => {
     expect(shellDangerous).toBeTruthy();
   });
 
-  test("Run ボタン クリック → API リクエスト 確認", async ({ page }) => {
+  test("Run button click sends API request", async ({ page }) => {
     const card = dashboardPage.getPluginCard("shell-executor");
     const runButton = card.locator("button:has-text('Run')");
 

@@ -9,7 +9,7 @@ test.describe("Settings", () => {
     await settingsPage.goto();
   });
 
-  test("現在の設定 レンダリング (llm_model, has_llm_api_key)", async ({}) => {
+  test("renders current settings (llm_model, has_llm_api_key)", async ({}) => {
     await expect(settingsPage.heading).toBeVisible();
     await expect(settingsPage.llmModelInput).toBeVisible();
 
@@ -17,7 +17,7 @@ test.describe("Settings", () => {
     expect(model).toBeTruthy();
   });
 
-  test("Safe Mode toggle → PATCH リクエスト 確認", async ({ page }) => {
+  test("Safe Mode toggle sends PATCH request", async ({ page }) => {
     await Promise.all([
       page.waitForResponse(
         (r) =>
@@ -27,7 +27,7 @@ test.describe("Settings", () => {
     ]);
   });
 
-  test("LLM モデル 変更 + Save → PATCH body 確認", async ({ page }) => {
+  test("LLM model change + Save sends correct PATCH body", async ({ page }) => {
     const originalModel = await settingsPage.getLLMModel();
     const newModel = "claude-sonnet-4-6";
 
@@ -44,12 +44,12 @@ test.describe("Settings", () => {
 
       const patchBody = await response.json();
 
-      expect(patchBody).toBeTruthy();
+      expect(patchBody).toHaveProperty("llm_model");
       expect(patchBody.llm_model).toBe(newModel);
     }
   });
 
-  test("Save ボタン 存在確認", async ({}) => {
+  test("Save button is visible", async ({}) => {
     await expect(settingsPage.saveButton).toBeVisible();
   });
 });

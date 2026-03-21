@@ -9,7 +9,7 @@ test.describe("Vault", () => {
     await vaultPage.goto();
   });
 
-  test("ディレクトリ トリー レンダリング", async ({}) => {
+  test("renders directory tree", async ({}) => {
     const gardenVisible = await vaultPage.isFileEntryVisible("garden");
     const seedsVisible = await vaultPage.isFileEntryVisible("seeds");
 
@@ -17,7 +17,7 @@ test.describe("Vault", () => {
     expect(seedsVisible).toBeTruthy();
   });
 
-  test("ファイル クリック → 内容 表示", async ({}) => {
+  test("click file — displays content", async ({}) => {
     await vaultPage.clickFileEntry("index.md");
     await vaultPage.fileContent.waitFor({ timeout: 10000 });
 
@@ -26,7 +26,7 @@ test.describe("Vault", () => {
     expect(content).toContain("BSage Vault");
   });
 
-  test("Raw/Rendered トグル", async ({}) => {
+  test("Raw/Rendered toggle", async ({}) => {
     await vaultPage.clickFileEntry("index.md");
     await vaultPage.fileContent.waitFor({ timeout: 10000 });
 
@@ -45,7 +45,7 @@ test.describe("Vault", () => {
     expect(isRaw).toBeFalsy();
   });
 
-  test("空の vault ガイダンス メッセージ", async ({ page }) => {
+  test("empty vault guidance message", async ({ page }) => {
     // Mock empty vault response — unroute first to avoid handler collision
     await page.unroute("**/api/vault/tree");
     await page.route("**/api/vault/tree", (route) => {
