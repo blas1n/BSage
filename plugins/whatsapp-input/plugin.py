@@ -90,7 +90,11 @@ async def execute(context) -> dict:
         context.logger.warning("whatsapp_payload_invalid", error=str(e))
         return {"success": False, "error": "Invalid webhook payload"}
 
-    if signature and not _verify_webhook_signature(payload_str, signature, verify_token):
+    if not signature:
+        context.logger.warning("whatsapp_signature_missing")
+        return {"success": False, "error": "Missing webhook signature"}
+
+    if not _verify_webhook_signature(payload_str, signature, verify_token):
         context.logger.warning("whatsapp_signature_invalid")
         return {"success": False, "error": "Invalid signature"}
 

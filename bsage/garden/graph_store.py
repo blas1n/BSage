@@ -437,23 +437,34 @@ class GraphStore:
         return row[0] if row else 0
 
     async def count_relationships_for_entity(self, entity_name: str) -> int:
-        """Count all relationships (inbound + outbound) for an entity by source_path."""
-        norm = _normalize(entity_name)
+        """Count all relationships (inbound + outbound) for an entity.
+
+        Tries source_path match first (callers typically pass note paths),
+        then falls back to normalized entity name.
+        """
+        # Primary: lookup by source_path (matches maturity.py usage)
         row = await self._fetchone(
-            """SELECT COUNT(DISTINCT r.id) FROM relationships r
-               JOIN entities e ON e.id = r.source_id OR e.id = r.target_id
-               WHERE e.source_path = ?""",
-            (entity_name,),
+            """SELECT COUNT(*) FROM (
+                   SELECT r.id FROM relationships r
+                   JOIN entities e ON e.id = r.source_id
+                   WHERE e.source_path = ?
+                   UNION
+                   SELECT r.id FROM relationships r
+                   JOIN entities e ON e.id = r.target_id
+                   WHERE e.source_path = ?
+               )""",
+            (entity_name, entity_name),
         )
         if row and row[0]:
             return row[0]
         # Fallback: try by normalized name
+        norm = _normalize(entity_name)
         row = await self._fetchone(
             """SELECT COUNT(*) FROM (
                    SELECT r.id FROM relationships r
                    JOIN entities e ON e.id = r.source_id
                    WHERE e.name_normalized = ?
-                   UNION ALL
+                   UNION
                    SELECT r.id FROM relationships r
                    JOIN entities e ON e.id = r.target_id
                    WHERE e.name_normalized = ?

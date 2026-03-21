@@ -49,6 +49,20 @@ async def test_execute_webhook_challenge() -> None:
 
 
 @pytest.mark.asyncio
+async def test_execute_missing_signature_rejected() -> None:
+    """Test that execute rejects requests without a webhook signature."""
+    execute_fn = _load_plugin()
+    payload = {"entry": [{"changes": [{"value": {"messages": []}}]}]}
+    input_data = {"body": payload}  # No x-hub-signature-256 header
+    ctx = _make_context(input_data=input_data)
+
+    result = await execute_fn(ctx)
+
+    assert result["success"] is False
+    assert "Missing webhook signature" in result.get("error", "")
+
+
+@pytest.mark.asyncio
 async def test_execute_invalid_signature() -> None:
     """Test that execute rejects invalid webhook signatures."""
     execute_fn = _load_plugin()

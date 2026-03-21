@@ -1,7 +1,7 @@
 """Tests for the shell-executor plugin."""
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -101,10 +101,14 @@ async def test_execute_blocked_command() -> None:
 @pytest.mark.asyncio
 async def test_execute_runs_allowed_command(tmp_path: Path) -> None:
     """Test that execute runs an allowed command and returns output."""
-    execute_fn, _ = _load_plugin()
+    execute_fn, mod = _load_plugin()
     ctx = _make_context(vault_root=tmp_path)
 
-    result = await execute_fn(ctx)
+    mock_result = MagicMock(returncode=0, stdout="hello world\n", stderr="")
+    with patch.object(mod, "subprocess") as mock_sp:
+        mock_sp.run.return_value = mock_result
+        mock_sp.TimeoutExpired = type("TimeoutExpired", (Exception,), {})
+        result = await execute_fn(ctx)
 
     assert result["success"] is True
     assert "hello" in result["stdout"]
@@ -129,12 +133,16 @@ async def test_execute_system_mode_blocked_by_safe_mode() -> None:
 @pytest.mark.asyncio
 async def test_execute_system_mode_allowed_when_safe_mode_disabled(tmp_path: Path) -> None:
     """Test that system sandbox_mode works when safe_mode is disabled."""
-    execute_fn, _ = _load_plugin()
+    execute_fn, mod = _load_plugin()
     ctx = _make_context(vault_root=tmp_path)
     ctx.credentials = {"sandbox_mode": "system", "allowed_commands": "echo"}
     ctx.config.safe_mode = False
 
-    result = await execute_fn(ctx)
+    mock_result = MagicMock(returncode=0, stdout="hello world\n", stderr="")
+    with patch.object(mod, "subprocess") as mock_sp:
+        mock_sp.run.return_value = mock_result
+        mock_sp.TimeoutExpired = type("TimeoutExpired", (Exception,), {})
+        result = await execute_fn(ctx)
 
     assert result["success"] is True
     assert "hello" in result["stdout"]
