@@ -17,9 +17,10 @@ def _state_path(context) -> Path:
 
 def _load_offset(path: Path) -> int | None:
     """Load last_update_id from the state file."""
-    if not path.exists():
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, ValueError):
         return None
-    data = json.loads(path.read_text(encoding="utf-8"))
     return data.get("last_update_id")
 
 

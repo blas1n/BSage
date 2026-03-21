@@ -23,6 +23,7 @@ const MOCK_CONFIG_RESPONSE = {
   embedding_api_base: null,
   disabled_entries: [],
   vault_path: "/tmp/vault",
+  index_available: false,
 };
 
 const MOCK_PLUGINS_RESPONSE = [
@@ -78,8 +79,6 @@ const MOCK_VAULT_TREE_RESPONSE = [
 
 const MOCK_VAULT_FILE_RESPONSE = {
   path: "garden/index.md",
-  name: "index.md",
-  type: "note",
   content: `---
 type: index
 status: active
@@ -97,10 +96,6 @@ Welcome to your personal AI agent's vault.
 - [[Work]]
 - [[Learning]]
 `,
-  frontmatter: {
-    type: "index",
-    status: "active",
-  },
 };
 
 export const test = base.extend<CustomFixtures>({
@@ -158,10 +153,12 @@ export const test = base.extend<CustomFixtures>({
 
       // Plugin run endpoint
       await page.route("**/api/run/**", (route) => {
+        const url = new URL(route.request().url());
+        const name = url.pathname.split("/api/run/")[1] || "unknown";
         route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify({ status: "started" }),
+          body: JSON.stringify({ name, results: [] }),
         });
       });
 
@@ -217,7 +214,7 @@ export const test = base.extend<CustomFixtures>({
         route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify({ tags: {} }),
+          body: JSON.stringify({ tags: {}, truncated: false }),
         });
       });
 
@@ -226,7 +223,7 @@ export const test = base.extend<CustomFixtures>({
         route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify({ nodes: [], links: [] }),
+          body: JSON.stringify({ nodes: [], links: [], truncated: false }),
         });
       });
 

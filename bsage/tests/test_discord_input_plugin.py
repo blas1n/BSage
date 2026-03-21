@@ -242,6 +242,28 @@ async def test_execute_uses_existing_timestamp(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_execute_corrupted_state_file(tmp_path: Path) -> None:
+    """Test that corrupted state file is handled gracefully."""
+    execute_fn, _, _ = _load_plugin()
+
+    # Write corrupted JSON to state file
+    state_dir = tmp_path / "seeds" / "discord-input"
+    state_dir.mkdir(parents=True)
+    (state_dir / "_state.json").write_text("not valid json{{{")
+
+    ctx = _make_context(vault_root=tmp_path)
+
+    api_messages = [_discord_message("msg_1", "hello", "2024-01-15T10:30:00+00:00")]
+    mock_resp = _mock_get_response(api_messages)
+
+    with make_httpx_mock(get_response=mock_resp):
+        result = await execute_fn(ctx)
+
+    # Should not crash — treats corrupted state as fresh start
+    assert result["collected"] == 1
+
+
+@pytest.mark.asyncio
 async def test_execute_rejects_invalid_channel_id() -> None:
     """Test that execute rejects non-numeric channel_id."""
     execute_fn, _, _ = _load_plugin()

@@ -15,9 +15,10 @@ def _state_path(context) -> Path:
 
 def _load_cursor(path: Path) -> str | None:
     """Load last cursor from state file."""
-    if not path.exists():
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, ValueError):
         return None
-    data = json.loads(path.read_text(encoding="utf-8"))
     return data.get("cursor")
 
 

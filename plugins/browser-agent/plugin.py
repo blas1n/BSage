@@ -175,8 +175,8 @@ async def _browser_task(
                 except Exception as e:
                     extracted = f"Selector error: {e}"
             else:
-                # Get full page text content
-                extracted = await page.content()
+                # Get full page text content (text only, not raw HTML)
+                extracted = await page.locator("body").text_content() or ""
 
             # Truncate if too long
             if len(extracted) > 50000:
