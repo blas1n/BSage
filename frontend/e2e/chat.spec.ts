@@ -15,7 +15,7 @@ test.describe("Chat", () => {
     await expect(chatPage.sendButton).toBeVisible();
   });
 
-  test("send message — displays response (mock LLM)", async ({}) => {
+  test("send message — displays response (mock LLM)", async () => {
     await chatPage.sendMessage("Hello!");
     await chatPage.waitForAssistantMessage();
 
@@ -23,7 +23,7 @@ test.describe("Chat", () => {
     expect(response).toContain("BSage");
   });
 
-  test("send via Enter key", async ({}) => {
+  test("send via Enter key", async () => {
     await chatPage.input.fill("Test message");
 
     await Promise.all([
@@ -75,9 +75,5 @@ test.describe("Chat", () => {
     // Wait for input to be re-enabled after error handling completes
     await chatPage.input.waitFor({ state: "visible" });
     await expect(chatPage.input).toBeEnabled({ timeout: 10000 });
-
-    // Input should be re-enabled after error
-    const isDisabled = await chatPage.isInputDisabled();
-    expect(isDisabled).toBeFalsy();
   });
 });

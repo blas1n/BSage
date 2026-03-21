@@ -120,7 +120,7 @@ def _escape_working_dir(
         "required": ["command"],
     },
 )
-async def execute(context) -> dict:
+async def execute(context: Any) -> dict:
     """Execute a shell command with sandboxing and return output."""
     data = context.input_data or {}
     command = data.get("command", "").strip()
@@ -283,7 +283,7 @@ def setup(cred_store: Any) -> None:
 
 
 @execute.notify
-async def notify(context) -> dict:
+async def notify(context: Any) -> dict:
     """Send command output back to the user's active channel."""
     data = context.input_data or {}
     stdout = data.get("stdout", "")

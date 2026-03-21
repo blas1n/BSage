@@ -227,6 +227,50 @@ class TestWebhookEndpoint:
         response = client.post("/api/webhooks/telegram-input", json={})
         assert response.status_code == 500
 
+    def test_webhook_passes_raw_body_and_signature(self, client, mock_state) -> None:
+        response = client.post(
+            "/api/webhooks/telegram-input",
+            json={"message": "hello"},
+            headers={"x-hub-signature-256": "sha256=abc123"},
+        )
+        assert response.status_code == 200
+        call_args = mock_state.agent_loop.on_input.call_args
+        body = call_args[0][1]
+        assert "raw_body" in body
+        assert body["x-hub-signature-256"] == "sha256=abc123"
+        assert body["message"] == "hello"
+
+    def test_webhook_invalid_json_passes_empty_dict_with_raw_body(self, client, mock_state) -> None:
+        response = client.post(
+            "/api/webhooks/telegram-input",
+            content=b"not json",
+            headers={"content-type": "text/plain"},
+        )
+        assert response.status_code == 200
+        call_args = mock_state.agent_loop.on_input.call_args
+        body = call_args[0][1]
+        assert body["raw_body"] == "not json"
+
+    def test_webhook_non_dict_json_wraps_in_data_key(self, client, mock_state) -> None:
+        response = client.post(
+            "/api/webhooks/telegram-input",
+            content=b"[1, 2, 3]",
+            headers={"content-type": "application/json"},
+        )
+        assert response.status_code == 200
+        call_args = mock_state.agent_loop.on_input.call_args
+        body = call_args[0][1]
+        assert body["data"] == [1, 2, 3]
+        assert "raw_body" in body
+
+    def test_webhook_invalid_utf8_returns_400(self, client, mock_state) -> None:
+        response = client.post(
+            "/api/webhooks/telegram-input",
+            content=b"\xff\xfe invalid",
+            headers={"content-type": "application/octet-stream"},
+        )
+        assert response.status_code == 400
+
 
 class TestActionsEndpoint:
     """Test GET /api/vault/actions."""

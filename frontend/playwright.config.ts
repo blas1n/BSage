@@ -1,6 +1,7 @@
+import { tmpdir } from "node:os";
 import { defineConfig, devices } from "@playwright/test";
 
-const e2eVaultDir = process.env.E2E_VAULT_DIR || `/tmp/e2e-vault-${process.pid}`;
+const e2eVaultDir = process.env.E2E_VAULT_DIR || `${tmpdir()}/e2e-vault-${process.pid}`;
 const backendHost = process.env.BSAGE_TEST_HOST || "127.0.0.1";
 const frontendHost = process.env.BSAGE_TEST_FRONTEND_HOST || "localhost";
 

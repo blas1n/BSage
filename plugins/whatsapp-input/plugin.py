@@ -2,6 +2,7 @@
 
 import hashlib
 import hmac
+from typing import Any
 
 from bsage.plugin import plugin
 
@@ -77,7 +78,7 @@ def _parse_incoming_message(webhook_event: dict) -> dict | None:
         },
     ],
 )
-async def execute(context) -> dict:
+async def execute(context: Any) -> dict:
     """Process incoming WhatsApp webhook event."""
     webhook_data = context.input_data or {}
 
@@ -145,7 +146,7 @@ async def execute(context) -> dict:
 
 
 @execute.setup
-def setup(cred_store):
+def setup(cred_store: Any):
     """Configure WhatsApp credentials."""
     import asyncio
 
@@ -181,7 +182,7 @@ def setup(cred_store):
 
 
 @execute.notify
-async def notify(context) -> dict:
+async def notify(context: Any) -> dict:
     """Send a WhatsApp message via Cloud API."""
     import httpx
 
@@ -240,4 +241,5 @@ async def notify(context) -> dict:
                 return {"sent": False, "error": error}
 
         except Exception:
+            context.logger.warning("notify_api_request_failed", exc_info=True)
             return {"sent": False, "error": "API request failed"}

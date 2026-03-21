@@ -22,7 +22,7 @@ const MOCK_CONFIG_RESPONSE = {
   embedding_model: "text-embedding-3-small",
   embedding_api_base: null,
   disabled_entries: [],
-  vault_path: "/tmp/vault",
+  vault_path: "/mock/vault",
   index_available: false,
 };
 

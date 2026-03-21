@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from bsage.plugin import plugin
 
@@ -73,7 +74,7 @@ def _parse_message(msg: dict) -> dict | None:
         },
     ],
 )
-async def execute(context) -> dict:
+async def execute(context: Any) -> dict:
     """Poll Discord channel.messages and write new messages to seeds."""
     import httpx
     from dateutil import parser as dateutil_parser
@@ -165,7 +166,7 @@ async def execute(context) -> dict:
 
 
 @execute.setup
-async def setup(cred_store):
+async def setup(cred_store: Any):
     """Configure Discord credentials with token validation and channel selection."""
     import click
     import httpx
@@ -259,7 +260,7 @@ async def setup(cred_store):
 
 
 @execute.notify
-async def notify(context) -> dict:
+async def notify(context: Any) -> dict:
     """Send a message back to the Discord channel via Bot API."""
     import httpx
 
@@ -298,11 +299,13 @@ async def notify(context) -> dict:
         try:
             data = resp.json()
         except Exception:
+            context.logger.warning("notify_json_parse_failed", status=resp.status_code)
             return {"sent": True, "message_id": None}
         return {"sent": True, "message_id": data.get("id")}
     else:
         try:
             error = resp.json().get("message", "unknown") if resp.text else str(resp.status_code)
         except Exception:
+            context.logger.warning("notify_error_parse_failed", status=resp.status_code)
             error = f"HTTP {resp.status_code}"
         return {"sent": False, "error": error}

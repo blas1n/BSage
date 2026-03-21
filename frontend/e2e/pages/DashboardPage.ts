@@ -6,7 +6,7 @@ export class DashboardPage {
 
   constructor(page: Page) {
     this.page = page;
-    this.heading = page.locator("h2", { hasText: "Dashboard" });
+    this.heading = page.getByRole("heading", { name: "Dashboard", level: 2 });
   }
 
   async goto() {

@@ -11,7 +11,6 @@ export function DashboardView() {
   const [skills, setSkills] = useState<EntryMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [runningName, setRunningName] = useState<string | null>(null);
-  const [togglingName, setTogglingName] = useState<string | null>(null);
   const togglingRef = useRef(false);
   const [setupTarget, setSetupTarget] = useState<string | null>(null);
 
@@ -40,7 +39,6 @@ export function DashboardView() {
     async (name: string) => {
       if (togglingRef.current) return;
       togglingRef.current = true;
-      setTogglingName(name);
       try {
         await api.toggleEntry(name);
         await refreshData();
@@ -48,7 +46,6 @@ export function DashboardView() {
         // errors shown via event panel
       } finally {
         togglingRef.current = false;
-        setTogglingName(null);
       }
     },
     [refreshData],

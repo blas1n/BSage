@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from bsage.plugin import plugin
 
@@ -64,7 +65,7 @@ def _parse_update(update: dict) -> dict | None:
         {"name": "chat_id", "description": "Target chat ID for notifications", "required": True},
     ],
 )
-async def execute(context) -> dict:
+async def execute(context: Any) -> dict:
     """Poll Telegram getUpdates and write new messages to seeds."""
     import httpx
 
@@ -127,7 +128,7 @@ async def execute(context) -> dict:
 
 
 @execute.setup
-async def setup(cred_store):
+async def setup(cred_store: Any):
     """Configure Telegram bot credentials with token validation and chat_id auto-detection."""
     import click
     import httpx
@@ -189,7 +190,7 @@ async def setup(cred_store):
 
 
 @execute.notify
-async def notify(context) -> dict:
+async def notify(context: Any) -> dict:
     """Send a message back to the Telegram chat via Bot API."""
     import httpx
 

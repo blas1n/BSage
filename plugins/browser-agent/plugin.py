@@ -51,7 +51,7 @@ _SELECTOR_SAFE_RE = re.compile(r"^[a-zA-Z0-9\s\.\#\-\_\[\]\=\'\"\:\(\)\,\*\>\+\~
         "required": ["url", "task"],
     },
 )
-async def execute(context) -> dict:
+async def execute(context: Any) -> dict:
     """Execute browser automation task and extract/act on web content."""
     data = context.input_data or {}
     url = data.get("url", "").strip()
@@ -214,7 +214,7 @@ def setup(cred_store: Any) -> None:
 
 
 @execute.notify
-async def notify(context) -> dict:
+async def notify(context: Any) -> dict:
     """Send extracted content summary back to user's active channel."""
     content = (context.input_data or {}).get("content", "")
     title = (context.input_data or {}).get("page_title", "")

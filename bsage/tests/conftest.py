@@ -1,6 +1,7 @@
 """Shared test fixtures and helpers for bsage tests."""
 
 import json
+import tempfile
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -88,8 +89,8 @@ def make_plugin_context(
 
     # Config — always provide defaults so tests don't need to pass them manually
     config = MagicMock()
-    config.vault_path = vault_root or Path("/tmp/test-vault")
-    config.tmp_dir = Path("/tmp/test-tmp")
+    config.vault_path = vault_root or Path(tempfile.gettempdir()) / "bsage-test-vault"
+    config.tmp_dir = Path(tempfile.gettempdir()) / "bsage-test-tmp"
     config.safe_mode = True
     if config_overrides:
         for k, v in config_overrides.items():

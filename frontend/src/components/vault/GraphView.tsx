@@ -25,7 +25,7 @@ export function GraphView({ onSelectFile, selectedPath }: GraphViewProps) {
     api
       .vaultGraph()
       .then(setGraphData)
-      .catch(() => setGraphData({ nodes: [], links: [] }))
+      .catch(() => setGraphData({ nodes: [], links: [], truncated: false }))
       .finally(() => setLoading(false));
   }, []);
 

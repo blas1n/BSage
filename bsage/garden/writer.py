@@ -391,7 +391,7 @@ class GardenWriter:
             if file_path.exists():
                 file_path = self._find_dedup_path(type_dir, slug)
 
-            related_links = [f'"[[{r}]]"' for r in note.related]
+            related_links = [f"[[{r}]]" for r in note.related]
 
             metadata: dict = {
                 "type": note.note_type,
@@ -760,7 +760,7 @@ class GardenWriter:
         if not isinstance(metadata, dict):
             return
 
-        new_links = {f'"[[{Path(lp).stem}]]"' for lp in linked_paths}
+        new_links = {f"[[{Path(lp).stem}]]" for lp in linked_paths}
         existing_related = metadata.get("related", [])
         existing_set = set(existing_related) if isinstance(existing_related, list) else set()
         merged = sorted(existing_set | new_links)

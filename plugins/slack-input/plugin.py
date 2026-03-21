@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from bsage.plugin import plugin
 
@@ -75,7 +76,7 @@ def _parse_message(event: dict) -> dict | None:
         },
     ],
 )
-async def execute(context) -> dict:
+async def execute(context: Any) -> dict:
     """Poll Slack conversations.history and write new messages to seeds."""
     import httpx
 
@@ -161,7 +162,7 @@ async def execute(context) -> dict:
 
 
 @execute.setup
-async def setup(cred_store):
+async def setup(cred_store: Any):
     """Configure Slack credentials with token validation and channel selection."""
     import click
     import httpx
@@ -232,7 +233,7 @@ async def setup(cred_store):
 
 
 @execute.notify
-async def notify(context) -> dict:
+async def notify(context: Any) -> dict:
     """Send a message back to the Slack channel via Bot API."""
     import httpx
 
@@ -268,6 +269,7 @@ async def notify(context) -> dict:
         try:
             data = resp.json()
         except Exception:
+            context.logger.warning("notify_json_parse_failed", status=resp.status_code)
             return {"sent": False, "error": f"HTTP {resp.status_code}: non-JSON response"}
 
     if data.get("ok"):
