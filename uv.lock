@@ -235,6 +235,7 @@ dependencies = [
 [package.optional-dependencies]
 all-plugins = [
     { name = "boto3" },
+    { name = "python-dateutil" },
 ]
 dev = [
     { name = "pytest" },
@@ -260,6 +261,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
+    { name = "python-dateutil", marker = "extra == 'all-plugins'", specifier = ">=2.8.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.3.0" },
     { name = "structlog", specifier = ">=23.0.0" },

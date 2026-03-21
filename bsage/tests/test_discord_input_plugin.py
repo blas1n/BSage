@@ -273,3 +273,31 @@ async def test_execute_rejects_invalid_channel_id() -> None:
 
     assert result["collected"] == 0
     assert "invalid" in result.get("error", "").lower()
+
+
+@pytest.mark.asyncio
+async def test_execute_unicode_emoji_messages(tmp_path: Path) -> None:
+    """Test that messages containing unicode, emoji, and RTL text are handled correctly."""
+    execute_fn, _, _ = _load_plugin()
+    ctx = _make_context(vault_root=tmp_path)
+
+    messages = [
+        _discord_message("1", "Hello 🌍🎉 world!"),
+        _discord_message("2", "한국어 메시지 테스트", "2024-01-15T10:31:00+00:00"),
+        _discord_message("3", "مرحبا بالعالم", "2024-01-15T10:32:00+00:00"),  # Arabic RTL
+        _discord_message("4", "café résumé naïve", "2024-01-15T10:33:00+00:00"),
+    ]
+
+    resp = _mock_get_response(messages)
+
+    with make_httpx_mock(get_response=resp):
+        result = await execute_fn(ctx)
+
+    assert result["collected"] == 4
+    ctx.garden.write_seed.assert_awaited_once()
+    seed_data = ctx.garden.write_seed.call_args[0][1]
+    contents = [m["content"] for m in seed_data["messages"]]
+    assert "Hello 🌍🎉 world!" in contents
+    assert "한국어 메시지 테스트" in contents
+    assert "مرحبا بالعالم" in contents
+    assert "café résumé naïve" in contents

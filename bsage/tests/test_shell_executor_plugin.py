@@ -171,7 +171,7 @@ async def test_execute_negative_timeout() -> None:
     result = await execute_fn(ctx)
 
     assert result["success"] is False
-    assert "timeout_s must be positive" in result.get("error", "")
+    assert "timeout_s must be at least 1 second" in result.get("error", "")
 
 
 @pytest.mark.asyncio

@@ -307,3 +307,44 @@ async def test_execute_handles_http_status_error() -> None:
 
     assert result["collected"] == 0
     assert "error" in result
+
+
+@pytest.mark.asyncio
+async def test_execute_unicode_emoji_messages(tmp_path: Path) -> None:
+    """Test that messages with unicode, emoji, and special chars are handled correctly."""
+    execute_fn, _, _ = _load_plugin()
+    ctx = _make_context(vault_root=tmp_path)
+
+    api_response = {
+        "ok": True,
+        "messages": [
+            {"type": "message", "user": "U1", "text": "Hello 🌍🎉!", "ts": "1000.1"},
+            {"type": "message", "user": "U2", "text": "한국어 테스트", "ts": "1000.2"},
+            {"type": "message", "user": "U3", "text": "café résumé naïve", "ts": "1000.3"},
+        ],
+    }
+
+    resp = _mock_response(api_response)
+
+    with make_httpx_mock(get_response=resp):
+        result = await execute_fn(ctx)
+
+    assert result["collected"] == 3
+    ctx.garden.write_seed.assert_awaited_once()
+    seed_data = ctx.garden.write_seed.call_args[0][1]
+    texts = [m["text"] for m in seed_data["messages"]]
+    assert "Hello 🌍🎉!" in texts
+    assert "한국어 테스트" in texts
+    assert "café résumé naïve" in texts
+
+
+@pytest.mark.asyncio
+async def test_execute_rejects_invalid_channel_id_format() -> None:
+    """Test that execute rejects channel IDs that don't match Slack format."""
+    execute_fn, _, _ = _load_plugin()
+    ctx = _make_context(credentials={"bot_token": "xoxb-test", "channel_id": "invalid123"})
+
+    result = await execute_fn(ctx)
+
+    assert result["collected"] == 0
+    assert "invalid" in result.get("error", "").lower()

@@ -1,6 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const e2eVaultDir = process.env.E2E_VAULT_DIR || `/tmp/e2e-vault-${process.pid}`;
+const backendHost = process.env.BSAGE_TEST_HOST || "127.0.0.1";
+const frontendHost = process.env.BSAGE_TEST_FRONTEND_HOST || "localhost";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -12,7 +14,7 @@ export default defineConfig({
   reporter: process.env.CI ? "github" : "html",
 
   use: {
-    baseURL: "http://localhost:5173",
+    baseURL: `http://${frontendHost}:5173`,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
@@ -27,13 +29,13 @@ export default defineConfig({
   webServer: [
     {
       command: `cd .. && BSAGE_VAULT_DIR=${e2eVaultDir} uv run bsage run`,
-      url: "http://127.0.0.1:8000/api/health",
+      url: `http://${backendHost}:8000/api/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
     },
     {
       command: "npm run dev",
-      url: "http://localhost:5173",
+      url: `http://${frontendHost}:5173`,
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
     },

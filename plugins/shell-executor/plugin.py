@@ -20,8 +20,9 @@ def _parse_allowed_commands(commands_str: str) -> list[str]:
 def _validate_command(command: str, allowed_commands: list[str]) -> bool:
     """Check if a command is in the allowed list (or list is empty = allow all).
 
-    Rejects commands with path traversal (e.g. ``../../bin/sh``) when a
-    whitelist is active, to prevent bypass via relative paths.
+    Rejects commands with path traversal (e.g. ``../../bin/sh``, ``./../../bin/sh``)
+    when a whitelist is active.  Resolves the real path so symlink/relative tricks
+    cannot bypass the check.
     """
     if not allowed_commands:
         return True
@@ -32,11 +33,12 @@ def _validate_command(command: str, allowed_commands: list[str]) -> bool:
     if not parts:
         return False
     cmd_path = parts[0]
-    # Reject path traversal attempts like ../../bin/sh
-    if ".." in cmd_path:
+    # Reject any path component containing ".." (covers ../../, ./../, etc.)
+    if ".." in Path(cmd_path).parts:
         return False
-    base_cmd = Path(cmd_path).name if "/" in cmd_path else cmd_path
-    return any(allowed.lower() == base_cmd.lower() for allowed in allowed_commands)
+    # Resolve to real path and use only the final binary name
+    resolved_name = Path(os.path.realpath(cmd_path)).name if "/" in cmd_path else cmd_path
+    return any(allowed.lower() == resolved_name.lower() for allowed in allowed_commands)
 
 
 def _is_path_within_boundary(path: Path, boundary: Path) -> bool:
@@ -128,11 +130,11 @@ async def execute(context) -> dict:
     if not command:
         return {"success": False, "error": "command is required"}
 
-    # Validate timeout
+    # Validate timeout (minimum 1s to avoid near-instant timeouts)
     try:
         timeout_s = float(timeout_s)
-        if timeout_s <= 0:
-            return {"success": False, "error": "timeout_s must be positive"}
+        if timeout_s < 1.0:
+            return {"success": False, "error": "timeout_s must be at least 1 second"}
     except (ValueError, TypeError):
         return {"success": False, "error": "timeout_s must be numeric"}
 

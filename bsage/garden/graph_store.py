@@ -367,13 +367,23 @@ class GraphStore:
         rows = await self._fetchall(sql, tuple(params))
         results: list[tuple[GraphRelationship, GraphEntity]] = []
         for row in rows:
+            try:
+                rel_props = json.loads(row[5])
+            except (json.JSONDecodeError, TypeError):
+                logger.warning("corrupted_relationship_json", row_id=row[0])
+                rel_props = {}
+            try:
+                ent_props = json.loads(row[14])
+            except (json.JSONDecodeError, TypeError):
+                logger.warning("corrupted_entity_json", row_id=row[9])
+                ent_props = {}
             rel = GraphRelationship(
                 source_id=row[1],
                 target_id=row[2],
                 rel_type=row[3],
                 source_path=row[4],
                 id=row[0],
-                properties=json.loads(row[5]),
+                properties=rel_props,
                 confidence=row[6],
                 weight=row[7],
                 edge_type=row[8],
@@ -383,7 +393,7 @@ class GraphStore:
                 entity_type=row[12],
                 source_path=row[13],
                 id=row[9],
-                properties=json.loads(row[14]),
+                properties=ent_props,
                 confidence=row[15],
                 knowledge_layer=row[16],
             )
@@ -669,12 +679,17 @@ class GraphStore:
         Expected column order: id, name, name_normalized, entity_type,
         source_path, properties, confidence, knowledge_layer, created_at, updated_at.
         """
+        try:
+            props = json.loads(row[5])
+        except (json.JSONDecodeError, TypeError):
+            logger.warning("corrupted_entity_json", entity_id=row[0])
+            props = {}
         return GraphEntity(
             name=row[1],
             entity_type=row[3],
             source_path=row[4],
             id=row[0],
-            properties=json.loads(row[5]),
+            properties=props,
             confidence=row[6],
             knowledge_layer=row[7],
         )

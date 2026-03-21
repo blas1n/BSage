@@ -1,5 +1,6 @@
 """Shared test fixtures and helpers for bsage tests."""
 
+import json
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -85,14 +86,38 @@ def make_plugin_context(
     else:
         ctx.notify = None
 
-    # Config
+    # Config — always provide defaults so tests don't need to pass them manually
+    config = MagicMock()
+    config.vault_path = vault_root or Path("/tmp/test-vault")
+    config.tmp_dir = Path("/tmp/test-tmp")
+    config.safe_mode = True
     if config_overrides:
-        config = MagicMock()
         for k, v in config_overrides.items():
             setattr(config, k, v)
-        ctx.config = config
+    ctx.config = config
 
     return ctx
+
+
+def make_httpx_response(
+    *,
+    status_code: int = 200,
+    json_data: Any = None,
+    text: str = "",
+    raise_for_status_error: bool = False,
+) -> MagicMock:
+    """Create a mock that matches httpx.Response interface."""
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.text = text or (json.dumps(json_data) if json_data is not None else "")
+    resp.content = resp.text.encode()
+    resp.json = MagicMock(return_value=json_data if json_data is not None else {})
+    if raise_for_status_error or status_code >= 400:
+        exc = httpx.HTTPStatusError(f"HTTP {status_code}", request=MagicMock(), response=resp)
+        resp.raise_for_status = MagicMock(side_effect=exc)
+    else:
+        resp.raise_for_status = MagicMock()
+    return resp
 
 
 def make_httpx_mock(*, get_response=None, post_response=None):

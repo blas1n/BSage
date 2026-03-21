@@ -33,8 +33,9 @@ const MOCK_PLUGINS_RESPONSE = [
     category: "input",
     description: "Collect Slack messages and store as seeds",
     is_dangerous: true,
-    trigger: { type: "cron", schedule: "*/5 * * * *" },
-    needs_setup: true,
+    has_credentials: true,
+    credentials_configured: false,
+    enabled: false,
   },
   {
     name: "shell-executor",
@@ -42,8 +43,9 @@ const MOCK_PLUGINS_RESPONSE = [
     category: "process",
     description: "Execute shell commands safely",
     is_dangerous: true,
-    trigger: null,
-    needs_setup: false,
+    has_credentials: false,
+    credentials_configured: true,
+    enabled: true,
   },
 ];
 

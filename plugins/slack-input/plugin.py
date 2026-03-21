@@ -35,6 +35,13 @@ def _save_cursor(path: Path, cursor: str) -> None:
         raise
 
 
+def _is_valid_channel_id(channel_id: str) -> bool:
+    """Check that channel_id matches Slack format (C/G/D prefix + alphanumeric)."""
+    import re
+
+    return bool(re.match(r"^[CGD][A-Za-z0-9]{2,}$", channel_id))
+
+
 def _parse_message(event: dict) -> dict | None:
     """Extract normalized message dict from Slack event."""
     if event.get("type") != "message" or event.get("subtype"):
@@ -80,7 +87,7 @@ async def execute(context) -> dict:
         return {"collected": 0, "error": "missing bot_token or channel_id"}
 
     # Re-validate channel_id at execution time (credential file may be edited externally)
-    if channel_id[0:1] not in ("C", "G", "D"):
+    if not _is_valid_channel_id(channel_id):
         return {"collected": 0, "error": f"invalid channel_id: {channel_id}"}
 
     state_file = _state_path(context)
@@ -216,10 +223,8 @@ async def setup(cred_store):
                 choice = click.prompt("  Select channel number", type=int, default=1)
                 channel_id = channels[min(choice - 1, len(channels) - 1)]["id"]
 
-    if channel_id[0:1] not in ("C", "G", "D"):
-        click.echo(
-            f"Error: channel_id must start with 'C', 'G', or 'D', got '{channel_id}'", err=True
-        )
+    if not _is_valid_channel_id(channel_id):
+        click.echo(f"Error: invalid channel_id format, got '{channel_id}'", err=True)
         raise SystemExit(1)
 
     await cred_store.store("slack-input", {"bot_token": bot_token, "channel_id": channel_id})
@@ -260,7 +265,10 @@ async def notify(context) -> dict:
             json=payload,
             timeout=10.0,
         )
-        data = resp.json()
+        try:
+            data = resp.json()
+        except Exception:
+            return {"sent": False, "error": f"HTTP {resp.status_code}: non-JSON response"}
 
     if data.get("ok"):
         return {"sent": True, "ts": data.get("ts")}

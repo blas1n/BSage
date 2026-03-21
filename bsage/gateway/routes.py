@@ -159,8 +159,15 @@ def create_routes(state: AppState) -> APIRouter:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
         raw_bytes = await request.body()
+        # Decode once for both JSON parsing and signature verification.
+        # Use strict decoding — invalid UTF-8 must not silently differ
+        # from the raw bytes used in HMAC verification.
         try:
-            body = json.loads(raw_bytes)
+            raw_str = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            raise HTTPException(status_code=400, detail="Request body is not valid UTF-8") from None
+        try:
+            body = json.loads(raw_str)
         except (json.JSONDecodeError, ValueError):
             body = {}
 
@@ -169,14 +176,14 @@ def create_routes(state: AppState) -> APIRouter:
         # while plugins that need signature verification (e.g. whatsapp)
         # can access raw_body and x-hub-signature-256.
         if isinstance(body, dict):
-            body.setdefault("raw_body", raw_bytes.decode("utf-8", errors="replace"))
+            body.setdefault("raw_body", raw_str)
             sig = request.headers.get("x-hub-signature-256", "")
             if sig:
                 body.setdefault("x-hub-signature-256", sig)
         else:
             body = {
                 "data": body,
-                "raw_body": raw_bytes.decode("utf-8", errors="replace"),
+                "raw_body": raw_str,
             }
 
         try:
@@ -353,9 +360,10 @@ def create_routes(state: AppState) -> APIRouter:
     @api_router.get("/vault/search")
     async def vault_search(
         q: str = Query(..., min_length=1, description="Search query"),
+        max_files: int = Query(default=500, ge=1, le=2000, description="Max files to scan"),
     ) -> list[dict[str, Any]]:
         """Full-text search across vault .md files (case-insensitive, max 50 results)."""
-        files = await _scan_vault_md_files()
+        files = await _scan_vault_md_files(max_files=max_files)
         query_lower = q.lower()
         results: list[dict[str, Any]] = []
 

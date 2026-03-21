@@ -224,7 +224,8 @@ async def notify(context) -> dict:
         "Authorization": f"Bearer {access_token}",
     }
 
-    url = f"https://graph.facebook.com/v18.0/{phone_number_id}/messages"
+    whatsapp_api_version = "v18.0"
+    url = f"https://graph.facebook.com/{whatsapp_api_version}/{phone_number_id}/messages"
 
     async with httpx.AsyncClient() as client:
         try:

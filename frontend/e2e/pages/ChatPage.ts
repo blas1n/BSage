@@ -9,7 +9,7 @@ export class ChatPage {
 
   constructor(page: Page) {
     this.page = page;
-    this.heading = page.locator("h2", { hasText: "Chat" });
+    this.heading = page.locator("[data-testid='chat-heading'], h2 >> text=Chat").first();
     this.input = page.getByPlaceholder(
       "Type a message... (Shift+Enter for new line)"
     );
@@ -32,8 +32,8 @@ export class ChatPage {
     const locator = this.chatArea.locator(
       "[data-testid='assistant-message'], div.prose"
     );
-    await locator.first().waitFor({ timeout: 10000 });
     const msg = locator.last();
+    await msg.waitFor({ timeout: 10000 });
     return await msg.textContent();
   }
 

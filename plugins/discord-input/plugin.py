@@ -139,9 +139,13 @@ async def execute(context) -> dict:
             context.logger.warning("discord_timestamp_parse_failed", msg_id=msg_data.get("id"))
 
     if parsed_messages:
-        await context.garden.write_seed("discord", {"messages": parsed_messages})
+        try:
+            await context.garden.write_seed("discord", {"messages": parsed_messages})
+        except Exception:
+            context.logger.exception("discord_seed_write_failed")
+            return {"collected": 0, "error": "failed to write seed"}
 
-        # Auto-reply via ChatBridge
+        # Auto-reply via ChatBridge (only after seed write succeeds)
         user_texts = [m["content"] for m in parsed_messages if m.get("content")]
         if user_texts and context.chat:
             combined = "\n".join(user_texts)
@@ -291,8 +295,14 @@ async def notify(context) -> dict:
         )
 
     if resp.status_code in (200, 201):
-        data = resp.json()
+        try:
+            data = resp.json()
+        except Exception:
+            return {"sent": True, "message_id": None}
         return {"sent": True, "message_id": data.get("id")}
     else:
-        error = resp.json().get("message", "unknown") if resp.text else str(resp.status_code)
+        try:
+            error = resp.json().get("message", "unknown") if resp.text else str(resp.status_code)
+        except Exception:
+            error = f"HTTP {resp.status_code}"
         return {"sent": False, "error": error}

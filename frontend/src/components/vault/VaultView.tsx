@@ -2,6 +2,7 @@ import { Code, Eye, FolderOpen, GitBranch, FileText } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import remarkObsidian from "@thecae/remark-obsidian";
 import remarkWikiLink from "../../lib/remarkWikiLink";
@@ -48,6 +49,8 @@ function buildStemLookup(tree: VaultTreeEntry[]): Map<string, string> {
       const fullPath = entry.path ? `${entry.path}/${file}` : file;
       if (!map.has(stem)) {
         map.set(stem, fullPath);
+      } else if (import.meta.env.DEV) {
+        console.warn(`VaultView: stem collision for "${stem}" — "${fullPath}" ignored, using "${map.get(stem)}"`);
       }
     }
   }
@@ -347,7 +350,7 @@ export function VaultView() {
                     <div className="prose prose-sm dark:prose-invert max-w-none">
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm, remarkObsidian, remarkWikiLink]}
-                        rehypePlugins={[rehypeRaw]}
+                        rehypePlugins={[rehypeRaw, [rehypeSanitize, { ...defaultSchema, attributes: { ...defaultSchema.attributes, "*": [...(defaultSchema.attributes?.["*"] || []), "className"] } }]]}
                         components={markdownComponents}
                       >
                         {parsed?.body ?? fileContent}

@@ -278,6 +278,7 @@ class GardenWriter:
         self._event_bus = event_bus
         self._ontology = ontology
         self._log_lock: asyncio.Lock = asyncio.Lock()
+        self._garden_lock: asyncio.Lock = asyncio.Lock()
 
     def resolve_plugin_state_path(self, plugin_name: str, subpath: str = "_state.json") -> Path:
         """Resolve a plugin state file path within the vault.
@@ -375,46 +376,49 @@ class GardenWriter:
         """
         if isinstance(note, dict):
             note = GardenNote(**note)
-        now = datetime.now(tz=UTC)
-        date_str = now.strftime("%Y-%m-%d")
-        slug = _slugify(note.title)
 
-        # v2.2: resolve folder from ontology or fall back to type name
-        folder = self._resolve_folder(note.note_type)
-        type_dir = self._vault.resolve_path(folder)
-        type_dir.mkdir(parents=True, exist_ok=True)
+        async with self._garden_lock:
+            now = datetime.now(tz=UTC)
+            date_str = now.strftime("%Y-%m-%d")
+            slug = _slugify(note.title)
 
-        file_path = type_dir / f"{slug}.md"
-        if file_path.exists():
-            file_path = self._find_dedup_path(type_dir, slug)
+            # v2.2: resolve folder from ontology or fall back to type name
+            folder = self._resolve_folder(note.note_type)
+            type_dir = self._vault.resolve_path(folder)
+            type_dir.mkdir(parents=True, exist_ok=True)
 
-        related_links = [f'"[[{r}]]"' for r in note.related]
+            file_path = type_dir / f"{slug}.md"
+            if file_path.exists():
+                file_path = self._find_dedup_path(type_dir, slug)
 
-        metadata: dict = {
-            "type": note.note_type,
-            "status": "seed",
-            "source": note.source,
-            "captured_at": date_str,
-            "confidence": note.confidence,
-            "knowledge_layer": note.knowledge_layer,
-        }
-        if note.aliases:
-            metadata["aliases"] = note.aliases
-        # Extra fields for specialized note types (fact, preference, etc.)
-        for key, value in note.extra_fields.items():
-            metadata[key] = value
-        # Typed relations — each key becomes a frontmatter key
-        for rel_type, targets in note.relations.items():
-            metadata[rel_type] = targets
-        if related_links:
-            metadata["related"] = related_links
-        if note.tags:
-            metadata["tags"] = note.tags
+            related_links = [f'"[[{r}]]"' for r in note.related]
 
-        frontmatter = _build_frontmatter(metadata)
-        content = f"{frontmatter}\n# {note.title}\n\n{note.content}\n"
+            metadata: dict = {
+                "type": note.note_type,
+                "status": "seed",
+                "source": note.source,
+                "captured_at": date_str,
+                "confidence": note.confidence,
+                "knowledge_layer": note.knowledge_layer,
+            }
+            if note.aliases:
+                metadata["aliases"] = note.aliases
+            # Extra fields for specialized note types (fact, preference, etc.)
+            for key, value in note.extra_fields.items():
+                metadata[key] = value
+            # Typed relations — each key becomes a frontmatter key
+            for rel_type, targets in note.relations.items():
+                metadata[rel_type] = targets
+            if related_links:
+                metadata["related"] = related_links
+            if note.tags:
+                metadata["tags"] = note.tags
 
-        await asyncio.to_thread(file_path.write_text, content, encoding="utf-8")
+            frontmatter = _build_frontmatter(metadata)
+            content = f"{frontmatter}\n# {note.title}\n\n{note.content}\n"
+
+            await asyncio.to_thread(file_path.write_text, content, encoding="utf-8")
+
         logger.info(
             "garden_note_written",
             title=note.title,
@@ -732,7 +736,7 @@ class GardenWriter:
             abs_path = self._vault.resolve_path(note_path)
             if not abs_path.resolve().is_relative_to(self._vault.root.resolve()):
                 logger.warning("path_traversal_blocked", note_path=note_path)
-                return
+                raise ValueError(f"Path traversal blocked: {note_path}")
             if not abs_path.exists():
                 return
             content = await self._vault.read_note_content(abs_path)
