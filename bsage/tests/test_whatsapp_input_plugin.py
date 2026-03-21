@@ -41,12 +41,43 @@ def _load_plugin():
 async def test_execute_webhook_challenge() -> None:
     """Test that execute handles webhook challenge verification."""
     execute_fn, _ = _load_plugin()
-    input_data = {"hub.challenge": "challenge_token_123"}
+    input_data = {
+        "hub.challenge": "challenge_token_123",
+        "hub.verify_token": "my_verify_token",
+    }
     ctx = _make_context(input_data=input_data)
 
     result = await execute_fn(ctx)
 
     assert result["challenge"] == "challenge_token_123"
+
+
+@pytest.mark.asyncio
+async def test_execute_webhook_challenge_invalid_token() -> None:
+    """Test that execute rejects challenge with wrong verify_token."""
+    execute_fn, _ = _load_plugin()
+    input_data = {
+        "hub.challenge": "challenge_token_123",
+        "hub.verify_token": "wrong_token",
+    }
+    ctx = _make_context(input_data=input_data)
+
+    result = await execute_fn(ctx)
+
+    assert result["success"] is False
+    assert "verify token" in result["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_execute_webhook_challenge_missing_token() -> None:
+    """Test that execute rejects challenge without verify_token."""
+    execute_fn, _ = _load_plugin()
+    input_data = {"hub.challenge": "challenge_token_123"}
+    ctx = _make_context(input_data=input_data)
+
+    result = await execute_fn(ctx)
+
+    assert result["success"] is False
 
 
 @pytest.mark.asyncio
@@ -291,3 +322,34 @@ async def test_notify_api_error() -> None:
     # Should NOT expose raw exception message
     assert "connection refused" not in result.get("error", "")
     assert result["error"] == "API request failed"
+
+
+def _sign_payload(payload: dict, app_secret: str = "my_app_secret") -> dict:
+    """Create a signed webhook payload for testing."""
+    raw_body = json.dumps(payload)
+    signature = hmac.new(app_secret.encode(), raw_body.encode(), hashlib.sha256).hexdigest()
+    return {**payload, "x-hub-signature-256": f"sha256={signature}", "raw_body": raw_body}
+
+
+@pytest.mark.asyncio
+async def test_execute_empty_entry_array() -> None:
+    """Test that execute handles empty entry array without IndexError."""
+    execute_fn, _ = _load_plugin()
+    input_data = _sign_payload({"entry": []})
+    ctx = _make_context(input_data=input_data)
+
+    result = await execute_fn(ctx)
+
+    assert result["collected"] == 0
+
+
+@pytest.mark.asyncio
+async def test_execute_empty_changes_array() -> None:
+    """Test that execute handles empty changes array without IndexError."""
+    execute_fn, _ = _load_plugin()
+    input_data = _sign_payload({"entry": [{"changes": []}]})
+    ctx = _make_context(input_data=input_data)
+
+    result = await execute_fn(ctx)
+
+    assert result["collected"] == 0

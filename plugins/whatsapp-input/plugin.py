@@ -23,8 +23,14 @@ def _verify_webhook_signature(payload: str, signature: str, app_secret: str) -> 
 
 def _parse_incoming_message(webhook_event: dict) -> dict | None:
     """Extract message from WhatsApp webhook entry object."""
-    entry = webhook_event.get("entry", [{}])[0]
-    changes = entry.get("changes", [{}])[0]
+    entries = webhook_event.get("entry", [])
+    if not entries:
+        return None
+    entry = entries[0]
+    changes_list = entry.get("changes", [])
+    if not changes_list:
+        return None
+    changes = changes_list[0]
     value = changes.get("value", {})
     messages = value.get("messages", [])
 
@@ -84,6 +90,12 @@ async def execute(context: Any) -> dict:
 
     # Handle challenge verification (GET request from Meta during setup)
     if "hub.challenge" in webhook_data:
+        creds = context.credentials or {}
+        stored_verify_token = creds.get("verify_token", "")
+        received_verify_token = webhook_data.get("hub.verify_token", "")
+        if not stored_verify_token or received_verify_token != stored_verify_token:
+            context.logger.warning("whatsapp_invalid_verify_token")
+            return {"success": False, "error": "Invalid verify token"}
         challenge = webhook_data.get("hub.challenge")
         return {"challenge": challenge}
 

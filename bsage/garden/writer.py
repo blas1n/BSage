@@ -279,6 +279,7 @@ class GardenWriter:
         self._ontology = ontology
         self._log_lock: asyncio.Lock = asyncio.Lock()
         self._garden_lock: asyncio.Lock = asyncio.Lock()
+        self._seed_lock: asyncio.Lock = asyncio.Lock()
 
     def resolve_plugin_state_path(self, plugin_name: str, subpath: str = "_state.json") -> Path:
         """Resolve a plugin state file path within the vault.
@@ -328,12 +329,9 @@ class GardenWriter:
         """
         now = datetime.now(tz=UTC)
         date_str = now.strftime("%Y-%m-%d")
-        filename = now.strftime("%Y-%m-%d_%H%M") + ".md"
 
         source_dir = self._vault.resolve_path(f"seeds/{source}")
         source_dir.mkdir(parents=True, exist_ok=True)
-
-        file_path = source_dir / filename
 
         metadata: dict = {
             "type": "seed",
@@ -353,7 +351,14 @@ class GardenWriter:
             body = yaml.dump(data, default_flow_style=False, allow_unicode=True)
         content = f"{frontmatter}\n{body}\n"
 
-        await asyncio.to_thread(file_path.write_text, content, encoding="utf-8")
+        async with self._seed_lock:
+            filename = now.strftime("%Y-%m-%d_%H%M%S") + ".md"
+            file_path = source_dir / filename
+            if file_path.exists():
+                slug = now.strftime("%Y-%m-%d_%H%M%S")
+                file_path = self._find_dedup_path(source_dir, slug)
+            await asyncio.to_thread(file_path.write_text, content, encoding="utf-8")
+
         logger.info("seed_written", source=source, path=str(file_path))
         await self._notify_sync("seed", file_path, source)
         await emit_event(
@@ -892,8 +897,12 @@ class GardenWriter:
             Path with a unique deduplicated filename.
         """
         counter = 1
-        while True:
+        max_attempts = 9999
+        while counter <= max_attempts:
             candidate = directory / f"{slug}_{counter:03d}.md"
             if not candidate.exists():
                 return candidate
             counter += 1
+        # Fallback: use timestamp-based name to guarantee uniqueness
+        ts = datetime.now(tz=UTC).strftime("%Y%m%d%H%M%S%f")
+        return directory / f"{slug}_{ts}.md"

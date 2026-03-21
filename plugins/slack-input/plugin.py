@@ -102,7 +102,7 @@ async def execute(context: Any) -> dict:
 
     params = {"channel": channel_id, "limit": 50}
     if cursor:
-        params["latest"] = cursor
+        params["oldest"] = cursor
 
     url = "https://slack.com/api/conversations.history"
 

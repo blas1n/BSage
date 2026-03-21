@@ -225,7 +225,7 @@ async def test_execute_saves_cursor_state(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_execute_uses_existing_cursor(tmp_path: Path) -> None:
-    """Test that execute passes saved cursor as 'latest' param."""
+    """Test that execute passes saved cursor as 'oldest' param for forward polling."""
     execute_fn, _, _ = _load_plugin()
 
     # Pre-populate state
@@ -240,9 +240,9 @@ async def test_execute_uses_existing_cursor(tmp_path: Path) -> None:
     with make_httpx_mock(get_response=mock_resp) as mock_client:
         await execute_fn(ctx)
 
-    # Verify cursor was passed as 'latest' param
+    # Verify cursor was passed as 'oldest' param (forward polling)
     call_args = mock_client.get.call_args
-    assert call_args[1]["params"]["latest"] == "1700000000.000100"
+    assert call_args[1]["params"]["oldest"] == "1700000000.000100"
 
 
 @pytest.mark.asyncio

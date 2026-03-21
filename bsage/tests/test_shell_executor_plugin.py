@@ -61,7 +61,10 @@ def test_validate_command() -> None:
     _, mod = _load_plugin()
     assert mod._validate_command("echo hello", ["echo", "cat"]) is True
     assert mod._validate_command("rm -rf /", ["echo", "cat"]) is False
-    assert mod._validate_command("echo test", []) is True  # empty = allow all
+    # Empty whitelist = unrestricted mode (allow ALL commands)
+    assert mod._validate_command("echo test", []) is True
+    assert mod._validate_command("rm -rf /", []) is True
+    assert mod._validate_command("arbitrary_cmd --flag", []) is True
 
 
 def test_validate_command_malformed_quotes() -> None:
@@ -227,6 +230,9 @@ async def test_notify_sends_output() -> None:
 
     assert result["sent"] is True
     ctx.notify.send.assert_awaited_once()
+    sent_msg = ctx.notify.send.call_args[0][0]
+    assert "hello world" in sent_msg
+    assert "rc=0" in sent_msg
 
 
 @pytest.mark.asyncio
@@ -253,6 +259,21 @@ async def test_notify_truncates_long_output() -> None:
     assert result["sent"] is True
     sent_msg = ctx.notify.send.call_args[0][0]
     assert "truncated" in sent_msg
+    assert len(sent_msg) < 5000  # verify actual truncation
+
+
+@pytest.mark.asyncio
+async def test_notify_short_output_not_truncated() -> None:
+    """Test notify does NOT truncate output shorter than 4000 chars."""
+    _, mod = _load_plugin()
+    ctx = _make_context()
+    ctx.input_data = {"stdout": "x" * 2000, "return_code": 0}
+
+    result = await mod.notify(ctx)
+
+    assert result["sent"] is True
+    sent_msg = ctx.notify.send.call_args[0][0]
+    assert "truncated" not in sent_msg
 
 
 @pytest.mark.asyncio

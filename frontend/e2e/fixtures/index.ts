@@ -16,13 +16,9 @@ const MOCK_HEALTH_RESPONSE = {
 const MOCK_CONFIG_RESPONSE = {
   safe_mode: false,
   has_llm_api_key: true,
-  has_embedding_api_key: true,
   llm_model: "claude-opus-4-5",
   llm_api_base: null,
-  embedding_model: "text-embedding-3-small",
-  embedding_api_base: null,
   disabled_entries: [],
-  vault_path: "/mock/vault",
   index_available: false,
 };
 

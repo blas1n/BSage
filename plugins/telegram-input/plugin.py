@@ -85,7 +85,11 @@ async def execute(context: Any) -> dict:
     async with httpx.AsyncClient() as client:
         resp = await client.get(url, params=params, timeout=60.0)
         resp.raise_for_status()
-        data = resp.json()
+        try:
+            data = resp.json()
+        except (ValueError, UnicodeDecodeError):
+            context.logger.error("telegram_json_parse_failed", status=resp.status_code)
+            return {"collected": 0, "error": "malformed JSON response"}
 
     if not data.get("ok"):
         return {"collected": 0, "error": data.get("description", "unknown")}
@@ -212,5 +216,12 @@ async def notify(context: Any) -> dict:
             timeout=10.0,
         )
         response.raise_for_status()
+        try:
+            body = response.json()
+        except (ValueError, UnicodeDecodeError):
+            return {"sent": False, "reason": "malformed JSON response"}
+        if not body.get("ok"):
+            desc = body.get("description", "unknown error")
+            return {"sent": False, "reason": f"Telegram API error: {desc}"}
 
     return {"sent": True, "chat_id": chat_id}

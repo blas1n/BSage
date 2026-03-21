@@ -275,6 +275,7 @@ async def test_notify_sends_message() -> None:
 
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
+    mock_response.json = MagicMock(return_value={"ok": True, "result": {"message_id": 1}})
 
     with make_httpx_mock(post_response=mock_response) as mock_client:
         result = await notify_fn(ctx)
@@ -356,3 +357,54 @@ async def test_execute_raises_on_http_status_error(tmp_path) -> None:
 
     with make_httpx_mock(get_response=mock_resp), pytest.raises(httpx.HTTPStatusError):
         await execute_fn(ctx)
+
+
+@pytest.mark.asyncio
+async def test_execute_malformed_json_response(tmp_path) -> None:
+    """Test that execute handles malformed JSON response gracefully."""
+    execute_fn, _, _ = _load_plugin()
+    ctx = _make_context(vault_root=tmp_path)
+
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json = MagicMock(side_effect=ValueError("Invalid JSON"))
+    mock_resp.status_code = 200
+
+    with make_httpx_mock(get_response=mock_resp):
+        result = await execute_fn(ctx)
+
+    assert result["collected"] == 0
+    assert result["error"] == "malformed JSON response"
+
+
+@pytest.mark.asyncio
+async def test_notify_api_error_in_body() -> None:
+    """Test that notify detects Telegram API error in response body."""
+    _, notify_fn, _ = _load_plugin()
+    ctx = _make_context(input_data={"message": "hi"})
+
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json = MagicMock(return_value={"ok": False, "description": "Unauthorized"})
+
+    with make_httpx_mock(post_response=mock_resp):
+        result = await notify_fn(ctx)
+
+    assert result["sent"] is False
+    assert "Unauthorized" in result["reason"]
+
+
+@pytest.mark.asyncio
+async def test_notify_success_checks_ok_field() -> None:
+    """Test that notify verifies ok=True in Telegram response."""
+    _, notify_fn, _ = _load_plugin()
+    ctx = _make_context(input_data={"message": "hi"})
+
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json = MagicMock(return_value={"ok": True, "result": {"message_id": 123}})
+
+    with make_httpx_mock(post_response=mock_resp):
+        result = await notify_fn(ctx)
+
+    assert result["sent"] is True
