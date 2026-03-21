@@ -18,7 +18,11 @@ export class SettingsPage {
   }
 
   private getLLMModelSection(): Locator {
-    return this.page.locator("h3", { hasText: "LLM Model" }).locator("..");
+    // Use filter to find a section/div that contains the "LLM Model" heading
+    return this.page
+      .locator("section, div")
+      .filter({ has: this.page.locator("h3", { hasText: "LLM Model" }) })
+      .first();
   }
 
   get llmModelInput(): Locator {

@@ -40,14 +40,26 @@ class ConnectionManager:
         return len(self._connections) > 0
 
     async def broadcast(self, message: dict[str, Any]) -> None:
-        """Send a message to all connected clients."""
+        """Send a message to all connected clients.
+
+        Copies the connection list under the lock, then sends outside the lock
+        so that slow clients don't block connect/disconnect/other broadcasts.
+        """
         data = json.dumps(message)
         async with self._lock:
-            for conn in self._connections[:]:
-                try:
-                    await conn.send_text(data)
-                except Exception:
-                    logger.warning("ws_send_failed")
+            snapshot = self._connections[:]
+
+        dead: list[WebSocket] = []
+        for conn in snapshot:
+            try:
+                await conn.send_text(data)
+            except Exception:
+                logger.warning("ws_send_failed")
+                dead.append(conn)
+
+        if dead:
+            async with self._lock:
+                for conn in dead:
                     with contextlib.suppress(ValueError):
                         self._connections.remove(conn)
 

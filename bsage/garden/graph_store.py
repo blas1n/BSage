@@ -282,19 +282,20 @@ class GraphStore:
 
         Skips duplicate (entity_id, source_path) combinations.
         """
-        await self._conn.execute(
-            """INSERT OR IGNORE INTO provenance (entity_id, source_path, extraction_method,
-                                                confidence, extracted_at)
-               VALUES (?, ?, ?, ?, ?)""",
-            (
-                record.entity_id,
-                record.source_path,
-                record.extraction_method,
-                record.confidence,
-                record.extracted_at,
-            ),
-        )
-        await self._conn.commit()
+        async with self._write_lock:
+            await self._conn.execute(
+                """INSERT OR IGNORE INTO provenance (entity_id, source_path, extraction_method,
+                                                    confidence, extracted_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    record.entity_id,
+                    record.source_path,
+                    record.extraction_method,
+                    record.confidence,
+                    record.extracted_at,
+                ),
+            )
+            await self._conn.commit()
 
     # ------------------------------------------------------------------
     # Queries
@@ -543,17 +544,25 @@ class GraphStore:
 
     async def set_source_hash(self, source_path: str, content_hash: str) -> None:
         """Store or update the content hash for a source."""
+        async with self._write_lock:
+            await self._set_source_hash_locked(source_path, content_hash)
+            await self._conn.commit()
+
+    async def _set_source_hash_locked(self, source_path: str, content_hash: str) -> None:
+        """Store or update content hash (caller must hold _write_lock)."""
         await self._conn.execute(
             """INSERT OR REPLACE INTO source_hashes (source_path, content_hash, updated_at)
                VALUES (?, ?, datetime('now'))""",
             (source_path, content_hash),
         )
-        await self._conn.commit()
 
     async def remove_source_hash(self, source_path: str) -> None:
         """Remove the stored content hash for a source."""
-        await self._conn.execute("DELETE FROM source_hashes WHERE source_path = ?", (source_path,))
-        await self._conn.commit()
+        async with self._write_lock:
+            await self._conn.execute(
+                "DELETE FROM source_hashes WHERE source_path = ?", (source_path,)
+            )
+            await self._conn.commit()
 
     # ------------------------------------------------------------------
     # Vault rebuild
@@ -622,7 +631,7 @@ class GraphStore:
                                 target_id=id_map.get(rel.target_id, rel.target_id),
                             )
                             await self._upsert_relationship_locked(resolved)
-                        await self.set_source_hash(rel_path, content_hash)
+                        await self._set_source_hash_locked(rel_path, content_hash)
                         await self._conn.commit()
                     count += 1
                 except (FileNotFoundError, OSError, UnicodeDecodeError):

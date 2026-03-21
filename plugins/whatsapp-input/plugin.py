@@ -6,10 +6,14 @@ import hmac
 from bsage.plugin import plugin
 
 
-def _verify_webhook_signature(payload: str, signature: str, verify_token: str) -> bool:
-    """Verify WhatsApp webhook signature using SHA256 HMAC."""
+def _verify_webhook_signature(payload: str, signature: str, app_secret: str) -> bool:
+    """Verify WhatsApp webhook signature using SHA256 HMAC.
+
+    Meta signs payloads with the App Secret, NOT the verify token.
+    See: https://developers.facebook.com/docs/graph-api/webhooks/getting-started#verification-requests
+    """
     expected = hmac.new(
-        verify_token.encode(),
+        app_secret.encode(),
         payload.encode(),
         hashlib.sha256,
     ).hexdigest()
@@ -61,7 +65,14 @@ def _parse_incoming_message(webhook_event: dict) -> dict | None:
         },
         {
             "name": "verify_token",
-            "description": "Token for webhook signature verification (set in Meta app config)",
+            "description": "Token for webhook challenge verification (set in Meta app config)",
+            "required": True,
+        },
+        {
+            "name": "app_secret",
+            "description": (
+                "App Secret from Meta App Dashboard (used for webhook signature verification)"
+            ),
             "required": True,
         },
     ],
@@ -77,7 +88,7 @@ async def execute(context) -> dict:
 
     # Verify webhook signature
     creds = context.credentials or {}
-    verify_token = creds.get("verify_token", "")
+    app_secret = creds.get("app_secret", "")
 
     signature = webhook_data.get("x-hub-signature-256", "")
     # Strip "sha256=" prefix from Meta's webhook signature format
@@ -95,7 +106,11 @@ async def execute(context) -> dict:
         context.logger.warning("whatsapp_signature_missing")
         return {"success": False, "error": "Missing webhook signature"}
 
-    if not _verify_webhook_signature(raw_body, signature, verify_token):
+    if not app_secret:
+        context.logger.warning("whatsapp_app_secret_missing")
+        return {"success": False, "error": "Missing app_secret credential"}
+
+    if not _verify_webhook_signature(raw_body, signature, app_secret):
         context.logger.warning("whatsapp_signature_invalid")
         return {"success": False, "error": "Invalid signature"}
 
@@ -107,10 +122,13 @@ async def execute(context) -> dict:
         return {"collected": 0, "reason": "no text message"}
 
     # Write to seed — include sender phone so notify() can reply
-    await context.garden.write_seed("whatsapp", {
-        "message": parsed,
-        "reply_phone": parsed.get("from"),
-    })
+    await context.garden.write_seed(
+        "whatsapp",
+        {
+            "message": parsed,
+            "reply_phone": parsed.get("from"),
+        },
+    )
 
     # Auto-reply via ChatBridge
     if context.chat:
@@ -139,7 +157,11 @@ def setup(cred_store):
 
     access_token = click.prompt("  Access Token", hide_input=True)
     phone_number_id = click.prompt("  Phone Number ID")
-    verify_token = click.prompt("  Webhook Verify Token (for signature verification)")
+    app_secret = click.prompt(
+        "  App Secret (from Meta App Dashboard, for webhook signature)",
+        hide_input=True,
+    )
+    verify_token = click.prompt("  Webhook Verify Token (for challenge verification)")
 
     click.echo("")
     click.echo("After saving, configure your webhook in Meta App Dashboard:")
@@ -150,6 +172,7 @@ def setup(cred_store):
     data = {
         "access_token": access_token,
         "phone_number_id": phone_number_id,
+        "app_secret": app_secret,
         "verify_token": verify_token,
     }
 
@@ -174,15 +197,16 @@ async def notify(context) -> dict:
     if not access_token or not phone_number_id:
         return {"sent": False, "reason": "missing credentials"}
 
-    # Get recipient phone number from context (set by on_input handler)
-    recipient = (context.input_data or {}).get("to_phone", "")
+    # Get recipient phone number from context (set by execute() in seed's reply_phone)
+    recipient = (context.input_data or {}).get("reply_phone", "")
     if not recipient:
         return {"sent": False, "reason": "no recipient phone number"}
 
-    # Normalize: keep digits and leading '+'
-    recipient = "".join(c for c in recipient if c.isdigit() or c == "+")
-    if not recipient.startswith("+"):
-        recipient = "+" + recipient
+    # Normalize to E.164: strip non-digits, prepend '+'
+    digits = "".join(c for c in recipient if c.isdigit())
+    if not digits or len(digits) < 7 or len(digits) > 15:
+        return {"sent": False, "reason": f"invalid phone number: {recipient}"}
+    recipient = "+" + digits
 
     payload = {
         "messaging_product": "whatsapp",
@@ -212,5 +236,5 @@ async def notify(context) -> dict:
                 error = data.get("error", {}).get("message", "unknown error")
                 return {"sent": False, "error": error}
 
-        except Exception as e:
-            return {"sent": False, "error": f"API error: {e}"}
+        except Exception:
+            return {"sent": False, "error": "API request failed"}

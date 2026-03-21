@@ -126,6 +126,7 @@ function EntryCard({
 
   return (
     <div
+      data-testid="plugin-card"
       className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800/50"
     >
       <div className="flex items-start justify-between mb-2">

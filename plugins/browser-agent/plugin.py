@@ -5,10 +5,9 @@ from typing import Any
 
 from bsage.plugin import plugin
 
-# CSS selector validation: block obvious injection patterns
-_SELECTOR_SAFE_RE = re.compile(
-    r"^[a-zA-Z0-9\s\.\#\-\_\[\]\=\'\"\:\(\)\,\*\>\+\~\^\$\|\/\@\!\%\;]+$"
-)
+# CSS selector validation: allow only safe characters for Playwright locators.
+# Blocks backticks, braces, backslashes, and other injection-prone characters.
+_SELECTOR_SAFE_RE = re.compile(r"^[a-zA-Z0-9\s\.\#\-\_\[\]\=\'\"\:\(\)\,\*\>\+\~]+$")
 
 
 @plugin(
@@ -77,8 +76,13 @@ async def execute(context) -> dict:
                 "error": f"invalid {sel_name}: disallowed characters",
             }
 
-    # Validate URL format
-    if not url.startswith(("http://", "https://")):
+    # Validate URL scheme — only http/https allowed
+    if url.startswith(("http://", "https://")):
+        pass
+    elif "://" in url:
+        # Reject data:, javascript:, file:, etc.
+        return {"success": False, "error": "only http:// and https:// URLs are allowed"}
+    else:
         url = "https://" + url
 
     # Get credentials

@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const e2eVaultDir = process.env.E2E_VAULT_DIR || `/tmp/e2e-vault-${process.pid}`;
+
 export default defineConfig({
   testDir: "./e2e",
   timeout: 60_000,
@@ -24,8 +26,7 @@ export default defineConfig({
 
   webServer: [
     {
-      command:
-        "cd .. && BSAGE_VAULT_DIR=/tmp/e2e-vault uv run bsage run",
+      command: `cd .. && BSAGE_VAULT_DIR=${e2eVaultDir} uv run bsage run`,
       url: "http://127.0.0.1:8000/api/health",
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,

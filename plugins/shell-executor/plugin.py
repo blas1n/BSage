@@ -18,7 +18,11 @@ def _parse_allowed_commands(commands_str: str) -> list[str]:
 
 
 def _validate_command(command: str, allowed_commands: list[str]) -> bool:
-    """Check if a command is in the allowed list (or list is empty = allow all)."""
+    """Check if a command is in the allowed list (or list is empty = allow all).
+
+    Rejects commands with path traversal (e.g. ``../../bin/sh``) when a
+    whitelist is active, to prevent bypass via relative paths.
+    """
     if not allowed_commands:
         return True
     try:
@@ -27,23 +31,27 @@ def _validate_command(command: str, allowed_commands: list[str]) -> bool:
         return False
     if not parts:
         return False
-    base_cmd = Path(parts[0]).name if "/" in parts[0] else parts[0]
+    cmd_path = parts[0]
+    # Reject path traversal attempts like ../../bin/sh
+    if ".." in cmd_path:
+        return False
+    base_cmd = Path(cmd_path).name if "/" in cmd_path else cmd_path
     return any(allowed.lower() == base_cmd.lower() for allowed in allowed_commands)
 
 
-def _is_symlink_escape(path: Path, boundary: Path) -> bool:
-    """Check if a path escapes the boundary via symlinks.
+def _is_path_within_boundary(path: Path, boundary: Path) -> bool:
+    """Check if a path (after resolving all symlinks) is within the boundary.
 
     Uses os.path.realpath to resolve all symlinks, then verifies the
-    real path is still within the boundary.
+    real path is still within the boundary.  Returns True if safe.
     """
     real = Path(os.path.realpath(path))
     real_boundary = Path(os.path.realpath(boundary))
     try:
         real.relative_to(real_boundary)
-        return False
-    except ValueError:
         return True
+    except ValueError:
+        return False
 
 
 def _escape_working_dir(
@@ -58,30 +66,17 @@ def _escape_working_dir(
         requested = Path(working_dir).resolve()
 
         if sandbox_mode == "vault_only":
-            # Must be inside vault or tmp_dir, and no symlink escape
-            in_vault = False
-            try:
-                requested.relative_to(vault_path.resolve())
-                if not _is_symlink_escape(requested, vault_path):
-                    in_vault = True
-            except ValueError:
-                pass
-
-            if not in_vault:
-                try:
-                    requested.relative_to(tmp_dir.resolve())
-                    if not _is_symlink_escape(requested, tmp_dir):
-                        return True, str(requested)
-                except ValueError:
-                    pass
-                return False, f"path {requested} outside vault/tmp (sandbox_mode=vault_only)"
-
-            return True, str(requested)
+            # Must be inside vault or tmp_dir after resolving ALL symlinks
+            if _is_path_within_boundary(requested, vault_path):
+                return True, str(Path(os.path.realpath(requested)))
+            if _is_path_within_boundary(requested, tmp_dir):
+                return True, str(Path(os.path.realpath(requested)))
+            return False, f"path {requested} outside vault/tmp (sandbox_mode=vault_only)"
 
         # sandbox_mode == "system" — allow any path
         return True, str(requested)
-    except Exception as e:
-        return False, f"path resolution error: {e}"
+    except Exception:
+        return False, "path resolution error"
 
 
 @plugin(

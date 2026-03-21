@@ -122,7 +122,7 @@ async def execute(context) -> dict:
                     if ts_int > highest_timestamp:
                         highest_timestamp = ts_int
         except Exception:
-            pass
+            context.logger.warning("discord_timestamp_parse_failed", msg_id=msg_data.get("id"))
 
     if parsed_messages:
         await context.garden.write_seed("discord", {"messages": parsed_messages})

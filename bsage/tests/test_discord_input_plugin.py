@@ -2,11 +2,11 @@
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from bsage.tests.conftest import make_plugin_context
+from bsage.tests.conftest import make_httpx_mock, make_plugin_context
 
 _DEFAULT_CREDS = {"bot_token": "dsc_token_123", "channel_id": "123456789"}
 
@@ -47,6 +47,15 @@ def _discord_message(
     }
 
 
+def _mock_get_response(json_data, status_code=200):
+    """Build a mock HTTP response."""
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.raise_for_status = MagicMock()
+    resp.json.return_value = json_data
+    return resp
+
+
 @pytest.mark.asyncio
 async def test_execute_missing_credentials() -> None:
     """Test that execute returns error when credentials are missing."""
@@ -56,7 +65,7 @@ async def test_execute_missing_credentials() -> None:
     result = await execute_fn(ctx)
 
     assert result["collected"] == 0
-    assert "error" in result
+    assert "missing" in result["error"].lower()
 
 
 @pytest.mark.asyncio
@@ -70,17 +79,9 @@ async def test_execute_fetches_and_writes_messages(tmp_path: Path) -> None:
         _discord_message("msg_1", "hello", "2024-01-15T10:30:00+00:00"),
     ]
 
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.raise_for_status = MagicMock()
-    mock_resp.json.return_value = api_messages
+    mock_resp = _mock_get_response(api_messages)
 
-    with patch("httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_resp)
-        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+    with make_httpx_mock(get_response=mock_resp):
         result = await execute_fn(ctx)
 
     assert result["collected"] == 2
@@ -100,17 +101,31 @@ async def test_execute_handles_api_error() -> None:
     execute_fn, _, _ = _load_plugin()
     ctx = _make_context()
 
+    mock_resp = _mock_get_response({"code": 50001, "message": "Missing Access"})
+
+    with make_httpx_mock(get_response=mock_resp):
+        result = await execute_fn(ctx)
+
+    assert result["collected"] == 0
+    assert result["error"] == "Missing Access"
+
+
+@pytest.mark.asyncio
+async def test_execute_handles_http_status_error() -> None:
+    """Test that execute handles HTTP status errors (e.g. 401, 500)."""
+    import httpx
+
+    execute_fn, _, _ = _load_plugin()
+    ctx = _make_context()
+
     mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.raise_for_status = MagicMock()
-    mock_resp.json.return_value = {"code": 50001, "message": "Missing Access"}
+    mock_resp.raise_for_status = MagicMock(
+        side_effect=httpx.HTTPStatusError(
+            "401 Unauthorized", request=MagicMock(), response=MagicMock(status_code=401)
+        )
+    )
 
-    with patch("httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_resp)
-        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+    with make_httpx_mock(get_response=mock_resp):
         result = await execute_fn(ctx)
 
     assert result["collected"] == 0
@@ -123,17 +138,9 @@ async def test_execute_no_new_messages(tmp_path: Path) -> None:
     execute_fn, _, _ = _load_plugin()
     ctx = _make_context(vault_root=tmp_path)
 
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.raise_for_status = MagicMock()
-    mock_resp.json.return_value = []
+    mock_resp = _mock_get_response([])
 
-    with patch("httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_resp)
-        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+    with make_httpx_mock(get_response=mock_resp):
         result = await execute_fn(ctx)
 
     assert result["collected"] == 0
@@ -152,17 +159,38 @@ async def test_notify_sends_message() -> None:
     mock_resp.text = '{"id": "msg_99"}'
     mock_resp.json.return_value = {"id": "msg_99"}
 
-    with patch("httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=mock_resp)
-        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+    with make_httpx_mock(post_response=mock_resp) as mock_client:
         result = await notify_fn(ctx)
 
     assert result["sent"] is True
     assert result["message_id"] == "msg_99"
     mock_client.post.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_notify_missing_message() -> None:
+    """Test that notify returns error when no message is provided."""
+    _, notify_fn, _ = _load_plugin()
+    ctx = _make_context()
+    ctx.input_data = {"other": "data"}
+
+    result = await notify_fn(ctx)
+
+    assert result["sent"] is False
+    assert "no message" in result["reason"]
+
+
+@pytest.mark.asyncio
+async def test_notify_missing_credentials() -> None:
+    """Test that notify returns error when credentials are missing."""
+    _, notify_fn, _ = _load_plugin()
+    ctx = _make_context(credentials={"bot_token": "", "channel_id": ""})
+    ctx.input_data = {"message": "hello"}
+
+    result = await notify_fn(ctx)
+
+    assert result["sent"] is False
+    assert "missing" in result["reason"]
 
 
 @pytest.mark.asyncio
@@ -175,17 +203,9 @@ async def test_execute_saves_timestamp_state(tmp_path: Path) -> None:
         _discord_message("msg_1", "hello", "2024-01-15T10:30:00+00:00"),
     ]
 
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.raise_for_status = MagicMock()
-    mock_resp.json.return_value = api_messages
+    mock_resp = _mock_get_response(api_messages)
 
-    with patch("httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_resp)
-        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+    with make_httpx_mock(get_response=mock_resp):
         await execute_fn(ctx)
 
     state_file = tmp_path / "seeds" / "discord-input" / "_state.json"
@@ -212,17 +232,9 @@ async def test_execute_uses_existing_timestamp(tmp_path: Path) -> None:
         _discord_message("msg_1", "old", "2024-01-15T10:30:00+00:00"),
     ]
 
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.raise_for_status = MagicMock()
-    mock_resp.json.return_value = api_messages
+    mock_resp = _mock_get_response(api_messages)
 
-    with patch("httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_resp)
-        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+    with make_httpx_mock(get_response=mock_resp):
         result = await execute_fn(ctx)
 
     # Only msg_2 should be collected (msg_1 timestamp < saved timestamp)

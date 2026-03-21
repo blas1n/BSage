@@ -267,25 +267,25 @@ async def test_notify_no_channel() -> None:
     assert result["sent"] is False
 
 
-def test_is_symlink_escape_detects_escape(tmp_path: Path) -> None:
-    """Test _is_symlink_escape detects symlinks that escape boundary."""
+def test_is_path_within_boundary_detects_escape(tmp_path: Path) -> None:
+    """Test _is_path_within_boundary rejects symlinks that escape boundary."""
     _, mod = _load_plugin()
     boundary = tmp_path / "vault"
     boundary.mkdir()
     link = boundary / "link"
     link.symlink_to("/tmp")
 
-    assert mod._is_symlink_escape(link, boundary) is True
+    assert mod._is_path_within_boundary(link, boundary) is False
 
 
-def test_is_symlink_escape_allows_normal_path(tmp_path: Path) -> None:
-    """Test _is_symlink_escape allows paths within boundary."""
+def test_is_path_within_boundary_allows_normal_path(tmp_path: Path) -> None:
+    """Test _is_path_within_boundary allows paths within boundary."""
     _, mod = _load_plugin()
     boundary = tmp_path / "vault"
     subdir = boundary / "notes"
     subdir.mkdir(parents=True)
 
-    assert mod._is_symlink_escape(subdir, boundary) is False
+    assert mod._is_path_within_boundary(subdir, boundary) is True
 
 
 @pytest.mark.asyncio

@@ -90,6 +90,37 @@ def make_plugin_context(
     return ctx
 
 
+def make_httpx_mock(*, get_response=None, post_response=None):
+    """Create a mock httpx.AsyncClient context manager.
+
+    Returns (patch_context, mock_client) where patch_context is used as a
+    ``with`` statement and mock_client can be inspected after the call.
+
+    Usage::
+
+        with make_httpx_mock(get_response=mock_resp) as mock_client:
+            result = await execute_fn(ctx)
+        mock_client.get.assert_awaited_once()
+    """
+    from contextlib import contextmanager
+    from unittest.mock import patch
+
+    mock_client = AsyncMock()
+    if get_response is not None:
+        mock_client.get = AsyncMock(return_value=get_response)
+    if post_response is not None:
+        mock_client.post = AsyncMock(return_value=post_response)
+
+    @contextmanager
+    def _ctx():
+        with patch("httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            yield mock_client
+
+    return _ctx()
+
+
 @pytest.fixture()
 def mock_context():
     ctx = MagicMock()
