@@ -142,15 +142,13 @@ async def execute(context: Any) -> dict:
 
     # Dedup by Meta message ID to handle webhook retries gracefully.
     msg_id = parsed.get("id", "")
-    if msg_id:
-        if msg_id in _SEEN_MSG_IDS:
-            context.logger.info("whatsapp_duplicate_skipped", msg_id=msg_id)
-            return {"collected": 0, "reason": "duplicate message"}
-        _SEEN_MSG_IDS[msg_id] = True
-        if len(_SEEN_MSG_IDS) > _DEDUP_MAX:
-            _SEEN_MSG_IDS.popitem(last=False)
+    if msg_id and msg_id in _SEEN_MSG_IDS:
+        context.logger.info("whatsapp_duplicate_skipped", msg_id=msg_id)
+        return {"collected": 0, "reason": "duplicate message"}
 
-    # Write to seed — include sender phone so notify() can reply
+    # Write to seed — include sender phone so notify() can reply.
+    # Cache update happens AFTER the write so a failed write doesn't poison
+    # the dedup cache (Meta would retry and the message would be lost).
     await context.garden.write_seed(
         "whatsapp",
         {
@@ -158,6 +156,12 @@ async def execute(context: Any) -> dict:
             "reply_phone": parsed.get("from"),
         },
     )
+
+    # Mark as seen only after successful write.
+    if msg_id:
+        _SEEN_MSG_IDS[msg_id] = True
+        if len(_SEEN_MSG_IDS) > _DEDUP_MAX:
+            _SEEN_MSG_IDS.popitem(last=False)
 
     # Auto-reply via ChatBridge
     if context.chat:
