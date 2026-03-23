@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { useApproval } from "./hooks/useApproval";
-import { useAuth } from "./hooks/useAuth";
+import { useAuth, redirectToLogin } from "./hooks/useAuth";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { ApprovalModal } from "./components/approval/ApprovalModal";
-import { LoginView } from "./components/auth/LoginView";
 import { ChatView } from "./components/chat/ChatView";
 import { DashboardView } from "./components/dashboard/DashboardView";
 import { EventPanel } from "./components/events/EventPanel";
@@ -50,7 +49,8 @@ export default function App() {
   }
 
   if (!session) {
-    return <LoginView />;
+    redirectToLogin();
+    return null;
   }
 
   return (

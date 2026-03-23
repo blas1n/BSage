@@ -10,7 +10,10 @@ from pathlib import Path
 from typing import Any
 
 import structlog
+from urllib.parse import urlencode
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from bsage.core.exceptions import VaultPathError
@@ -112,6 +115,17 @@ def create_routes(state: AppState) -> APIRouter:
     @public.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @public.get("/auth/callback")
+    async def auth_callback(request: Request) -> RedirectResponse:
+        """Handle OAuth callback from external auth provider.
+
+        Forwards received tokens to the frontend via URL fragment
+        so the Supabase JS client can pick them up automatically.
+        """
+        params = dict(request.query_params)
+        fragment = urlencode(params)
+        return RedirectResponse(url=f"/#{fragment}")
 
     @protected.get("/plugins")
     async def list_plugins() -> list[dict[str, Any]]:
