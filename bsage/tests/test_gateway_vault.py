@@ -84,6 +84,12 @@ def mock_state(vault_root):
     state.chat_bridge = AsyncMock()
     state.chat_bridge.chat = AsyncMock(return_value="Mocked")
     state.prompt_registry = MagicMock(spec=PromptRegistry)
+
+    async def _mock_get_current_user():
+        return MagicMock(id="test-user", email="test@example.com", role="authenticated")
+
+    state.get_current_user = _mock_get_current_user
+    state.auth_provider = None
     return state
 
 

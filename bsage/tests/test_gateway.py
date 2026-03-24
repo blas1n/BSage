@@ -61,6 +61,13 @@ def mock_state():
     state.retriever.index_available = False
     state.chat_bridge = AsyncMock()
     state.chat_bridge.chat = AsyncMock(return_value="Mocked chat response")
+
+    # Auth — stub that always returns a mock user (no actual auth required)
+    async def _mock_get_current_user():
+        return MagicMock(id="test-user", email="test@example.com", role="authenticated")
+
+    state.get_current_user = _mock_get_current_user
+    state.auth_provider = None
     return state
 
 
@@ -820,3 +827,80 @@ class TestConfigEndpointsExtended:
         skill = response.json()[0]
         assert "enabled" in skill
         assert skill["enabled"] is True
+
+
+class TestAuthEndpoints:
+    """Test authentication on routes — public vs protected."""
+
+    @pytest.fixture()
+    def auth_mock_state(self, mock_state):
+        """State where auth is enabled — dependency raises 401."""
+        from fastapi import HTTPException
+
+        async def _require_auth():
+            raise HTTPException(status_code=401, detail="Not authenticated")
+
+        mock_state.get_current_user = _require_auth
+        return mock_state
+
+    @pytest.fixture()
+    def auth_app(self, auth_mock_state):
+        app = FastAPI()
+        app.include_router(create_routes(auth_mock_state))
+        return app
+
+    @pytest.fixture()
+    def auth_client(self, auth_app):
+        return TestClient(auth_app)
+
+    def test_health_no_auth_required(self, auth_client) -> None:
+        response = auth_client.get("/api/health")
+        assert response.status_code == 200
+
+    def test_auth_callback_no_auth_required(self, auth_client) -> None:
+        response = auth_client.get(
+            "/api/auth/callback?access_token=tok&refresh_token=ref",
+        )
+        assert response.status_code == 200
+        assert "access_token" in response.text
+        assert "tok" in response.text
+        assert "bsage_access_token" in response.text
+
+    def test_webhooks_no_auth_required(self, auth_client, auth_mock_state) -> None:
+        auth_mock_state.agent_loop = MagicMock()
+        auth_mock_state.agent_loop.on_input = AsyncMock(return_value=[{"ok": True}])
+        response = auth_client.post("/api/webhooks/test-plugin", json={"data": "test"})
+        assert response.status_code != 401
+
+    def test_protected_endpoint_401_without_token(self, auth_client) -> None:
+        response = auth_client.get("/api/plugins")
+        assert response.status_code == 401
+
+    def test_protected_endpoint_config_401(self, auth_client) -> None:
+        response = auth_client.get("/api/config")
+        assert response.status_code == 401
+
+    def test_protected_endpoint_chat_401(self, auth_client) -> None:
+        response = auth_client.post("/api/chat", json={"message": "hello"})
+        assert response.status_code == 401
+
+    def test_protected_endpoint_success_with_valid_auth(self, client) -> None:
+        """Using the default mock_state (auth stub), protected endpoints work."""
+        response = client.get("/api/plugins")
+        assert response.status_code == 200
+
+
+class TestWebSocketAuth:
+    """Test WebSocket authentication flow."""
+
+    async def test_ws_accepts_without_auth_when_disabled(self) -> None:
+        """When auth_provider is None, WS connects without auth."""
+        from bsage.gateway.ws import create_ws_routes
+
+        app = FastAPI()
+        app.include_router(create_ws_routes(auth_provider=None))
+
+        with TestClient(app) as c, c.websocket_connect("/ws") as ws:
+            ws.send_json({"type": "ping"})
+            data = ws.receive_json()
+            assert data["type"] == "ack"

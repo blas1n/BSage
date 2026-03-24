@@ -1,4 +1,5 @@
-import { Brain, FolderOpen, LayoutDashboard, MessageSquare, Settings } from "lucide-react";
+import { Brain, FolderOpen, LayoutDashboard, LogOut, MessageSquare, Settings } from "lucide-react";
+import { useAuth } from "../../hooks/useAuth";
 
 const NAV_ITEMS = [
   { hash: "#/", icon: MessageSquare, label: "Chat" },
@@ -13,6 +14,8 @@ interface SidebarProps {
 
 export function Sidebar({ currentHash }: SidebarProps) {
   const active = currentHash || "#/";
+  const { signOut } = useAuth();
+
   return (
     <aside className="flex flex-col w-56 bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700">
       <div className="flex items-center gap-2 px-4 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -38,6 +41,15 @@ export function Sidebar({ currentHash }: SidebarProps) {
           );
         })}
       </nav>
+      <div className="border-t border-gray-200 dark:border-gray-700 px-4 py-3">
+        <button
+          onClick={() => signOut()}
+          className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+        >
+          <LogOut className="w-3.5 h-3.5" />
+          Sign out
+        </button>
+      </div>
     </aside>
   );
 }

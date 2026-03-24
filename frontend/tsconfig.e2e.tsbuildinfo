@@ -1,0 +1,1 @@
+{"root":["./e2e/chat.spec.ts","./e2e/dashboard.spec.ts","./e2e/settings.spec.ts","./e2e/vault.spec.ts","./e2e/fixtures/index.ts","./e2e/pages/ChatPage.ts","./e2e/pages/DashboardPage.ts","./e2e/pages/SettingsPage.ts","./e2e/pages/VaultPage.ts","./playwright.config.ts"],"version":"5.9.3"}

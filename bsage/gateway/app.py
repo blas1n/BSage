@@ -62,7 +62,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Register API + WebSocket routes
     app.include_router(create_routes(state))
-    app.include_router(create_ws_routes(approval_interface=state.ws_approval_interface))
+    app.include_router(
+        create_ws_routes(
+            approval_interface=state.ws_approval_interface,
+            auth_provider=state.auth_provider,
+        )
+    )
 
     # Serve built frontend (production)
     if _FRONTEND_DIST.is_dir():

@@ -35,6 +35,7 @@ from bsage.garden.sync import SyncManager
 from bsage.garden.vault import Vault
 from bsage.garden.vector_store import VectorStore
 from bsage.garden.writer import GardenWriter
+from bsage.gateway.auth import create_auth_provider, create_get_current_user
 from bsage.gateway.event_broadcaster import WebSocketEventBroadcaster
 from bsage.gateway.ws import manager as ws_manager
 from bsage.interface.ws_interface import WebSocketApprovalInterface
@@ -75,6 +76,10 @@ class AppState:
 
         # danger_map populated in initialize() after plugin load_all()
         self._danger_map: dict[str, bool] = {}
+
+        # Authentication
+        self.auth_provider = create_auth_provider(settings)
+        self.get_current_user = create_get_current_user(self.auth_provider)
 
         # WebSocket approval interface for SafeMode in Gateway context
         self.ws_approval_interface = WebSocketApprovalInterface(manager=ws_manager)

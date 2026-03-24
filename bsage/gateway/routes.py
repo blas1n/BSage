@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from bsage.core.exceptions import VaultPathError
@@ -97,14 +98,47 @@ def _meta_to_dict(
 
 
 def create_routes(state: AppState) -> APIRouter:
-    """Create API routes with injected application state."""
-    api_router = APIRouter(prefix="/api")
+    """Create API routes with injected application state.
 
-    @api_router.get("/health")
+    Routes are split into *public* (health, webhooks) and *protected*
+    (everything else).  The protected router applies ``state.get_current_user``
+    as a router-level dependency so individual handlers don't need to declare it.
+    """
+    public = APIRouter(prefix="/api")
+    protected = APIRouter(
+        prefix="/api",
+        dependencies=[Depends(state.get_current_user)],
+    )
+
+    @public.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    @api_router.get("/plugins")
+    @public.get("/auth/callback")
+    async def auth_callback(request: Request) -> HTMLResponse:
+        """Handle OAuth callback from external auth provider.
+
+        Returns an HTML page that extracts tokens from both query params
+        and URL hash fragment (Supabase sends tokens in the hash),
+        stores them in localStorage, and redirects to the frontend root.
+        """
+        params = dict(request.query_params)
+        params_json = json.dumps(params)
+        html = f"""<!DOCTYPE html>
+<html><head><title>Authenticating...</title></head>
+<body><p>Authenticating...</p><script>
+(function() {{
+  var p = {params_json};
+  var h = window.location.hash.substring(1);
+  if (h) new URLSearchParams(h).forEach(function(v,k) {{ p[k] = v; }});
+  if (p.access_token) localStorage.setItem('bsage_access_token', p.access_token);
+  if (p.refresh_token) localStorage.setItem('bsage_refresh_token', p.refresh_token);
+  window.location.replace('/');
+}})();
+</script></body></html>"""
+        return HTMLResponse(content=html)
+
+    @protected.get("/plugins")
     async def list_plugins() -> list[dict[str, Any]]:
         """List all loaded Plugins (code-based)."""
         registry = await state.plugin_loader.load_all()
@@ -115,7 +149,7 @@ def create_routes(state: AppState) -> APIRouter:
             for meta in registry.values()
         ]
 
-    @api_router.get("/skills")
+    @protected.get("/skills")
     async def list_skills() -> list[dict[str, Any]]:
         """List all loaded Skills (LLM-based)."""
         registry = await state.skill_loader.load_all()
@@ -126,7 +160,7 @@ def create_routes(state: AppState) -> APIRouter:
             for meta in registry.values()
         ]
 
-    @api_router.post("/plugins/{name}/run")
+    @protected.post("/plugins/{name}/run")
     async def run_plugin(name: str) -> dict[str, Any]:
         """Trigger a plugin by name via AgentLoop.on_input."""
         try:
@@ -147,7 +181,7 @@ def create_routes(state: AppState) -> APIRouter:
             logger.exception("plugin_run_failed", plugin=name)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    @api_router.post("/webhooks/{name}")
+    @public.post("/webhooks/{name}")
     async def webhook(name: str, request: Request) -> dict[str, Any]:
         """Receive a webhook payload and trigger an input plugin."""
         if state.agent_loop is None:
@@ -193,7 +227,7 @@ def create_routes(state: AppState) -> APIRouter:
             logger.exception("webhook_plugin_failed", plugin=name)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    @api_router.post("/run/{name}")
+    @protected.post("/run/{name}")
     async def run_entry(name: str) -> dict[str, Any]:
         """Run a plugin or skill by name via unified registry."""
         if state.agent_loop is None:
@@ -216,7 +250,7 @@ def create_routes(state: AppState) -> APIRouter:
 
     # -- Credential setup endpoints ------------------------------------------
 
-    @api_router.get("/entries/{name}/credentials/fields")
+    @protected.get("/entries/{name}/credentials/fields")
     async def credential_fields(name: str) -> dict[str, Any]:
         """Return credential field definitions for a plugin or skill."""
         meta = _find_entry(state, name)
@@ -230,7 +264,7 @@ def create_routes(state: AppState) -> APIRouter:
 
         return {"name": name, "fields": []}
 
-    @api_router.post("/entries/{name}/credentials")
+    @protected.post("/entries/{name}/credentials")
     async def store_credentials(name: str, body: CredentialStoreRequest) -> dict[str, Any]:
         """Store credentials for a plugin or skill via the GUI."""
         _find_entry(state, name)  # 404 if not found
@@ -243,7 +277,7 @@ def create_routes(state: AppState) -> APIRouter:
 
     # -- Enable/Disable toggle -----------------------------------------------
 
-    @api_router.post("/entries/{name}/toggle")
+    @protected.post("/entries/{name}/toggle")
     async def toggle_entry(name: str) -> dict[str, Any]:
         """Toggle enabled/disabled state for a plugin or skill."""
         disabled: list[str] = list(state.runtime_config.disabled_entries)
@@ -261,12 +295,12 @@ def create_routes(state: AppState) -> APIRouter:
 
     # -- Vault browser -------------------------------------------------------
 
-    @api_router.get("/vault/actions")
+    @protected.get("/vault/actions")
     async def list_actions() -> list[str]:
         notes = await state.vault.read_notes("actions")
         return [str(p.name) for p in notes]
 
-    @api_router.get("/vault/tree")
+    @protected.get("/vault/tree")
     async def vault_tree() -> list[dict[str, Any]]:
         """Return the vault directory tree structure."""
         vault_root = state.vault.root
@@ -290,7 +324,7 @@ def create_routes(state: AppState) -> APIRouter:
 
         return await asyncio.to_thread(_walk)
 
-    @api_router.get("/vault/file")
+    @protected.get("/vault/file")
     async def vault_file(
         path: str = Query(..., description="Relative path within the vault"),
     ) -> dict[str, Any]:
@@ -357,7 +391,7 @@ def create_routes(state: AppState) -> APIRouter:
                 lookup[stem] = rel
         return lookup
 
-    @api_router.get("/vault/search")
+    @protected.get("/vault/search")
     async def vault_search(
         q: str = Query(..., min_length=1, description="Search query"),
         max_files: int = Query(default=500, ge=1, le=2000, description="Max files to scan"),
@@ -379,7 +413,7 @@ def create_routes(state: AppState) -> APIRouter:
 
         return results
 
-    @api_router.get("/vault/backlinks")
+    @protected.get("/vault/backlinks")
     async def vault_backlinks(
         path: str = Query(..., description="Relative path of the target note"),
     ) -> list[dict[str, Any]]:
@@ -403,7 +437,7 @@ def create_routes(state: AppState) -> APIRouter:
 
         return results
 
-    @api_router.get("/vault/graph")
+    @protected.get("/vault/graph")
     async def vault_graph(
         max_files: int = Query(default=500, ge=1, le=2000, description="Max files to scan"),
     ) -> dict[str, Any]:
@@ -439,7 +473,7 @@ def create_routes(state: AppState) -> APIRouter:
 
         return {"nodes": nodes, "links": links, "truncated": truncated}
 
-    @api_router.get("/vault/tags")
+    @protected.get("/vault/tags")
     async def vault_tags(
         max_files: int = Query(default=500, ge=1, le=2000, description="Max files to scan"),
     ) -> dict[str, Any]:
@@ -466,7 +500,7 @@ def create_routes(state: AppState) -> APIRouter:
 
     # -- Config --------------------------------------------------------------
 
-    @api_router.get("/config")
+    @protected.get("/config")
     async def get_config() -> dict[str, Any]:
         """Return current runtime config (api_key excluded)."""
         snap = state.runtime_config.snapshot()
@@ -474,7 +508,7 @@ def create_routes(state: AppState) -> APIRouter:
         snap["index_available"] = state.retriever.index_available
         return snap
 
-    @api_router.patch("/config")
+    @protected.patch("/config")
     async def update_config(update: ConfigUpdate) -> dict[str, Any]:
         """Update runtime config. Only provided fields are changed."""
         changes: dict[str, Any] = {
@@ -496,7 +530,7 @@ def create_routes(state: AppState) -> APIRouter:
         snap["index_available"] = state.retriever.index_available
         return snap
 
-    @api_router.post("/chat")
+    @protected.post("/chat")
     async def chat(body: ChatMessage) -> dict[str, str]:
         """Vault-aware conversational chat with plugin tool use."""
         if state.chat_bridge is None:
@@ -512,9 +546,12 @@ def create_routes(state: AppState) -> APIRouter:
             logger.exception("chat_failed")
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    @api_router.get("/sync-backends")
+    @protected.get("/sync-backends")
     async def list_sync_backends() -> list[str]:
         """Return names of registered sync backends."""
         return state.sync_manager.list_backends()
 
-    return api_router
+    parent = APIRouter()
+    parent.include_router(public)
+    parent.include_router(protected)
+    return parent

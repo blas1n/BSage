@@ -101,6 +101,11 @@ export const test = base.extend<CustomFixtures>({
   // Auto-use fixture: routes are set up for every test automatically
   mockApiResponses: [
     async ({ page }, use) => {
+      // Inject a fake auth token so the app skips the login landing page
+      await page.addInitScript(() => {
+        localStorage.setItem("bsage_access_token", "e2e-test-token");
+      });
+
       // Health check
       await page.route("**/api/health", (route) => {
         route.fulfill({

@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     # Embedding text limit
     max_embed_chars: int = Field(default=8000, gt=0)
 
+    # Authentication (Supabase)
+    supabase_jwt_secret: str = ""
+    supabase_url: str = ""
+    supabase_service_role_key: str = ""
+
     # Runtime
     safe_mode: bool = True
     disabled_entries: list[str] = []

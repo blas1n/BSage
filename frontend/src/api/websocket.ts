@@ -16,15 +16,17 @@ class WebSocketManager {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelay = 1000;
   private url = "";
+  private authToken?: string;
 
   get state() {
     return this._state;
   }
 
-  connect(url: string) {
-    if (this.ws && this.url === url) return; // already connected / connecting
+  connect(url: string, authToken?: string) {
+    if (this.ws && this.url === url && this.authToken === authToken) return;
     this.disconnect();
     this.url = url;
+    this.authToken = authToken;
     this._connect();
   }
 
@@ -61,6 +63,9 @@ class WebSocketManager {
 
     this.ws.onopen = () => {
       this.reconnectDelay = 1000;
+      if (this.authToken) {
+        this.ws?.send(JSON.stringify({ type: "auth", token: this.authToken }));
+      }
       this.setState("connected");
     };
 

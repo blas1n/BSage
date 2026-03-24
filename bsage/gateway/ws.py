@@ -11,6 +11,8 @@ import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 if TYPE_CHECKING:
+    from bsvibe_auth import SupabaseAuthProvider
+
     from bsage.interface.ws_interface import WebSocketApprovalInterface
 
 logger = structlog.get_logger(__name__)
@@ -67,20 +69,60 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+async def _authenticate_ws(
+    websocket: WebSocket,
+    auth_provider: SupabaseAuthProvider,
+) -> bool:
+    """Authenticate a WebSocket connection.
+
+    Waits up to 10 seconds for an ``{"type": "auth", "token": "..."}`` message.
+    Returns ``True`` on success, closes the connection with code 4001 on failure.
+    """
+    try:
+        data = await asyncio.wait_for(websocket.receive_text(), timeout=10.0)
+        message = json.loads(data)
+        if message.get("type") == "auth" and message.get("token"):
+            await auth_provider.verify_token(message["token"])
+            logger.info("ws_auth_success", method="first_message")
+            return True
+        logger.warning("ws_auth_failed", reason="first message was not auth")
+    except TimeoutError:
+        logger.warning("ws_auth_failed", reason="timeout")
+    except Exception as exc:
+        logger.warning("ws_auth_failed", reason="invalid token or message", error=str(exc))
+
+    await websocket.close(code=4001, reason="Authentication failed")
+    return False
+
+
 def create_ws_routes(
     approval_interface: WebSocketApprovalInterface | None = None,
+    auth_provider: SupabaseAuthProvider | None = None,
 ) -> APIRouter:
     """Create WebSocket routes.
 
     Args:
         approval_interface: If provided, ``approval_response`` messages are
             routed to this interface to resolve pending approval futures.
+        auth_provider: If provided, WebSocket connections must authenticate
+            via first-message token exchange before joining the broadcast pool.
     """
     ws_router = APIRouter()
 
     @ws_router.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:
-        await manager.connect(websocket)
+        # Accept the socket but don't add to broadcast pool yet
+        await websocket.accept()
+
+        # Authenticate before joining the broadcast pool
+        if auth_provider is not None and not await _authenticate_ws(websocket, auth_provider):
+            return
+
+        # Now safe to add to the broadcast pool
+        async with manager._lock:
+            manager._connections.append(websocket)
+        logger.info("ws_connected", count=len(manager._connections))
+
         try:
             while True:
                 data = await websocket.receive_text()
