@@ -525,10 +525,13 @@ class TestCreateApp:
         app = create_app(settings)
         from starlette.middleware.cors import CORSMiddleware
 
+        cors_mw = None
         for mw in app.user_middleware:
             if mw.cls is CORSMiddleware:
-                assert "http://localhost:5173" in mw.kwargs["allow_origins"]
+                cors_mw = mw
                 break
+        assert cors_mw is not None
+        assert "http://localhost:5173" in cors_mw.kwargs["allow_origins"]
 
 
 class TestChatEndpoint:
