@@ -11,18 +11,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get install -y nodejs \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies (cache layer)
+# Copy application code first (needed for package build)
 COPY pyproject.toml uv.lock* ./
+COPY bsage/ ./bsage/
+COPY plugins/ ./plugins/
+COPY skills/ ./skills/
+
+# Install Python dependencies
 RUN uv pip install --system --no-cache .
 
 # Build frontend
 COPY frontend/ ./frontend/
 RUN cd frontend && npm ci && npm run build
-
-# Copy application code
-COPY bsage/ ./bsage/
-COPY plugins/ ./plugins/
-COPY skills/ ./skills/
 
 ENV PYTHONPATH=/app
 
