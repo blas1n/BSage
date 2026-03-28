@@ -150,20 +150,22 @@ def open_client(vault_root):
 class TestKnowledgeAuthEnforcement:
     """All knowledge endpoints return 401 without valid credentials."""
 
-    def test_sot_unauthenticated_returns_401(self, auth_client):
-        resp = auth_client.get("/api/knowledge/sot")
+    def test_notify_unauthenticated_returns_401(self, auth_client):
+        resp = auth_client.post("/api/notify", json={"message": "test"})
         assert resp.status_code == 401
 
-    def test_sot_invalid_token_returns_401(self, auth_client):
-        resp = auth_client.get(
-            "/api/knowledge/sot",
+    def test_notify_invalid_token_returns_401(self, auth_client):
+        resp = auth_client.post(
+            "/api/notify",
+            json={"message": "test"},
             headers={"Authorization": "Bearer bad-token"},
         )
         assert resp.status_code == 401
 
-    def test_sot_valid_token_returns_200(self, auth_client):
-        resp = auth_client.get(
-            "/api/knowledge/sot",
+    def test_notify_valid_token_returns_200(self, auth_client):
+        resp = auth_client.post(
+            "/api/notify",
+            json={"message": "test"},
             headers={"Authorization": "Bearer valid-jwt-token"},
         )
         assert resp.status_code == 200
@@ -226,9 +228,10 @@ class TestKnowledgeAuthEnforcement:
 class TestServiceAccountJWT:
     """Service accounts with JWT tokens (role=service_role) are allowed."""
 
-    def test_service_jwt_can_read_sot(self, auth_client):
-        resp = auth_client.get(
-            "/api/knowledge/sot",
+    def test_service_jwt_can_notify(self, auth_client):
+        resp = auth_client.post(
+            "/api/notify",
+            json={"message": "test"},
             headers={"Authorization": "Bearer service-jwt-token"},
         )
         assert resp.status_code == 200
@@ -273,8 +276,9 @@ class TestServiceAPIKey:
     """Service-to-service calls via X-Service-Key header."""
 
     def test_valid_service_key_grants_access(self, service_key_client):
-        resp = service_key_client.get(
-            "/api/knowledge/sot",
+        resp = service_key_client.post(
+            "/api/notify",
+            json={"message": "test"},
             headers={"X-Service-Key": "secret-service-key-123"},
         )
         assert resp.status_code == 200
@@ -315,23 +319,24 @@ class TestServiceAPIKey:
         assert resp.status_code == 201
 
     def test_invalid_service_key_returns_401(self, service_key_client):
-        resp = service_key_client.get(
-            "/api/knowledge/sot",
+        resp = service_key_client.post(
+            "/api/notify",
+            json={"message": "test"},
             headers={"X-Service-Key": "wrong-key"},
         )
         assert resp.status_code == 401
 
     def test_no_credentials_returns_401(self, service_key_client):
         """Neither Bearer nor X-Service-Key provided."""
-        resp = service_key_client.get("/api/knowledge/sot")
+        resp = service_key_client.post("/api/notify", json={"message": "test"})
         assert resp.status_code == 401
 
 
 class TestAuthDisabled:
     """When auth is disabled, anonymous access works."""
 
-    def test_sot_accessible(self, open_client):
-        resp = open_client.get("/api/knowledge/sot")
+    def test_notify_accessible(self, open_client):
+        resp = open_client.post("/api/notify", json={"message": "test"})
         assert resp.status_code == 200
 
     def test_search_accessible(self, open_client):
