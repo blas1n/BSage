@@ -115,7 +115,10 @@ class TestMaturityEvaluator:
         assert result == NoteMaturity.EVERGREEN
 
     async def test_budding_stays_when_not_stable_enough(self) -> None:
-        graph = _mock_graph(rel_count=6, source_count=4, updated_at="2026-03-14T00:00:00")
+        from datetime import datetime, timedelta
+
+        recent = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
+        graph = _mock_graph(rel_count=6, source_count=4, updated_at=recent)
         evaluator = MaturityEvaluator(graph, MaturityConfig())
         result = await evaluator.evaluate("garden/idea/test.md", "budding")
         assert result is None
