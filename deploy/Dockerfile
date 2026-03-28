@@ -6,7 +6,7 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 # Install uv + node (for frontend build)
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
+    curl git \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
