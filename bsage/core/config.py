@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_service_role_key: str = ""
 
+    # Service-to-service API keys (JSON: {"service-name": "key"})
+    service_api_keys: dict[str, str] = {}
+
     # CORS
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 

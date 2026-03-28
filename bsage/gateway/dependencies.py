@@ -79,7 +79,10 @@ class AppState:
 
         # Authentication
         self.auth_provider = create_auth_provider(settings)
-        self.get_current_user = create_get_current_user(self.auth_provider)
+        self.get_current_user = create_get_current_user(
+            self.auth_provider,
+            service_api_keys=settings.service_api_keys,
+        )
 
         # WebSocket approval interface for SafeMode in Gateway context
         self.ws_approval_interface = WebSocketApprovalInterface(manager=ws_manager)

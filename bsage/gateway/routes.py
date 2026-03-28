@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +20,8 @@ from bsage.core.exceptions import VaultPathError
 from bsage.core.patterns import WIKILINK_RE
 from bsage.core.plugin_loader import PluginMeta
 from bsage.core.skill_loader import SkillMeta
+from bsage.garden.markdown_utils import extract_frontmatter, extract_title
+from bsage.garden.writer import GardenNote
 from bsage.gateway.dependencies import AppState
 
 logger = structlog.get_logger(__name__)
@@ -50,6 +54,72 @@ class CredentialStoreRequest(BaseModel):
     """Request body for POST /api/entries/{name}/credentials."""
 
     credentials: dict[str, str]
+
+
+class KnowledgeItem(BaseModel):
+    """A single knowledge item in the SOT response."""
+
+    title: str
+    content: str
+    tags: list[str]
+    links: list[str]
+    updated_at: str
+
+
+class KnowledgeListResponse(BaseModel):
+    """Paginated response for GET /api/knowledge/sot."""
+
+    items: list[KnowledgeItem]
+    total: int
+    page: int
+    page_size: int
+
+
+class SearchResultItem(BaseModel):
+    """A single search result."""
+
+    title: str
+    path: str
+    content_preview: str
+    relevance_score: float
+    tags: list[str]
+
+
+class SearchResponse(BaseModel):
+    """Response for GET /api/knowledge/search."""
+
+    results: list[SearchResultItem]
+
+
+class CreateEntryRequest(BaseModel):
+    """Request body for POST /api/knowledge/entries."""
+
+    title: str
+    content: str
+    tags: list[str] = []
+    links: list[str] = []
+    source: str = "api"
+    metadata: dict[str, Any] = {}
+
+
+class CreateEntryResponse(BaseModel):
+    """Response for POST /api/knowledge/entries."""
+
+    id: str
+    path: str
+    created_at: str
+
+
+class CreateDecisionRequest(BaseModel):
+    """Request body for POST /api/knowledge/decisions."""
+
+    title: str
+    decision: str
+    reasoning: str
+    alternatives: list[str] = []
+    context: str = ""
+    tags: list[str] = []
+    source: str = "api"
 
 
 def _find_entry(state: AppState, name: str) -> PluginMeta | SkillMeta:
@@ -497,6 +567,301 @@ def create_routes(state: AppState) -> APIRouter:
                 tag_map.setdefault(tag, []).append(rel)
 
         return {"tags": tag_map, "truncated": truncated}
+
+    # -- Knowledge provider --------------------------------------------------
+
+    sot_note_types = {"fact", "insight"}
+    sop_note_types = {"task"}
+    knowledge_dirs = [
+        "facts",
+        "insights",
+        "tasks",
+        "ideas",
+        "projects",
+        "people",
+        "events",
+        "preferences",
+    ]
+
+    async def _scan_knowledge_notes() -> list[tuple[str, str]]:
+        """Scan vault knowledge directories and return (rel_path, content) pairs."""
+        vault_root = state.vault.root
+
+        def _walk() -> list[tuple[str, str]]:
+            results: list[tuple[str, str]] = []
+            for d in knowledge_dirs:
+                base = vault_root / d
+                if not base.is_dir():
+                    continue
+                for md_file in sorted(base.rglob("*.md")):
+                    rel = str(md_file.relative_to(vault_root))
+                    try:
+                        content = md_file.read_text(encoding="utf-8")
+                    except OSError:
+                        continue
+                    results.append((rel, content))
+            return results
+
+        return await asyncio.to_thread(_walk)
+
+    @protected.get("/knowledge/sot", response_model=KnowledgeListResponse)
+    async def knowledge_sot(
+        knowledge_type: str = Query(
+            default="sot",
+            alias="type",
+            description="Knowledge type: sot or sop",
+        ),
+        project_id: str | None = Query(
+            default=None,
+            description="Filter by project",
+        ),
+        tags: str | None = Query(
+            default=None,
+            description="Comma-separated tags (OR)",
+        ),
+        page: int = Query(default=1, ge=1, description="Page number"),
+        page_size: int = Query(
+            default=20,
+            ge=1,
+            le=100,
+            description="Items per page",
+        ),
+    ) -> KnowledgeListResponse:
+        """Return paginated knowledge entries (SOT/SOP)."""
+        target_types = sop_note_types if knowledge_type == "sop" else sot_note_types
+        tag_filter = {t.strip().lower() for t in tags.split(",") if t.strip()} if tags else set()
+
+        all_notes = await _scan_knowledge_notes()
+        items: list[KnowledgeItem] = []
+
+        for rel_path, raw_content in all_notes:
+            fm = extract_frontmatter(raw_content)
+            note_type = fm.get("type", "")
+            if note_type not in target_types:
+                continue
+
+            note_tags = [str(t).lower() for t in fm.get("tags", []) or []]
+            if tag_filter and not tag_filter.intersection(note_tags):
+                continue
+
+            related = fm.get("related", []) or []
+            related_strs = [str(r) for r in related]
+            if project_id and not any(project_id in r for r in related_strs):
+                continue
+
+            title = extract_title(raw_content) or Path(rel_path).stem
+            # Body content after frontmatter
+            body = raw_content
+            if raw_content.startswith("---\n"):
+                try:
+                    end_idx = raw_content.index("\n---\n", 4)
+                    body = raw_content[end_idx + 5 :].strip()
+                except ValueError:
+                    pass
+            # Remove leading "# Title" line from body
+            lines = body.split("\n")
+            if lines and lines[0].startswith("# "):
+                body = "\n".join(lines[1:]).strip()
+
+            # Extract wikilinks from content
+            links = [m.group(1).strip() for m in WIKILINK_RE.finditer(raw_content)]
+            updated_at = str(fm.get("captured_at", ""))
+
+            items.append(
+                KnowledgeItem(
+                    title=title,
+                    content=body,
+                    tags=note_tags,
+                    links=links,
+                    updated_at=updated_at,
+                )
+            )
+
+        total = len(items)
+        start = (page - 1) * page_size
+        end = start + page_size
+        paged_items = items[start:end]
+
+        return KnowledgeListResponse(
+            items=paged_items,
+            total=total,
+            page=page,
+            page_size=page_size,
+        )
+
+    # -- Knowledge search ----------------------------------------------------
+
+    @protected.get("/knowledge/search", response_model=SearchResponse)
+    async def knowledge_search(
+        q: str = Query(..., min_length=1, description="Search query"),
+        limit: int = Query(default=5, ge=1, le=50, description="Max results"),
+    ) -> SearchResponse:
+        """Semantic search over vault knowledge notes with full-text fallback."""
+        results: list[SearchResultItem] = []
+
+        # Try semantic search via vector store + embedder
+        if state.vector_store is not None and state.embedder is not None and state.embedder.enabled:
+            try:
+                query_embedding = await state.embedder.embed(q)
+                vector_results = await state.vector_store.search(query_embedding, top_k=limit)
+                all_notes = await _scan_vault_md_files()
+                note_map = {rel: content for rel, content in all_notes}
+
+                for path, score in vector_results:
+                    content = note_map.get(path, "")
+                    if not content:
+                        continue
+                    fm = extract_frontmatter(content)
+                    title = extract_title(content) or Path(path).stem
+                    note_tags = [str(t).lower() for t in fm.get("tags", []) or []]
+                    body = content
+                    if content.startswith("---\n"):
+                        try:
+                            end_idx = content.index("\n---\n", 4)
+                            body = content[end_idx + 5 :].strip()
+                        except ValueError:
+                            pass
+                    preview = body[:200].strip()
+                    results.append(
+                        SearchResultItem(
+                            title=title,
+                            path=path,
+                            content_preview=preview,
+                            relevance_score=round(score, 4),
+                            tags=note_tags,
+                        )
+                    )
+                return SearchResponse(results=results)
+            except (RuntimeError, OSError, ValueError):
+                logger.warning("vector_search_failed_fallback", exc_info=True)
+                results = []
+
+        # Full-text fallback
+        all_notes = await _scan_vault_md_files()
+        query_lower = q.lower()
+
+        scored: list[tuple[float, str, str]] = []
+        for rel, content in all_notes:
+            content_lower = content.lower()
+            count = content_lower.count(query_lower)
+            if count > 0:
+                scored.append((count, rel, content))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        scored = scored[:limit]
+
+        for count, rel, content in scored:
+            fm = extract_frontmatter(content)
+            title = extract_title(content) or Path(rel).stem
+            note_tags = [str(t).lower() for t in fm.get("tags", []) or []]
+            body = content
+            if content.startswith("---\n"):
+                try:
+                    end_idx = content.index("\n---\n", 4)
+                    body = content[end_idx + 5 :].strip()
+                except ValueError:
+                    pass
+            preview = body[:200].strip()
+            # Normalize count to 0-1 range (simple heuristic)
+            score = min(count / 10.0, 1.0)
+            results.append(
+                SearchResultItem(
+                    title=title,
+                    path=rel,
+                    content_preview=preview,
+                    relevance_score=round(score, 4),
+                    tags=note_tags,
+                )
+            )
+
+        return SearchResponse(results=results)
+
+    # -- Knowledge write -----------------------------------------------------
+
+    @protected.post(
+        "/knowledge/entries",
+        response_model=CreateEntryResponse,
+        status_code=201,
+    )
+    async def create_knowledge_entry(body: CreateEntryRequest) -> CreateEntryResponse:
+        """Create a new knowledge entry via GardenWriter."""
+        # Build content with wikilinks appended
+        content = body.content
+        if body.links:
+            wikilinks = " ".join(f"[[{link}]]" for link in body.links)
+            content = f"{content}\n\n{wikilinks}"
+
+        note = GardenNote(
+            title=body.title,
+            content=content,
+            note_type="idea",
+            source=body.source,
+            related=list(body.links),
+            tags=list(body.tags),
+            extra_fields=dict(body.metadata),
+        )
+
+        try:
+            written_path = await state.garden_writer.write_garden(note)
+        except Exception as exc:
+            logger.exception("knowledge_entry_write_failed")
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        rel_path = str(written_path)
+        with contextlib.suppress(ValueError, AttributeError):
+            rel_path = str(written_path.relative_to(state.vault.root))
+
+        now = datetime.now(tz=UTC).isoformat()
+        note_id = Path(rel_path).stem
+
+        return CreateEntryResponse(id=note_id, path=rel_path, created_at=now)
+
+    # -- Decision records ----------------------------------------------------
+
+    @protected.post(
+        "/knowledge/decisions",
+        response_model=CreateEntryResponse,
+        status_code=201,
+    )
+    async def create_decision_record(body: CreateDecisionRequest) -> CreateEntryResponse:
+        """Create a structured decision record as an insight note."""
+        # Build structured markdown content from template
+        alt_lines = "\n".join(f"- {alt}" for alt in body.alternatives)
+        content_parts = [
+            "## Decision\n",
+            body.decision,
+            "\n\n## Reasoning\n",
+            body.reasoning,
+            "\n\n## Alternatives Considered\n",
+            alt_lines if alt_lines else "_None._",
+            "\n\n## Context\n",
+            body.context if body.context else "_No additional context._",
+        ]
+        content = "".join(content_parts)
+
+        note = GardenNote(
+            title=body.title,
+            content=content,
+            note_type="insight",
+            source=body.source,
+            tags=list(body.tags),
+            extra_fields={"decision_record": True},
+        )
+
+        try:
+            written_path = await state.garden_writer.write_garden(note)
+        except Exception as exc:
+            logger.exception("decision_record_write_failed")
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        rel_path = str(written_path)
+        with contextlib.suppress(ValueError, AttributeError):
+            rel_path = str(written_path.relative_to(state.vault.root))
+
+        now = datetime.now(tz=UTC).isoformat()
+        note_id = Path(rel_path).stem
+
+        return CreateEntryResponse(id=note_id, path=rel_path, created_at=now)
 
     # -- Config --------------------------------------------------------------
 
