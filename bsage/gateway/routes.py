@@ -14,7 +14,7 @@ from typing import Any
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from bsage.core.exceptions import VaultPathError
 from bsage.core.patterns import WIKILINK_RE
@@ -54,6 +54,22 @@ class CredentialStoreRequest(BaseModel):
     """Request body for POST /api/entries/{name}/credentials."""
 
     credentials: dict[str, str]
+
+
+class NotifyRequest(BaseModel):
+    """Request body for POST /api/notify."""
+
+    message: str = Field(..., min_length=1)
+    channel: str | None = None
+    metadata: dict[str, Any] = {}
+
+
+class NotifyResponse(BaseModel):
+    """Response for POST /api/notify."""
+
+    sent: bool
+    channel: str | None = None
+    error: str | None = None
 
 
 class SearchResultItem(BaseModel):
@@ -724,6 +740,75 @@ def create_routes(state: AppState) -> APIRouter:
         note_id = Path(rel_path).stem
 
         return CreateEntryResponse(id=note_id, path=rel_path, created_at=now)
+
+    # -- Notification ---------------------------------------------------------
+
+    @protected.post("/notify", response_model=NotifyResponse)
+    async def send_notification(body: NotifyRequest) -> NotifyResponse:
+        """Send a notification through BSage's multi-channel notification system.
+
+        Used by BSNexus and other BSVibe services to send messages without
+        managing channel SDKs directly.
+        """
+        from bsage.core.plugin_loader import PluginMeta
+        from bsage.core.skill_context import SkillContext
+
+        if state.agent_loop is None:
+            raise HTTPException(status_code=503, detail="Gateway not initialized")
+
+        registry = state.agent_loop._registry
+
+        # Find the target plugin(s) with _notify_fn
+        if body.channel is not None:
+            # Route to specific channel
+            meta = registry.get(body.channel)
+            if meta is None:
+                return NotifyResponse(
+                    sent=False,
+                    error=f"Channel '{body.channel}' not found in registry",
+                )
+            if not isinstance(meta, PluginMeta) or meta._notify_fn is None:
+                return NotifyResponse(
+                    sent=False,
+                    error=f"Channel '{body.channel}' has no notify handler",
+                )
+            target_meta = meta
+        else:
+            # Auto-route: pick first plugin with a _notify_fn
+            target_meta = None
+            for meta in registry.values():
+                if isinstance(meta, PluginMeta) and meta._notify_fn is not None:
+                    target_meta = meta
+                    break
+            if target_meta is None:
+                return NotifyResponse(
+                    sent=False,
+                    error="No notification channel available",
+                )
+
+        # Build a minimal context with the message + metadata
+        input_data: dict[str, Any] = {"message": body.message}
+        if body.metadata:
+            input_data["metadata"] = body.metadata
+
+        ctx = SkillContext(
+            garden=state.garden_writer,
+            llm=state.llm_client,
+            config={},
+            logger=structlog.get_logger("notify"),
+            input_data=input_data,
+        )
+
+        try:
+            await state.runner.run_notify(target_meta, ctx)
+            return NotifyResponse(sent=True, channel=target_meta.name)
+        except Exception as exc:
+            logger.exception("notify_send_failed", channel=target_meta.name)
+            return NotifyResponse(
+                sent=False,
+                channel=target_meta.name,
+                error=str(exc),
+            )
 
     # -- Config --------------------------------------------------------------
 
