@@ -7,7 +7,6 @@ import contextlib
 import json
 import os
 import re
-import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -55,25 +54,6 @@ class CredentialStoreRequest(BaseModel):
     """Request body for POST /api/entries/{name}/credentials."""
 
     credentials: dict[str, str]
-
-
-class KnowledgeItem(BaseModel):
-    """A single knowledge item in the SOT response."""
-
-    title: str
-    content: str
-    tags: list[str]
-    links: list[str]
-    updated_at: str
-
-
-class KnowledgeListResponse(BaseModel):
-    """Paginated response for GET /api/knowledge/sot."""
-
-    items: list[KnowledgeItem]
-    total: int
-    page: int
-    page_size: int
 
 
 class SearchResultItem(BaseModel):
@@ -570,155 +550,6 @@ def create_routes(state: AppState) -> APIRouter:
                 tag_map.setdefault(tag, []).append(rel)
 
         return {"tags": tag_map, "truncated": truncated}
-
-    # -- Knowledge provider --------------------------------------------------
-
-    def _derive_knowledge_dirs() -> list[str]:
-        """Derive knowledge directories from the ontology entity types."""
-        entity_types = state.ontology.get_entity_types()
-        dirs: list[str] = []
-        for _etype, info in entity_types.items():
-            folder = info.get("folder")
-            if folder:
-                # Strip trailing slash for filesystem scanning
-                dirs.append(folder.rstrip("/"))
-        return dirs
-
-    # Default SOT/SOP note type sets — callers can override via query param
-    _default_sot_note_types = {"fact", "insight"}
-    _default_sop_note_types = {"task"}
-
-    _knowledge_cache: list[tuple[str, str]] | None = None
-    _knowledge_cache_ts: float = 0.0
-    _knowledge_cache_ttl: float = 60.0  # seconds
-
-    async def _scan_knowledge_notes() -> list[tuple[str, str]]:
-        """Scan vault knowledge directories and return (rel_path, content) pairs.
-
-        Results are cached in-memory for ``_knowledge_cache_ttl`` seconds to
-        avoid a full vault walk on every request.
-        """
-        nonlocal _knowledge_cache, _knowledge_cache_ts
-
-        now = time.monotonic()
-        if _knowledge_cache is not None and (now - _knowledge_cache_ts) < _knowledge_cache_ttl:
-            return _knowledge_cache
-
-        vault_root = state.vault.root
-
-        def _walk() -> list[tuple[str, str]]:
-            results: list[tuple[str, str]] = []
-            for d in _derive_knowledge_dirs():
-                base = vault_root / d
-                if not base.is_dir():
-                    continue
-                for md_file in sorted(base.rglob("*.md")):
-                    rel = str(md_file.relative_to(vault_root))
-                    try:
-                        content = md_file.read_text(encoding="utf-8")
-                    except OSError:
-                        continue
-                    results.append((rel, content))
-            return results
-
-        notes = await asyncio.to_thread(_walk)
-        _knowledge_cache = notes
-        _knowledge_cache_ts = now
-        return notes
-
-    @protected.get("/knowledge/sot", response_model=KnowledgeListResponse)
-    async def knowledge_sot(
-        knowledge_type: str = Query(
-            default="sot",
-            alias="type",
-            description="Knowledge type: sot or sop",
-        ),
-        note_types: str | None = Query(
-            default=None,
-            description="Comma-separated note types to filter (overrides type param)",
-        ),
-        project_id: str | None = Query(
-            default=None,
-            description="Filter by project",
-        ),
-        tags: str | None = Query(
-            default=None,
-            description="Comma-separated tags (OR)",
-        ),
-        page: int = Query(default=1, ge=1, description="Page number"),
-        page_size: int = Query(
-            default=20,
-            ge=1,
-            le=100,
-            description="Items per page",
-        ),
-    ) -> KnowledgeListResponse:
-        """Return paginated knowledge entries (SOT/SOP)."""
-        if note_types:
-            target_types = {t.strip() for t in note_types.split(",") if t.strip()}
-        else:
-            target_types = (
-                _default_sop_note_types if knowledge_type == "sop" else _default_sot_note_types
-            )
-        tag_filter = {t.strip().lower() for t in tags.split(",") if t.strip()} if tags else set()
-
-        all_notes = await _scan_knowledge_notes()
-        items: list[KnowledgeItem] = []
-
-        for rel_path, raw_content in all_notes:
-            fm = extract_frontmatter(raw_content)
-            note_type = fm.get("type", "")
-            if note_type not in target_types:
-                continue
-
-            note_tags = [str(t).lower() for t in fm.get("tags", []) or []]
-            if tag_filter and not tag_filter.intersection(note_tags):
-                continue
-
-            related = fm.get("related", []) or []
-            related_strs = [str(r) for r in related]
-            if project_id and not any(project_id in r for r in related_strs):
-                continue
-
-            title = extract_title(raw_content) or Path(rel_path).stem
-            # Body content after frontmatter
-            body = raw_content
-            if raw_content.startswith("---\n"):
-                try:
-                    end_idx = raw_content.index("\n---\n", 4)
-                    body = raw_content[end_idx + 5 :].strip()
-                except ValueError:
-                    pass
-            # Remove leading "# Title" line from body
-            lines = body.split("\n")
-            if lines and lines[0].startswith("# "):
-                body = "\n".join(lines[1:]).strip()
-
-            # Extract wikilinks from content
-            links = [m.group(1).strip() for m in WIKILINK_RE.finditer(raw_content)]
-            updated_at = str(fm.get("captured_at", ""))
-
-            items.append(
-                KnowledgeItem(
-                    title=title,
-                    content=body,
-                    tags=note_tags,
-                    links=links,
-                    updated_at=updated_at,
-                )
-            )
-
-        total = len(items)
-        start = (page - 1) * page_size
-        end = start + page_size
-        paged_items = items[start:end]
-
-        return KnowledgeListResponse(
-            items=paged_items,
-            total=total,
-            page=page,
-            page_size=page_size,
-        )
 
     # -- Knowledge search ----------------------------------------------------
 
