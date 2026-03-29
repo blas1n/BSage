@@ -52,10 +52,8 @@ class Settings(BaseSettings):
     # Embedding text limit
     max_embed_chars: int = Field(default=8000, gt=0)
 
-    # Authentication (Supabase)
-    supabase_jwt_secret: str = ""
-    supabase_url: str = ""
-    supabase_service_role_key: str = ""
+    # Authentication (BSVibe)
+    bsvibe_auth_url: str = "https://auth.bsvibe.dev"
 
     # Service-to-service API keys (JSON: {"service-name": "key"})
     service_api_keys: dict[str, str] = {}
