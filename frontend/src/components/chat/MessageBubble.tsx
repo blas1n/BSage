@@ -29,15 +29,45 @@ function WikilinkRenderer({
   );
 }
 
-/** Transform [[wikilinks]] in text to markdown-compatible pill spans. */
+/** Render wikilink-pill badges inline via react-markdown components. */
+function WikilinkPill({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="wikilink-pill inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 mx-0.5">
+      {children}
+    </span>
+  );
+}
+
+/**
+ * Transform [[wikilinks]] into markdown code spans with a wikilink: prefix
+ * so they survive markdown parsing. The custom `code` component below
+ * detects the prefix and renders them as pill badges.
+ */
 function transformWikilinks(text: string): string {
   return text.replace(
     /\[\[([^\]]+)\]\]/g,
     (_match, inner: string) => {
       const [target, alias] = inner.split("|");
       const display = (alias || target).trim();
-      return `<span class="wikilink-pill">${display}</span>`;
+      return `\`wikilink:${display}\``;
     },
+  );
+}
+
+/** Custom code component that renders wikilink: prefixed code as pill badges. */
+function CodeRenderer({
+  children,
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLElement>) {
+  const text = typeof children === "string" ? children : String(children ?? "");
+  if (!className && text.startsWith("wikilink:")) {
+    return <WikilinkPill>{text.slice("wikilink:".length)}</WikilinkPill>;
+  }
+  return (
+    <code className={className} {...props}>
+      {children}
+    </code>
   );
 }
 
@@ -70,7 +100,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
               <Markdown
                 remarkPlugins={[remarkGfm]}
                 rehypePlugins={[]}
-                components={{ a: WikilinkRenderer }}
+                components={{ a: WikilinkRenderer, code: CodeRenderer }}
               >
                 {transformedContent}
               </Markdown>

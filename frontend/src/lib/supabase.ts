@@ -11,9 +11,11 @@ export function getAccessToken(): string | null {
   const token = localStorage.getItem(ACCESS_TOKEN_KEY);
   if (!token) return null;
 
-  // Validate JWT expiry
+  // Validate JWT expiry (client-side only — server validates signature)
   try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
+    // JWT uses base64url encoding: replace URL-safe chars before decoding
+    const b64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(b64));
     if (payload.exp && payload.exp * 1000 < Date.now()) {
       clearTokens();
       return null;

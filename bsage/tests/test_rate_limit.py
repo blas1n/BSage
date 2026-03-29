@@ -61,15 +61,42 @@ class TestRateLimiter:
         assert r1 == 4
         assert r2 == 3
 
+    def test_stale_clients_are_evicted(self) -> None:
+        limiter = RateLimiter(requests_per_minute=5)
+        # Inject a stale client with old timestamps
+        state = limiter._clients["stale-ip"]
+        state.timestamps = [time.monotonic() - 120]
+        # Force cleanup by advancing last_cleanup
+        limiter._last_cleanup = time.monotonic() - 120
+        # Next request triggers cleanup
+        limiter.is_allowed("fresh-ip")
+        assert "stale-ip" not in limiter._clients
+        assert "fresh-ip" in limiter._clients
+
+    def test_max_clients_cap(self) -> None:
+        limiter = RateLimiter(requests_per_minute=5, max_clients=3)
+        now = time.monotonic()
+        # Add 5 clients with old-ish timestamps so they look stale
+        for i in range(5):
+            state = limiter._clients[f"ip-{i}"]
+            state.timestamps = [now - 120]
+        # Force cleanup on next call
+        limiter._last_cleanup = now - 120
+        limiter.is_allowed("fresh-ip")
+        # All stale IPs evicted, only fresh-ip remains
+        assert "fresh-ip" in limiter._clients
+        assert len(limiter._clients) <= 3
+
 
 class TestGetClientIp:
     """Unit tests for _get_client_ip helper."""
 
-    def test_uses_x_forwarded_for_header(self) -> None:
+    def test_uses_rightmost_x_forwarded_for(self) -> None:
         request = MagicMock()
         request.headers = {"x-forwarded-for": "10.0.0.1, 172.16.0.1"}
         request.client = MagicMock(host="127.0.0.1")
-        assert _get_client_ip(request) == "10.0.0.1"
+        # Rightmost entry is from the nearest trusted proxy
+        assert _get_client_ip(request) == "172.16.0.1"
 
     def test_falls_back_to_client_host(self) -> None:
         request = MagicMock()

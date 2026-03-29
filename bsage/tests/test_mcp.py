@@ -106,14 +106,10 @@ class TestSearchKnowledge:
         assert data["query"] == "python programming"
         assert len(data["results"]) >= 1
 
-    def test_search_with_vector_store(
-        self, mock_state: MagicMock
-    ) -> None:
+    def test_search_with_vector_store(self, mock_state: MagicMock) -> None:
         mock_state.embedder.enabled = True
         mock_state.vector_store = MagicMock()
-        mock_state.vector_store.search = AsyncMock(
-            return_value=[("garden/idea/test.md", 0.95)]
-        )
+        mock_state.vector_store.search = AsyncMock(return_value=[("garden/idea/test.md", 0.95)])
         mock_state.embedder.embed = AsyncMock(return_value=[0.1, 0.2, 0.3])
 
         app = FastAPI()
@@ -136,9 +132,7 @@ class TestSearchKnowledge:
         )
         assert resp.status_code == 422
 
-    def test_search_vector_fallback_on_error(
-        self, mock_state: MagicMock
-    ) -> None:
+    def test_search_vector_fallback_on_error(self, mock_state: MagicMock) -> None:
         mock_state.embedder.enabled = True
         mock_state.vector_store = MagicMock()
         mock_state.vector_store.search = AsyncMock(side_effect=RuntimeError("embed failed"))
@@ -171,9 +165,7 @@ class TestGetGraphContext:
         assert data["has_results"] is True
         assert "Graph Context" in data["context"]
 
-    def test_returns_no_results_message(
-        self, client: TestClient, mock_state: MagicMock
-    ) -> None:
+    def test_returns_no_results_message(self, client: TestClient, mock_state: MagicMock) -> None:
         mock_state.graph_retriever.retrieve = AsyncMock(return_value="")
         resp = client.post(
             "/api/mcp/get_graph_context",
@@ -195,12 +187,8 @@ class TestGetGraphContext:
         )
         assert resp.status_code == 503
 
-    def test_500_on_graph_error(
-        self, client: TestClient, mock_state: MagicMock
-    ) -> None:
-        mock_state.graph_retriever.retrieve = AsyncMock(
-            side_effect=RuntimeError("db error")
-        )
+    def test_500_on_graph_error(self, client: TestClient, mock_state: MagicMock) -> None:
+        mock_state.graph_retriever.retrieve = AsyncMock(side_effect=RuntimeError("db error"))
         resp = client.post(
             "/api/mcp/get_graph_context",
             json={"topic": "fail"},
@@ -221,9 +209,7 @@ class TestRunSkill:
         assert data["skill_name"] == "test-skill"
         assert data["success"] is True
 
-    def test_404_for_unknown_skill(
-        self, client: TestClient, mock_state: MagicMock
-    ) -> None:
+    def test_404_for_unknown_skill(self, client: TestClient, mock_state: MagicMock) -> None:
         mock_state.agent_loop.get_entry = MagicMock(side_effect=KeyError("nope"))
         resp = client.post(
             "/api/mcp/run_skill",
@@ -231,9 +217,7 @@ class TestRunSkill:
         )
         assert resp.status_code == 404
 
-    def test_403_for_disabled_skill(
-        self, mock_state: MagicMock
-    ) -> None:
+    def test_403_for_disabled_skill(self, mock_state: MagicMock) -> None:
         mock_state.runtime_config.update(disabled_entries=["test-skill"])
         app = FastAPI()
         app.include_router(create_mcp_routes(mock_state))
@@ -244,9 +228,7 @@ class TestRunSkill:
         )
         assert resp.status_code == 403
 
-    def test_503_when_gateway_not_initialized(
-        self, mock_state: MagicMock
-    ) -> None:
+    def test_503_when_gateway_not_initialized(self, mock_state: MagicMock) -> None:
         mock_state.agent_loop = None
         app = FastAPI()
         app.include_router(create_mcp_routes(mock_state))
@@ -260,9 +242,7 @@ class TestRunSkill:
     def test_execution_error_returns_failure(
         self, client: TestClient, mock_state: MagicMock
     ) -> None:
-        mock_state.agent_loop.on_input = AsyncMock(
-            side_effect=RuntimeError("exec failed")
-        )
+        mock_state.agent_loop.on_input = AsyncMock(side_effect=RuntimeError("exec failed"))
         resp = client.post(
             "/api/mcp/run_skill",
             json={"skill_name": "test-skill"},
@@ -270,7 +250,7 @@ class TestRunSkill:
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is False
-        assert "exec failed" in data["results"]
+        assert data["results"] == "Execution failed"
 
 
 class TestListPlugins:

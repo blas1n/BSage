@@ -120,16 +120,10 @@ def create_mcp_routes(state: AppState) -> APIRouter:
         results: list[SearchResult] = []
 
         # Use the existing knowledge search infrastructure from routes.py
-        if (
-            state.vector_store is not None
-            and state.embedder is not None
-            and state.embedder.enabled
-        ):
+        if state.vector_store is not None and state.embedder is not None and state.embedder.enabled:
             try:
                 query_embedding = await state.embedder.embed(body.query)
-                vector_results = await state.vector_store.search(
-                    query_embedding, top_k=body.top_k
-                )
+                vector_results = await state.vector_store.search(query_embedding, top_k=body.top_k)
                 for path, score in vector_results:
                     try:
                         abs_path = state.vault.resolve_path(path)
@@ -180,9 +174,7 @@ def create_mcp_routes(state: AppState) -> APIRouter:
         relationships, and connected notes.
         """
         if state.graph_retriever is None:
-            raise HTTPException(
-                status_code=503, detail="Knowledge graph not available"
-            )
+            raise HTTPException(status_code=503, detail="Knowledge graph not available")
 
         try:
             context = await state.graph_retriever.retrieve(
@@ -196,9 +188,11 @@ def create_mcp_routes(state: AppState) -> APIRouter:
                 context=context if has_results else "No graph context found for this topic.",
                 has_results=has_results,
             )
-        except Exception as exc:
+        except Exception:
             logger.exception("mcp_graph_context_failed", topic=body.topic)
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=500, detail="Internal error retrieving graph context"
+            ) from None
 
     @router.post("/run_skill", response_model=RunSkillResponse)
     async def run_skill(body: RunSkillRequest) -> RunSkillResponse:
@@ -220,19 +214,15 @@ def create_mcp_routes(state: AppState) -> APIRouter:
 
         # Check if disabled
         if body.skill_name in state.runtime_config.disabled_entries:
-            raise HTTPException(
-                status_code=403, detail=f"'{body.skill_name}' is disabled"
-            )
+            raise HTTPException(status_code=403, detail=f"'{body.skill_name}' is disabled")
 
         try:
             results = await state.agent_loop.on_input(body.skill_name, body.params)
-            return RunSkillResponse(
-                skill_name=body.skill_name, results=results, success=True
-            )
-        except Exception as exc:
+            return RunSkillResponse(skill_name=body.skill_name, results=results, success=True)
+        except Exception:
             logger.exception("mcp_run_skill_failed", skill=body.skill_name)
             return RunSkillResponse(
-                skill_name=body.skill_name, results=str(exc), success=False
+                skill_name=body.skill_name, results="Execution failed", success=False
             )
 
     @router.get("/list_plugins", response_model=ListPluginsResponse)
@@ -266,7 +256,7 @@ def _extract_body_preview(content: str, max_len: int = 200) -> str:
     if content.startswith("---\n"):
         try:
             end_idx = content.index("\n---\n", 4)
-            body = content[end_idx + 5:]
+            body = content[end_idx + 5 :]
         except ValueError:
             pass
     return body.strip()[:max_len]
