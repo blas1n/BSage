@@ -7,6 +7,7 @@ import { ApprovalModal } from "./components/approval/ApprovalModal";
 import { ChatView } from "./components/chat/ChatView";
 import { DashboardView } from "./components/dashboard/DashboardView";
 import { EventPanel } from "./components/events/EventPanel";
+import { KnowledgeGraphView } from "./components/graph/KnowledgeGraphView";
 import { Layout } from "./components/layout/Layout";
 import { SettingsView } from "./components/settings/SettingsView";
 import { VaultView } from "./components/vault/VaultView";
@@ -25,6 +26,8 @@ function RouteContent({ hash }: { hash: string }) {
   switch (hash) {
     case "#/dashboard":
       return <DashboardView />;
+    case "#/graph":
+      return <KnowledgeGraphView />;
     case "#/vault":
     case "#/actions":
       return <VaultView />;
