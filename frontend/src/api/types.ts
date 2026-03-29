@@ -8,6 +8,8 @@ export interface EntryMeta {
   has_credentials: boolean;
   credentials_configured: boolean;
   enabled: boolean;
+  trigger?: { type: string; schedule?: string; sources?: string[]; hint?: string } | null;
+  entry_type: "plugin" | "skill";
 }
 
 /** POST /api/chat request body. */

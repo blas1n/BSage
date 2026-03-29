@@ -1,10 +1,11 @@
-import { Brain, FolderOpen, GitBranch, LayoutDashboard, LogOut, MessageSquare, Settings } from "lucide-react";
+import { Brain, FolderOpen, GitBranch, LayoutDashboard, LogOut, MessageSquare, Plug, Settings } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 
 const NAV_ITEMS = [
   { hash: "#/", icon: MessageSquare, label: "Chat" },
   { hash: "#/graph", icon: GitBranch, label: "Graph" },
   { hash: "#/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+  { hash: "#/plugins", icon: Plug, label: "Plugins" },
   { hash: "#/vault", icon: FolderOpen, label: "Vault" },
   { hash: "#/settings", icon: Settings, label: "Settings" },
 ];

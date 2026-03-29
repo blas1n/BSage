@@ -33,6 +33,8 @@ const MOCK_PLUGINS_RESPONSE: EntryMeta[] = [
     has_credentials: true,
     credentials_configured: false,
     enabled: false,
+    trigger: { type: "webhook" },
+    entry_type: "plugin",
   },
   {
     name: "shell-executor",
@@ -43,6 +45,8 @@ const MOCK_PLUGINS_RESPONSE: EntryMeta[] = [
     has_credentials: false,
     credentials_configured: true,
     enabled: true,
+    trigger: { type: "on_demand" },
+    entry_type: "plugin",
   },
 ];
 

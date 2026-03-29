@@ -163,6 +163,8 @@ def _meta_to_dict(
         "has_credentials": has_credentials,
         "credentials_configured": credentials_configured,
         "enabled": enabled,
+        "trigger": meta.trigger,
+        "entry_type": "plugin" if hasattr(meta, "_execute_fn") else "skill",
     }
 
 
