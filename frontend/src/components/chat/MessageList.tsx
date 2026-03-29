@@ -29,7 +29,7 @@ export function MessageList({ messages, isLoading }: MessageListProps) {
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin">
       {messages.map((msg, i) => (
-        <MessageBubble key={i} message={msg} />
+        <MessageBubble key={`${msg.role}-${i}`} message={msg} />
       ))}
       {isLoading && <TypingIndicator />}
       <div ref={bottomRef} />

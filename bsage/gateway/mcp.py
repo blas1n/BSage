@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from bsage.core.plugin_loader import PluginMeta
 from bsage.core.skill_loader import SkillMeta
+from bsage.garden.markdown_utils import extract_frontmatter, extract_title
 from bsage.gateway.dependencies import AppState
 
 logger = structlog.get_logger(__name__)
@@ -130,8 +131,6 @@ def create_mcp_routes(state: AppState) -> APIRouter:
                         content = await state.vault.read_note_content(abs_path)
                     except (FileNotFoundError, OSError):
                         continue
-                    from bsage.garden.markdown_utils import extract_frontmatter, extract_title
-
                     fm = extract_frontmatter(content)
                     title = extract_title(content) or path.rsplit("/", 1)[-1].removesuffix(".md")
                     tags = [str(t).lower() for t in fm.get("tags", []) or []]
@@ -209,12 +208,12 @@ def create_mcp_routes(state: AppState) -> APIRouter:
         except KeyError:
             raise HTTPException(
                 status_code=404,
-                detail=f"'{body.skill_name}' not found in registry",
+                detail="Skill not found in registry",
             ) from None
 
         # Check if disabled
         if body.skill_name in state.runtime_config.disabled_entries:
-            raise HTTPException(status_code=403, detail=f"'{body.skill_name}' is disabled")
+            raise HTTPException(status_code=403, detail="Skill is disabled")
 
         try:
             results = await state.agent_loop.on_input(body.skill_name, body.params)

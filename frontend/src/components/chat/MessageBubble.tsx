@@ -1,8 +1,19 @@
 import Markdown from "react-markdown";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import type { ChatMessage } from "../../api/types";
 import { SourceCitation, extractWikilinks } from "./SourceCitation";
 import { useMemo } from "react";
+
+/** Allow inline code elements (used for wikilink pills) through sanitizer. */
+const sanitizeSchema = {
+  ...defaultSchema,
+  tagNames: [...(defaultSchema.tagNames ?? []), "code"],
+  attributes: {
+    ...defaultSchema.attributes,
+    code: [...(defaultSchema.attributes?.["code"] ?? []), "className"],
+  },
+};
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -32,7 +43,7 @@ function WikilinkRenderer({
 /** Render wikilink-pill badges inline via react-markdown components. */
 function WikilinkPill({ children }: { children: React.ReactNode }) {
   return (
-    <span className="wikilink-pill inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 mx-0.5">
+    <span className="wikilink-pill inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-accent/15 text-accent border border-accent/30 mx-0.5">
       {children}
     </span>
   );
@@ -99,7 +110,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             <div className="prose prose-sm prose-invert max-w-none prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-pre:my-2">
               <Markdown
                 remarkPlugins={[remarkGfm]}
-                rehypePlugins={[]}
+                rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
                 components={{ a: WikilinkRenderer, code: CodeRenderer }}
               >
                 {transformedContent}
