@@ -1,7 +1,7 @@
 """Authentication module for the BSage Gateway.
 
-Provides factory functions that create a SupabaseAuthProvider and a FastAPI
-dependency based on application settings.  When ``supabase_jwt_secret`` is
+Provides factory functions that create a BsvibeAuthProvider and a FastAPI
+dependency based on application settings.  When ``bsvibe_auth_url`` is
 empty the auth layer is disabled and an anonymous stub user is returned.
 
 Service-to-service calls are supported via an ``X-Service-Key`` header.
@@ -15,7 +15,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import structlog
-from bsvibe_auth import AuthError, BSVibeUser, SupabaseAuthProvider
+from bsvibe_auth import AuthError, BsvibeAuthProvider, BSVibeUser
 from bsvibe_auth.fastapi import create_auth_dependency
 from fastapi import HTTPException, Request, status
 
@@ -27,22 +27,18 @@ logger = structlog.get_logger(__name__)
 _SERVICE_KEY_HEADER = "X-Service-Key"
 
 
-def create_auth_provider(settings: Settings) -> SupabaseAuthProvider | None:
-    """Create a SupabaseAuthProvider if credentials are configured.
+def create_auth_provider(settings: Settings) -> BsvibeAuthProvider | None:
+    """Create a BsvibeAuthProvider if auth URL is configured.
 
-    Returns ``None`` when ``supabase_jwt_secret`` is empty, which disables
+    Returns ``None`` when ``bsvibe_auth_url`` is empty, which disables
     authentication entirely (all endpoints are open).
     """
-    if not settings.supabase_jwt_secret:
-        logger.info("auth_disabled", reason="supabase_jwt_secret is empty")
+    if not settings.bsvibe_auth_url:
+        logger.info("auth_disabled", reason="bsvibe_auth_url is empty")
         return None
 
-    provider = SupabaseAuthProvider(
-        jwt_secret=settings.supabase_jwt_secret,
-        supabase_url=settings.supabase_url or None,
-        service_role_key=settings.supabase_service_role_key or None,
-    )
-    logger.info("auth_enabled", supabase_url=settings.supabase_url or "(not set)")
+    provider = BsvibeAuthProvider(auth_url=settings.bsvibe_auth_url)
+    logger.info("auth_enabled", auth_url=settings.bsvibe_auth_url)
     return provider
 
 
@@ -69,7 +65,7 @@ def _resolve_service_key(
 
 
 def create_get_current_user(
-    provider: SupabaseAuthProvider | None,
+    provider: BsvibeAuthProvider | None,
     *,
     service_api_keys: dict[str, str] | None = None,
 ) -> Callable:
