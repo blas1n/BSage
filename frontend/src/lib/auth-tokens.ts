@@ -1,7 +1,6 @@
 /**
  * Simple token store for the redirect-based auth flow.
- * Replaces the Supabase JS client — tokens come from the
- * /auth/callback redirect (URL hash fragment).
+ * Tokens come from the /auth/callback redirect (URL hash fragment).
  */
 
 const ACCESS_TOKEN_KEY = "bsage_access_token";

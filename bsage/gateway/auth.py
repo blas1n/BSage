@@ -95,9 +95,10 @@ def create_get_current_user(
                 try:
                     return await provider.verify_token(token)  # type: ignore[union-attr]
                 except AuthError as exc:
+                    logger.warning("jwt_verification_failed", error=exc.message)
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail=exc.message,
+                        detail="Invalid or expired token",
                         headers={"WWW-Authenticate": "Bearer"},
                     ) from exc
 

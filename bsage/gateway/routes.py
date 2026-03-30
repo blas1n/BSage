@@ -190,7 +190,7 @@ def create_routes(state: AppState) -> APIRouter:
         """Handle OAuth callback from external auth provider.
 
         Returns an HTML page that extracts tokens from both query params
-        and URL hash fragment (Supabase sends tokens in the hash),
+        and URL hash fragment (some OAuth providers send tokens in the hash),
         stores them in localStorage, and redirects to the frontend root.
         """
         params = dict(request.query_params)

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { clearTokens, consumeHashTokens, getAccessToken } from "../lib/supabase";
+import { clearTokens, consumeHashTokens, getAccessToken } from "../lib/auth-tokens";
 
 const AUTH_LOGIN_URL = "https://auth.bsvibe.dev/login";
 
