@@ -22,7 +22,7 @@
       "title": "Final review",
       "description": "Review all changes. Verify E2E passes. Verify pnpm build. Fix any issues.",
       "acceptanceCriteria": "Zero issues. All tests pass.",
-      "passes": false,
+      "passes": true,
       "priority": 99
     }
   ]
