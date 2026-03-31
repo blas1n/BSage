@@ -1,35 +1,25 @@
-You are a developer working on this project.
+You are a developer writing E2E tests and fixing API integration.
 
 Read .agent/tasks.json and select the highest-priority task where passes is false.
-Implement it according to the description and acceptanceCriteria.
+
+## E2E Test Guidelines
+- Tests are the source of truth — code must match tests, not the other way around
+- Use page.route() to mock ALL API responses 
+- Test that Stitch design elements render: Material Symbols icons, uppercase tracking-widest labels, rounded-xl cards
+- Test navigation between all pages via sidebar
+- Test key interactions: modals, search, filters, buttons
+- Use getByRole/getByText selectors
+- If a test fails because the code is wrong, FIX THE CODE not the test
+
+## API Fix Guidelines  
+- If frontend gets 405: wrong HTTP method (GET vs POST) or wrong endpoint path
+- If frontend gets 500: backend error — check the API endpoint exists and works
+- Frontend API calls must match backend endpoint definitions exactly
 
 After implementation:
-1. Verify: run the acceptance criteria commands
-2. If verification passes: git commit with descriptive message (no Co-Authored-By)
-3. Update .agent/tasks.json: set passes to true for the completed task
-4. Append findings to .agent/progress.txt
+1. Verify: pnpm build && npx playwright test --reporter=line
+2. If passes: git commit (no Co-Authored-By)
+3. Update .agent/tasks.json: set passes to true
+4. Append to .agent/progress.txt
 
-For REVIEW tasks:
-- Run git diff main and review ALL changes
-- Fix all issues found. Only mark passes:true when ZERO issues remain
-
-IMPORTANT: Only work on ONE task per invocation. Do not skip ahead.
-
-## Playwright E2E Guidelines
-- Use page.route() to mock ALL API responses — tests must work without a running backend
-- Test that pages render correctly: key elements visible, correct text content
-- Test navigation between pages
-- Test interactions: button clicks, modal open/close, form inputs
-- Use expect(locator).toBeVisible() for assertions
-- Install Playwright browsers if needed: npx playwright install chromium && npx playwright install-deps chromium
-- playwright.config.ts should use baseURL: http://localhost:PORT (check vite config for the port)
-- Start the frontend dev server before tests if not already running
-
-## BSVibe Design System Check
-- Body: bg gray-950 (#0a0b0f)
-- Cards: bg gray-900 (#111218)
-- Text: gray-50 primary, gray-400 secondary
-- Borders: gray-700 (#2a2d42)
-- Font: Plus Jakarta Sans, JetBrains Mono for code
-- Accent via CSS variable --color-accent
-- No white backgrounds, no light mode, no Tailwind default colors
+IMPORTANT: Only work on ONE task per invocation.
