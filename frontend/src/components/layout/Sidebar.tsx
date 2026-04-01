@@ -1,6 +1,4 @@
-import { useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { AccountPanel } from "../common/AccountPanel";
 import { Icon } from "../common/Icon";
 
 const NAV_ITEMS = [
@@ -31,10 +29,9 @@ function extractEmailFromToken(): string | null {
 export function Sidebar({ currentHash }: SidebarProps) {
   const active = currentHash || "#/";
   const { signOut } = useAuth();
-  const [accountOpen, setAccountOpen] = useState(false);
+  const userEmail = extractEmailFromToken();
 
   return (
-    <>
       <aside className="flex flex-col h-screen w-64 bg-surface-dim border-r border-white/5 shrink-0">
         {/* Logo */}
         <div className="flex items-center gap-3 px-6 py-5 mb-2">
@@ -80,14 +77,12 @@ export function Sidebar({ currentHash }: SidebarProps) {
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-white/5 px-2 py-3 space-y-0.5">
-          <button
-            onClick={() => setAccountOpen(true)}
-            className="flex items-center gap-3 px-3 py-2 text-gray-500 hover:bg-white/5 hover:text-accent-light rounded-md transition-all w-full text-xs font-medium"
-          >
-            <Icon name="account_circle" size={20} />
-            <span className="font-sans">Account</span>
-          </button>
+        <div className="border-t border-white/5 px-2 py-3 space-y-1">
+          {userEmail && (
+            <p className="px-3 text-[10px] text-gray-600 truncate" title={userEmail}>
+              {userEmail}
+            </p>
+          )}
           <button
             onClick={() => signOut()}
             className="flex items-center gap-3 px-3 py-2 text-gray-500 hover:bg-white/5 hover:text-red-400 rounded-md transition-all w-full text-xs font-medium"
@@ -97,12 +92,5 @@ export function Sidebar({ currentHash }: SidebarProps) {
           </button>
         </div>
       </aside>
-      <AccountPanel
-        open={accountOpen}
-        onClose={() => setAccountOpen(false)}
-        onSignOut={signOut}
-        userEmail={extractEmailFromToken()}
-      />
-    </>
   );
 }

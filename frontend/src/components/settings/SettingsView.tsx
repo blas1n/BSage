@@ -2,9 +2,12 @@ import { Eye, EyeOff } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../api/client";
 import type { RuntimeConfig } from "../../api/types";
+import { useAuth } from "../../hooks/useAuth";
+import { Icon } from "../common/Icon";
 import { Toggle } from "../common/Toggle";
 
 export function SettingsView() {
+  const { signOut } = useAuth();
   const [config, setConfig] = useState<RuntimeConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -191,6 +194,17 @@ export function SettingsView() {
             <p className="text-sm text-gray-500 font-mono">{config.embedding_model}</p>
           </section>
         )}
+
+        <section className="border-t border-white/5 pt-6">
+          <h3 className="text-sm font-medium text-gray-300 mb-3">Account</h3>
+          <button
+            onClick={() => signOut()}
+            className="flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+          >
+            <Icon name="logout" size={18} />
+            <span>Sign out</span>
+          </button>
+        </section>
       </div>
     </div>
   );

@@ -209,42 +209,6 @@ test.describe("Help button", () => {
   });
 });
 
-test.describe("Account button", () => {
-  test("clicking Account button opens account panel", async ({ page }) => {
-    await page.goto("/");
-    await page.getByRole("button", { name: "Account" }).click();
-    await expect(page.getByRole("dialog", { name: "Account" })).toBeVisible();
-  });
-
-  test("account panel shows user info", async ({ page }) => {
-    await page.goto("/");
-    await page.getByRole("button", { name: "Account" }).click();
-
-    // The fake JWT has sub: "e2e" — should show that
-    const emailEl = page.locator("[data-testid='account-email']");
-    await expect(emailEl).toBeVisible();
-    await expect(page.getByText("Authenticated via BSvibe")).toBeVisible();
-  });
-
-  test("account panel has sign out button", async ({ page }) => {
-    await page.goto("/");
-    await page.getByRole("button", { name: "Account" }).click();
-
-    // The panel should have a sign-out button
-    const dialog = page.getByRole("dialog", { name: "Account" });
-    await expect(dialog.getByText("Sign out")).toBeVisible();
-  });
-
-  test("account panel can be closed", async ({ page }) => {
-    await page.goto("/");
-    await page.getByRole("button", { name: "Account" }).click();
-    await expect(page.getByRole("dialog", { name: "Account" })).toBeVisible();
-
-    await page.getByRole("button", { name: "Close account" }).click();
-    await expect(page.getByRole("dialog", { name: "Account" })).not.toBeVisible();
-  });
-});
-
 test.describe("Session management", () => {
   test("session list panel is visible", async ({ page }) => {
     await page.goto("/");

@@ -47,9 +47,8 @@ test.describe("Sidebar navigation", () => {
     await expect(page).toHaveURL(/#\/vault/);
   });
 
-  test("shows Account and Sign out in sidebar footer", async ({ page }) => {
+  test("shows Sign out button in sidebar footer", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("button", { name: "Account" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
   });
 });
