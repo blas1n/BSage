@@ -3,12 +3,36 @@ import { Icon } from "../common/Icon";
 import { ChatInput } from "./ChatInput";
 import { MessageList } from "./MessageList";
 import { MiniGraph } from "./MiniGraph";
+import { SessionList } from "./SessionList";
 
 export function ChatView() {
-  const { messages, isLoading, send, clear } = useChat();
+  const {
+    messages,
+    isLoading,
+    send,
+    clear,
+    mode,
+    setMode,
+    sessions,
+    activeSessionId,
+    createSession,
+    switchSession,
+    deleteSession,
+  } = useChat();
 
   return (
     <div className="flex h-full">
+      {/* Session list sidebar */}
+      <div className="w-56 shrink-0 border-r border-white/5 bg-surface-dim hidden md:block">
+        <SessionList
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSelect={switchSession}
+          onDelete={deleteSession}
+          onNewSession={createSession}
+        />
+      </div>
+
       {/* Main chat area */}
       <div className="flex-1 flex flex-col min-w-0">
         <div className="flex items-center justify-between px-6 h-12 border-b border-white/5 shrink-0">
@@ -27,7 +51,7 @@ export function ChatView() {
           )}
         </div>
         <MessageList messages={messages} isLoading={isLoading} />
-        <ChatInput onSend={send} disabled={isLoading} />
+        <ChatInput onSend={send} disabled={isLoading} mode={mode} onModeChange={setMode} />
       </div>
 
       {/* Right sidebar: mini graph */}

@@ -1,12 +1,15 @@
 import { useCallback, useRef, useState, type KeyboardEvent } from "react";
+import type { InputMode } from "../../hooks/useChat";
 import { Icon } from "../common/Icon";
 
 interface ChatInputProps {
   onSend: (message: string) => void;
   disabled: boolean;
+  mode: InputMode;
+  onModeChange: (mode: InputMode) => void;
 }
 
-export function ChatInput({ onSend, disabled }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, mode, onModeChange }: ChatInputProps) {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -38,14 +41,39 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
     }
   };
 
+  const placeholder =
+    mode === "search"
+      ? "Search your vault..."
+      : "Type a message or reference [[Node]]...";
+
   return (
     <div className="w-full max-w-4xl mx-auto px-6 pb-6 shrink-0">
       <div className="glass-panel border border-outline-variant/30 rounded-xl p-2 shadow-2xl">
         {/* Top toolbar */}
         <div className="flex items-center gap-2 px-3 pb-2 mb-2 border-b border-white/5">
           <div className="flex bg-surface-dim p-1 rounded-md border border-outline-variant/10">
-            <button className="px-3 py-1 text-[10px] font-bold tracking-tighter rounded bg-accent text-gray-950">CHAT</button>
-            <button className="px-3 py-1 text-[10px] font-bold tracking-tighter rounded text-gray-400 hover:text-on-surface">SEARCH</button>
+            <button
+              onClick={() => onModeChange("chat")}
+              aria-pressed={mode === "chat"}
+              className={`px-3 py-1 text-[10px] font-bold tracking-tighter rounded ${
+                mode === "chat"
+                  ? "bg-accent text-gray-950"
+                  : "text-gray-400 hover:text-on-surface"
+              }`}
+            >
+              CHAT
+            </button>
+            <button
+              onClick={() => onModeChange("search")}
+              aria-pressed={mode === "search"}
+              className={`px-3 py-1 text-[10px] font-bold tracking-tighter rounded ${
+                mode === "search"
+                  ? "bg-accent text-gray-950"
+                  : "text-gray-400 hover:text-on-surface"
+              }`}
+            >
+              SEARCH
+            </button>
           </div>
           <div className="h-4 w-px bg-white/10 mx-1" />
           <div className="flex gap-2">
@@ -65,7 +93,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
               handleInput();
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Type a message or reference [[Node]]..."
+            placeholder={placeholder}
             disabled={disabled}
             rows={1}
             className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-2 resize-none placeholder:text-gray-400 font-sans leading-relaxed text-on-surface disabled:opacity-50"
@@ -76,7 +104,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
             aria-label="Send"
             className="mb-1 w-9 h-9 flex items-center justify-center bg-accent-light text-gray-950 rounded-lg transition-all hover:scale-105 active:scale-95 shadow-lg shadow-accent-light/20 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <Icon name="arrow_forward" size={20} />
+            <Icon name={mode === "search" ? "search" : "arrow_forward"} size={20} />
           </button>
         </div>
       </div>

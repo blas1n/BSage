@@ -49,7 +49,7 @@ test.describe("Sidebar navigation", () => {
 
   test("shows Account and Sign out in sidebar footer", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("link", { name: "Account" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Account" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
   });
 });

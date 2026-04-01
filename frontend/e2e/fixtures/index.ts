@@ -134,9 +134,12 @@ export const test = base.extend<CustomFixtures>({
       // getAccessToken() parses the JWT payload and checks exp field.
       // header={"alg":"none"}, payload={"sub":"e2e","exp":4102444800} (year 2100)
       const header = btoa(JSON.stringify({ alg: "none" }));
-      const payload = btoa(JSON.stringify({ sub: "e2e", exp: 4102444800 }));
+      const payload = btoa(JSON.stringify({ sub: "e2e", email: "e2e@bsvibe.dev", exp: 4102444800 }));
       const fakeJwt = `${header}.${payload}.fake`;
       await page.addInitScript((token: string) => {
+        // Clear session data for test isolation
+        localStorage.removeItem("bsage_chat_sessions");
+        localStorage.removeItem("bsage_active_session");
         localStorage.setItem("bsage_access_token", token);
       }, fakeJwt);
 
