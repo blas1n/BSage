@@ -15,8 +15,11 @@ class WebSocketManager {
   private _state: ConnectionState = "disconnected";
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelay = 1000;
+  private reconnectAttempts = 0;
+  private static readonly MAX_RECONNECT_ATTEMPTS = 5;
   private url = "";
   private authToken?: string;
+  private wasConnected = false;
 
   get state() {
     return this._state;
@@ -27,6 +30,8 @@ class WebSocketManager {
     this.disconnect();
     this.url = url;
     this.authToken = authToken;
+    this.reconnectAttempts = 0;
+    this.wasConnected = false;
     this._connect();
   }
 
@@ -63,6 +68,8 @@ class WebSocketManager {
 
     this.ws.onopen = () => {
       this.reconnectDelay = 1000;
+      this.reconnectAttempts = 0;
+      this.wasConnected = true;
       if (this.authToken) {
         this.ws?.send(JSON.stringify({ type: "auth", token: this.authToken }));
       }
@@ -80,8 +87,12 @@ class WebSocketManager {
     };
 
     this.ws.onclose = () => {
-      this.setState("reconnecting");
-      this.scheduleReconnect();
+      if (this.wasConnected) {
+        this.setState("reconnecting");
+        this.scheduleReconnect();
+      } else {
+        this.setState("disconnected");
+      }
     };
 
     this.ws.onerror = () => {
@@ -90,6 +101,11 @@ class WebSocketManager {
   }
 
   private scheduleReconnect() {
+    this.reconnectAttempts++;
+    if (this.reconnectAttempts > WebSocketManager.MAX_RECONNECT_ATTEMPTS) {
+      this.setState("disconnected");
+      return;
+    }
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = setTimeout(() => {
       this._connect();

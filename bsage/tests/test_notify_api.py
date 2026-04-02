@@ -241,14 +241,14 @@ class TestNotifyEndpointAuth:
 
     def test_auth_required_401(self, tmp_path):
         """Returns 401 when auth is enabled and no token provided."""
-        from bsvibe_auth import AuthError, BSVibeUser, SupabaseAuthProvider
+        from bsvibe_auth import AuthError, BsvibeAuthProvider, BSVibeUser
 
         from bsage.gateway.auth import create_get_current_user
 
         state = _make_state(tmp_path, registry={})
 
         # Create a real auth provider mock that rejects requests
-        mock_provider = MagicMock(spec=SupabaseAuthProvider)
+        mock_provider = MagicMock(spec=BsvibeAuthProvider)
 
         async def _reject(token: str) -> BSVibeUser:
             raise AuthError("Invalid token")

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { WSEvent } from "../api/types";
 import { type ConnectionState, wsManager } from "../api/websocket";
-import { getAccessToken } from "../lib/supabase";
+import { getAccessToken } from "../lib/auth-tokens";
 
 const MAX_EVENTS = 100;
 

@@ -12,7 +12,7 @@ import type {
   VaultTags,
   VaultTreeEntry,
 } from "./types";
-import { getAccessToken } from "../lib/supabase";
+import { getAccessToken } from "../lib/auth-tokens";
 
 const BASE = "/api";
 

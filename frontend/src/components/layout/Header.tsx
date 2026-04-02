@@ -1,5 +1,7 @@
-import { Shield } from "lucide-react";
+import { useState } from "react";
 import type { ConnectionState } from "../../api/websocket";
+import { HelpModal } from "../common/HelpModal";
+import { Icon } from "../common/Icon";
 import { StatusDot } from "../common/StatusDot";
 
 interface HeaderProps {
@@ -8,18 +10,30 @@ interface HeaderProps {
 }
 
 export function Header({ connectionState, pendingApprovals }: HeaderProps) {
+  const [helpOpen, setHelpOpen] = useState(false);
+
   return (
-    <header className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-      <div />
-      <div className="flex items-center gap-4">
-        {pendingApprovals > 0 && (
-          <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
-            <Shield className="w-4 h-4" />
-            <span className="text-xs font-medium">{pendingApprovals} pending</span>
-          </div>
-        )}
-        <StatusDot state={connectionState} />
-      </div>
-    </header>
+    <>
+      <header className="flex items-center justify-between px-6 h-14 border-b border-white/5 bg-gray-800 shrink-0">
+        <div />
+        <div className="flex items-center gap-4">
+          {pendingApprovals > 0 && (
+            <div className="flex items-center gap-1.5 text-tertiary">
+              <Icon name="shield" size={18} />
+              <span className="text-xs font-medium font-mono">{pendingApprovals} pending</span>
+            </div>
+          )}
+          <button
+            onClick={() => setHelpOpen(true)}
+            aria-label="Help"
+            className="text-gray-400 hover:bg-white/5 p-2 rounded-lg transition-colors active:scale-95"
+          >
+            <Icon name="help" size={20} />
+          </button>
+          <StatusDot state={connectionState} />
+        </div>
+      </header>
+      <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+    </>
   );
 }

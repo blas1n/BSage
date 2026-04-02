@@ -11,7 +11,7 @@ import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 if TYPE_CHECKING:
-    from bsvibe_auth import SupabaseAuthProvider
+    from bsvibe_auth import BsvibeAuthProvider
 
     from bsage.interface.ws_interface import WebSocketApprovalInterface
 
@@ -71,7 +71,7 @@ manager = ConnectionManager()
 
 async def _authenticate_ws(
     websocket: WebSocket,
-    auth_provider: SupabaseAuthProvider,
+    auth_provider: BsvibeAuthProvider,
 ) -> bool:
     """Authenticate a WebSocket connection.
 
@@ -97,7 +97,7 @@ async def _authenticate_ws(
 
 def create_ws_routes(
     approval_interface: WebSocketApprovalInterface | None = None,
-    auth_provider: SupabaseAuthProvider | None = None,
+    auth_provider: BsvibeAuthProvider | None = None,
 ) -> APIRouter:
     """Create WebSocket routes.
 

@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from bsvibe_auth import BSVibeUser, SupabaseAuthProvider
+from bsvibe_auth import BsvibeAuthProvider, BSVibeUser
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -33,8 +33,8 @@ def _build_vault(tmp_path: Path) -> Path:
 
 
 def _make_mock_provider() -> MagicMock:
-    """Mock SupabaseAuthProvider that validates known test tokens."""
-    provider = MagicMock(spec=SupabaseAuthProvider)
+    """Mock BsvibeAuthProvider that validates known test tokens."""
+    provider = MagicMock(spec=BsvibeAuthProvider)
 
     async def _verify(token: str) -> BSVibeUser:
         if token == "valid-jwt-token":

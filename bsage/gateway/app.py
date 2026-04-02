@@ -14,6 +14,8 @@ from fastapi.staticfiles import StaticFiles
 
 from bsage.core.config import Settings
 from bsage.gateway.dependencies import AppState
+from bsage.gateway.mcp import create_mcp_routes
+from bsage.gateway.rate_limit import RateLimiter, RateLimitMiddleware
 from bsage.gateway.routes import create_routes
 from bsage.gateway.ws import create_ws_routes
 
@@ -51,6 +53,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.bsage = state
 
+    # Rate limiting — per-IP sliding window
+    rate_limiter = RateLimiter(requests_per_minute=settings.rate_limit_per_minute)
+    app.add_middleware(RateLimitMiddleware, rate_limiter=rate_limiter)
+
     # CORS — configurable origins (defaults to Vite dev server)
     app.add_middleware(
         CORSMiddleware,
@@ -60,8 +66,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Register API + WebSocket routes
+    # Register API + MCP + WebSocket routes
     app.include_router(create_routes(state))
+    app.include_router(create_mcp_routes(state))
     app.include_router(
         create_ws_routes(
             approval_interface=state.ws_approval_interface,

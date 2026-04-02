@@ -1,66 +1,125 @@
 @import "tailwindcss";
 
-/* Custom scrollbar */
+/* ── BSage Stitch Design System tokens ── */
+@theme {
+  --color-gray-950: #0a0b0f;
+  --color-gray-900: #121317;
+  --color-gray-850: #1a1b20;
+  --color-gray-800: #1f1f24;
+  --color-gray-700: #292a2e;
+  --color-gray-600: #343439;
+  --color-gray-500: #5a5f7d;
+  --color-gray-400: #86948a;
+  --color-gray-300: #bbcabf;
+  --color-gray-100: #e3e2e8;
+  --color-gray-50: #f2f3f7;
+
+  --color-accent: #10b981;
+  --color-accent-light: #4edea3;
+  --color-accent-dark: #006c49;
+
+  --color-secondary: #adc6ff;
+  --color-secondary-container: #0566d9;
+  --color-tertiary: #ffb95f;
+  --color-tertiary-container: #e29100;
+
+  --color-surface: #121317;
+  --color-surface-dim: #0a0b0f;
+  --color-surface-container: #1f1f24;
+  --color-surface-container-low: #1a1b20;
+  --color-surface-container-high: #292a2e;
+  --color-surface-container-highest: #343439;
+
+  --color-outline: #86948a;
+  --color-outline-variant: #3c4a42;
+
+  --color-on-surface: #e3e2e8;
+  --color-on-surface-variant: #bbcabf;
+
+  --color-error: #ffb4ab;
+  --color-error-container: #93000a;
+
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-headline: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+}
+
+:root {
+  --color-accent-rgb: 16 185 129;
+}
+
+/* ── Material Symbols ── */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* ── Custom scrollbar ── */
 .scrollbar-thin::-webkit-scrollbar {
-  width: 6px;
+  width: 4px;
 }
 .scrollbar-thin::-webkit-scrollbar-track {
   background: transparent;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 3px;
+  background: #3c4a42;
+  border-radius: 10px;
 }
-.dark .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #475569;
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: #4edea3;
 }
 
-/* Markdown prose inside chat bubbles */
+/* ── Glass panel effect ── */
+.glass-panel {
+  background: rgba(52, 52, 57, 0.6);
+  backdrop-filter: blur(20px);
+}
+
+/* ── Node glow effects for graph ── */
+.node-glow-primary { filter: drop-shadow(0 0 8px rgba(78, 222, 163, 0.4)); }
+.node-glow-secondary { filter: drop-shadow(0 0 8px rgba(173, 198, 255, 0.4)); }
+.node-glow-tertiary { filter: drop-shadow(0 0 8px rgba(255, 185, 95, 0.4)); }
+
+/* ── Markdown prose inside chat bubbles ── */
 .prose pre {
-  border-radius: 0.5rem;
+  border-radius: 8px;
   overflow-x: auto;
+  background: #1a1b20;
 }
 .prose code:not(pre code) {
-  background: #f1f5f9;
+  background: #292a2e;
+  color: #4edea3;
   padding: 0.1em 0.3em;
-  border-radius: 0.25rem;
+  border-radius: 4px;
   font-size: 0.875em;
-}
-.dark .prose code:not(pre code) {
-  background: #334155;
+  font-family: "JetBrains Mono", monospace;
 }
 
-/* Obsidian-style wikilinks */
+/* ── Obsidian-style wikilinks (emerald) ── */
 .wikilink {
-  color: #7c3aed;
+  color: #4edea3;
   text-decoration: none;
-  border-bottom: 1px dashed #7c3aed;
+  border-bottom: 1px dashed #4edea3;
   cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
 }
 .wikilink:hover {
-  color: #6d28d9;
+  color: #6ffbbe;
   border-bottom-style: solid;
 }
 .wikilink.unresolved {
-  color: #9ca3af;
-  border-bottom-color: #9ca3af;
-}
-.dark .wikilink {
-  color: #a78bfa;
-  border-bottom-color: #a78bfa;
-}
-.dark .wikilink:hover {
-  color: #c4b5fd;
-}
-.dark .wikilink.unresolved {
-  color: #6b7280;
-  border-bottom-color: #6b7280;
+  color: #5a5f7d;
+  border-bottom-color: #5a5f7d;
 }
 
-/* Obsidian-style callouts (used by @thecae/remark-obsidian) */
+/* ── Obsidian-style callouts ── */
 .callout {
   border-left: 4px solid;
-  border-radius: 0.375rem;
+  border-radius: 8px;
   padding: 0.75rem 1rem;
   margin: 1rem 0;
   font-size: 0.875rem;
@@ -83,38 +142,45 @@
 .callout .callout-content {
   margin-top: 0.25rem;
 }
-/* Callout color variants */
-.callout[callout="note"] { border-color: #3b82f6; background: #eff6ff; }
-.callout[callout="info"] { border-color: #3b82f6; background: #eff6ff; }
-.callout[callout="abstract"], .callout[callout="summary"], .callout[callout="tldr"] { border-color: #06b6d4; background: #ecfeff; }
-.callout[callout="tip"], .callout[callout="hint"], .callout[callout="important"] { border-color: #06b6d4; background: #ecfeff; }
-.callout[callout="success"], .callout[callout="check"], .callout[callout="done"] { border-color: #10b981; background: #ecfdf5; }
-.callout[callout="todo"] { border-color: #3b82f6; background: #eff6ff; }
-.callout[callout="question"], .callout[callout="help"], .callout[callout="faq"] { border-color: #f59e0b; background: #fffbeb; }
-.callout[callout="warning"], .callout[callout="caution"], .callout[callout="attention"] { border-color: #f59e0b; background: #fffbeb; }
-.callout[callout="failure"], .callout[callout="fail"], .callout[callout="missing"] { border-color: #ef4444; background: #fef2f2; }
-.callout[callout="danger"], .callout[callout="error"] { border-color: #ef4444; background: #fef2f2; }
-.callout[callout="bug"] { border-color: #ef4444; background: #fef2f2; }
-.callout[callout="example"] { border-color: #8b5cf6; background: #f5f3ff; }
-.callout[callout="quote"], .callout[callout="cite"] { border-color: #6b7280; background: #f9fafb; }
-/* Dark mode callouts */
-.dark .callout[callout="note"], .dark .callout[callout="info"], .dark .callout[callout="todo"] { border-color: #60a5fa; background: #1e3a5f; }
-.dark .callout[callout="abstract"], .dark .callout[callout="summary"], .dark .callout[callout="tldr"],
-.dark .callout[callout="tip"], .dark .callout[callout="hint"], .dark .callout[callout="important"] { border-color: #22d3ee; background: #164e63; }
-.dark .callout[callout="success"], .dark .callout[callout="check"], .dark .callout[callout="done"] { border-color: #34d399; background: #064e3b; }
-.dark .callout[callout="question"], .dark .callout[callout="help"], .dark .callout[callout="faq"],
-.dark .callout[callout="warning"], .dark .callout[callout="caution"], .dark .callout[callout="attention"] { border-color: #fbbf24; background: #451a03; }
-.dark .callout[callout="failure"], .dark .callout[callout="fail"], .dark .callout[callout="missing"],
-.dark .callout[callout="danger"], .dark .callout[callout="error"], .dark .callout[callout="bug"] { border-color: #f87171; background: #450a0a; }
-.dark .callout[callout="example"] { border-color: #a78bfa; background: #2e1065; }
-.dark .callout[callout="quote"], .dark .callout[callout="cite"] { border-color: #9ca3af; background: #1f2937; }
+/* Callout color variants (dark-first) */
+.callout[callout="note"], .callout[callout="info"], .callout[callout="todo"] { border-color: #60a5fa; background: #1e3a5f; }
+.callout[callout="abstract"], .callout[callout="summary"], .callout[callout="tldr"],
+.callout[callout="tip"], .callout[callout="hint"], .callout[callout="important"] { border-color: #22d3ee; background: #164e63; }
+.callout[callout="success"], .callout[callout="check"], .callout[callout="done"] { border-color: #34d399; background: #064e3b; }
+.callout[callout="question"], .callout[callout="help"], .callout[callout="faq"],
+.callout[callout="warning"], .callout[callout="caution"], .callout[callout="attention"] { border-color: #fbbf24; background: #451a03; }
+.callout[callout="failure"], .callout[callout="fail"], .callout[callout="missing"],
+.callout[callout="danger"], .callout[callout="error"], .callout[callout="bug"] { border-color: #f87171; background: #450a0a; }
+.callout[callout="example"] { border-color: #a78bfa; background: #2e1065; }
+.callout[callout="quote"], .callout[callout="cite"] { border-color: #8187a8; background: #1e2033; }
 
-/* Obsidian highlight ==text== */
+/* ── Obsidian highlight ==text== ── */
 .highlight {
-  background: #fef08a;
-  padding: 0.1em 0.2em;
-  border-radius: 0.125rem;
-}
-.dark .highlight {
   background: #854d0e;
+  padding: 0.1em 0.2em;
+  border-radius: 2px;
 }
+
+/* ── Wikilink pill (used in chat) ── */
+.wikilink-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 8px;
+  border-radius: 4px;
+  background: rgba(78, 222, 163, 0.1);
+  color: #4edea3;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border: 1px solid rgba(78, 222, 163, 0.2);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.wikilink-pill:hover {
+  background: rgba(78, 222, 163, 0.2);
+  border-color: rgba(78, 222, 163, 0.3);
+}
+
+/* ── No-scrollbar utility ── */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

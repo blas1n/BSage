@@ -1,190 +1,267 @@
-import { Plug, Sparkles } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "../../api/client";
-import type { EntryMeta } from "../../api/types";
-import { Badge } from "../common/Badge";
-import { Toggle } from "../common/Toggle";
-import { SetupModal } from "./SetupModal";
+import type { EntryMeta, VaultTreeEntry } from "../../api/types";
+import { type ConnectionState, wsManager } from "../../api/websocket";
+import { Icon } from "../common/Icon";
+
+interface DashboardStats {
+  totalNotes: number;
+  activePlugins: number;
+  activeSkills: number;
+  knowledgeEntries: number;
+}
+
+interface PluginStatusSummary {
+  running: number;
+  stopped: number;
+  errors: number;
+}
+
+function countFiles(tree: VaultTreeEntry[]): number {
+  return tree.reduce((sum, entry) => sum + entry.files.length, 0);
+}
+
+function computePluginStatus(plugins: EntryMeta[]): PluginStatusSummary {
+  let running = 0;
+  let stopped = 0;
+  const errors = 0;
+  for (const p of plugins) {
+    if (p.enabled) running++;
+    else stopped++;
+  }
+  return { running, stopped, errors };
+}
 
 export function DashboardView() {
-  const [plugins, setPlugins] = useState<EntryMeta[]>([]);
-  const [skills, setSkills] = useState<EntryMeta[]>([]);
+  const [stats, setStats] = useState<DashboardStats>({
+    totalNotes: 0,
+    activePlugins: 0,
+    activeSkills: 0,
+    knowledgeEntries: 0,
+  });
+  const [pluginStatus, setPluginStatus] = useState<PluginStatusSummary>({
+    running: 0,
+    stopped: 0,
+    errors: 0,
+  });
+  const [recentFiles, setRecentFiles] = useState<string[]>([]);
+  const [wsState, setWsState] = useState<ConnectionState>(wsManager.state);
   const [loading, setLoading] = useState(true);
-  const [runningName, setRunningName] = useState<string | null>(null);
-  const togglingRef = useRef(false);
-  const [setupTarget, setSetupTarget] = useState<string | null>(null);
 
-  const refreshData = useCallback(async () => {
-    const [p, s] = await Promise.all([api.plugins(), api.skills()]);
-    setPlugins(p);
-    setSkills(s);
-  }, []);
-
-  useEffect(() => {
-    refreshData().finally(() => setLoading(false));
-  }, [refreshData]);
-
-  const handleRun = useCallback(async (name: string) => {
-    setRunningName(name);
+  const loadData = useCallback(async () => {
     try {
-      await api.run(name);
+      const [tree, plugins, skills, searchResults] = await Promise.all([
+        api.vaultTree(),
+        api.plugins(),
+        api.skills(),
+        api.vaultSearch("*"),
+      ]);
+
+      const totalNotes = countFiles(tree);
+      const activePlugins = plugins.filter((p) => p.enabled).length;
+      const activeSkills = skills.filter((s) => s.enabled).length;
+      const knowledgeEntries = searchResults.length;
+
+      setStats({ totalNotes, activePlugins, activeSkills, knowledgeEntries });
+      setPluginStatus(computePluginStatus(plugins));
+
+      // Collect all file paths for recent activity
+      const allFiles = tree.flatMap((entry) =>
+        entry.files.map((f) => (entry.path ? `${entry.path}/${f}` : f)),
+      );
+      setRecentFiles(allFiles.slice(0, 8));
     } catch {
       // errors shown via event panel
-    } finally {
-      setRunningName(null);
     }
   }, []);
 
-  const handleToggle = useCallback(
-    async (name: string) => {
-      if (togglingRef.current) return;
-      togglingRef.current = true;
-      try {
-        await api.toggleEntry(name);
-        await refreshData();
-      } catch {
-        // errors shown via event panel
-      } finally {
-        togglingRef.current = false;
-      }
-    },
-    [refreshData],
-  );
+  useEffect(() => {
+    loadData().finally(() => setLoading(false));
+  }, [loadData]);
+
+  useEffect(() => {
+    const unsub = wsManager.onStateChange(setWsState);
+    return unsub;
+  }, []);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-400">Loading...</div>
+      <div className="flex items-center justify-center h-full text-gray-500">
+        Loading...
+      </div>
     );
   }
 
+  const WS_STATE_STYLES: Record<ConnectionState, { dot: string; label: string }> = {
+    connected: { dot: "bg-accent-light", label: "Connected" },
+    disconnected: { dot: "bg-gray-500", label: "Offline" },
+    reconnecting: { dot: "bg-tertiary animate-pulse", label: "Reconnecting" },
+  };
+
+  const wsStyle = WS_STATE_STYLES[wsState];
+
   return (
-    <div className="h-full overflow-y-auto p-6 scrollbar-thin">
-      <h2 className="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-100">Dashboard</h2>
+    <div className="h-full overflow-y-auto scrollbar-thin">
+      <div className="max-w-5xl mx-auto p-8">
+        <h1 className="text-4xl font-extrabold tracking-tight mb-8 text-on-surface font-headline">
+          Dashboard
+        </h1>
 
-      <section className="mb-8">
-        <h3 className="flex items-center gap-2 text-sm font-medium text-gray-500 dark:text-gray-400 mb-3">
-          <Plug className="w-4 h-4" />
-          Plugins ({plugins.length})
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {plugins.map((p) => (
-            <EntryCard
-              key={p.name}
-              entry={p}
-              onRun={handleRun}
-              onToggle={handleToggle}
-              onSetup={setSetupTarget}
-              running={runningName === p.name}
-            />
-          ))}
-        </div>
-      </section>
+        {/* Quick Stats */}
+        <section className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+          <StatCard
+            icon="description"
+            label="Total Notes"
+            value={stats.totalNotes}
+            testId="stat-total-notes"
+          />
+          <StatCard
+            icon="extension"
+            label="Active Plugins"
+            value={stats.activePlugins}
+            testId="stat-active-plugins"
+          />
+          <StatCard
+            icon="auto_awesome"
+            label="Active Skills"
+            value={stats.activeSkills}
+            testId="stat-active-skills"
+          />
+          <StatCard
+            icon="neurology"
+            label="Knowledge Entries"
+            value={stats.knowledgeEntries}
+            testId="stat-knowledge"
+          />
+        </section>
 
-      <section>
-        <h3 className="flex items-center gap-2 text-sm font-medium text-gray-500 dark:text-gray-400 mb-3">
-          <Sparkles className="w-4 h-4" />
-          Skills ({skills.length})
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {skills.map((s) => (
-            <EntryCard
-              key={s.name}
-              entry={s}
-              onRun={handleRun}
-              onToggle={handleToggle}
-              onSetup={setSetupTarget}
-              running={runningName === s.name}
-            />
-          ))}
-        </div>
-      </section>
+        {/* Quick Actions */}
+        <section className="mb-10">
+          <h2 className="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold mb-4">
+            Quick Actions
+          </h2>
+          <div className="flex flex-wrap gap-3">
+            <ActionLink href="#/" icon="chat" label="New Chat Session" />
+            <ActionLink href="#/vault" icon="folder_open" label="Browse Vault" />
+            <ActionLink href="#/graph" icon="hub" label="View Graph" />
+          </div>
+        </section>
 
-      {setupTarget && (
-        <SetupModal
-          entryName={setupTarget}
-          onClose={() => setSetupTarget(null)}
-          onSuccess={() => {
-            setSetupTarget(null);
-            refreshData();
-          }}
-        />
-      )}
+        {/* Recent Activity */}
+        <section className="mb-10">
+          <h2 className="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold mb-4">
+            Recent Activity
+          </h2>
+          <div className="bg-surface-container-low rounded-xl border border-white/5 p-5">
+            {recentFiles.length === 0 ? (
+              <p className="text-sm text-on-surface-variant text-center py-4">
+                No recent vault files
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {recentFiles.map((file) => (
+                  <li key={file} className="flex items-center gap-2 text-sm text-on-surface">
+                    <Icon name="draft" size={16} className="text-on-surface-variant" />
+                    <span className="font-mono text-xs">{file}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
+
+        {/* System Status */}
+        <section>
+          <h2 className="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold mb-4">
+            System Status
+          </h2>
+          <div className="bg-surface-container-low rounded-xl border border-white/5 p-5 space-y-4">
+            {/* WebSocket */}
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-on-surface">WebSocket</span>
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${wsStyle.dot}`} />
+                <span className="text-xs font-mono text-on-surface-variant uppercase">
+                  {wsStyle.label}
+                </span>
+              </div>
+            </div>
+
+            {/* Plugin Status */}
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-on-surface">Plugin Status</span>
+              <div className="flex items-center gap-3 text-xs font-mono text-on-surface-variant">
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-green-400" />
+                  {pluginStatus.running} running
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-gray-500" />
+                  {pluginStatus.stopped} stopped
+                </span>
+                {pluginStatus.errors > 0 && (
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-red-500" />
+                    {pluginStatus.errors} errors
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
     </div>
   );
 }
 
-function EntryCard({
-  entry,
-  onRun,
-  onToggle,
-  onSetup,
-  running,
+function StatCard({
+  icon,
+  label,
+  value,
+  testId,
 }: {
-  entry: EntryMeta;
-  onRun: (name: string) => void;
-  onToggle: (name: string) => void;
-  onSetup: (name: string) => void;
-  running: boolean;
+  icon: string;
+  label: string;
+  value: number;
+  testId: string;
 }) {
-  const needsSetup = entry.has_credentials && !entry.credentials_configured;
-  const disabled = !entry.enabled;
-
   return (
     <div
-      data-testid="plugin-card"
-      className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800/50"
+      data-testid="stat-card"
+      className="bg-surface-container rounded-xl border border-white/5 p-5 flex flex-col gap-3"
     >
-      <div className="flex items-start justify-between mb-2">
-        <div className="min-w-0 flex-1">
-          <h4 className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
-            {entry.name}
-          </h4>
-          <span className="text-xs text-gray-400">v{entry.version}</span>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0 ml-2">
-          {needsSetup && (
-            <span className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 rounded-full px-1.5 py-0.5">
-              needs setup
-            </span>
-          )}
-          {entry.is_dangerous && (
-            <span className="text-[10px] bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 rounded-full px-1.5 py-0.5">
-              dangerous
-            </span>
-          )}
-          <Badge category={entry.category} />
-        </div>
+      <div className="flex items-center gap-2">
+        <Icon name={icon} size={18} className="text-accent-light" />
+        <span className="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">
+          {label}
+        </span>
       </div>
-      <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 line-clamp-2">
-        {entry.description}
-      </p>
-      <div className="flex items-center justify-between">
-        <div>
-          {needsSetup ? (
-            <button
-              onClick={() => onSetup(entry.name)}
-              className="text-xs px-3 py-1.5 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/60 transition-colors"
-            >
-              Setup
-            </button>
-          ) : (
-            <button
-              onClick={() => onRun(entry.name)}
-              disabled={running || disabled}
-              className="text-xs px-3 py-1.5 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors"
-            >
-              {running ? "Running..." : "Run"}
-            </button>
-          )}
-        </div>
-        {!needsSetup && (
-          <Toggle
-            checked={entry.enabled}
-            onChange={() => onToggle(entry.name)}
-            label={`Toggle ${entry.name}`}
-          />
-        )}
-      </div>
+      <span
+        data-testid={testId}
+        className="text-3xl font-extrabold text-on-surface tabular-nums"
+      >
+        {value}
+      </span>
     </div>
+  );
+}
+
+function ActionLink({
+  href,
+  icon,
+  label,
+}: {
+  href: string;
+  icon: string;
+  label: string;
+}) {
+  return (
+    <a
+      href={href}
+      className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-surface-container-low border border-white/5 text-sm font-bold text-on-surface hover:bg-surface-container transition-colors"
+    >
+      <Icon name={icon} size={18} />
+      {label}
+    </a>
   );
 }

@@ -58,39 +58,39 @@ export function SetupModal({ entryName, onClose, onSuccess }: SetupModalProps) {
     .some((f) => !values[f.name]?.trim());
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/40">
-              <KeyRound className="w-5 h-5 text-green-600 dark:text-green-400" />
+            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-accent/15">
+              <KeyRound className="w-5 h-5 text-accent" />
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Setup Credentials</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{entryName}</p>
+              <h3 className="font-semibold text-gray-100">Setup Credentials</h3>
+              <p className="text-sm text-gray-500">{entryName}</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            className="text-gray-600 hover:text-gray-300"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {loading && (
-          <p className="text-sm text-gray-400 py-4 text-center">Loading...</p>
+          <p className="text-sm text-gray-600 py-4 text-center">Loading...</p>
         )}
 
         {!loading && fields.length === 0 && (
           <div>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            <p className="text-sm text-gray-500 mb-4">
               This entry has no credential fields to configure.
             </p>
             <div className="flex justify-end">
               <button
                 onClick={onClose}
-                className="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                className="px-4 py-2 text-sm rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800 transition-colors"
               >
                 Close
               </button>
@@ -103,9 +103,9 @@ export function SetupModal({ entryName, onClose, onSuccess }: SetupModalProps) {
             <div className="space-y-3 mb-4">
               {fields.map((field) => (
                 <div key={field.name}>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                  <label className="block text-xs font-medium text-gray-400 mb-1">
                     {field.description || field.name}
-                    {field.required && <span className="text-red-500 ml-0.5">*</span>}
+                    {field.required && <span className="text-red-400 ml-0.5">*</span>}
                   </label>
                   <input
                     type="password"
@@ -115,28 +115,28 @@ export function SetupModal({ entryName, onClose, onSuccess }: SetupModalProps) {
                     }
                     required={field.required}
                     placeholder={field.name}
-                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 px-3 py-2 text-sm outline-none focus:border-green-500"
+                    className="w-full rounded-lg border border-gray-700 bg-gray-850 px-3 py-2 text-sm text-gray-100 outline-none focus:border-accent"
                   />
                 </div>
               ))}
             </div>
 
             {error && (
-              <p className="text-xs text-red-500 mb-3">{error}</p>
+              <p className="text-xs text-red-400 mb-3">{error}</p>
             )}
 
             <div className="flex gap-3 justify-end">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                className="px-4 py-2 text-sm rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800 transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={saving || requiredMissing}
-                className="px-4 py-2 text-sm rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-40 transition-colors"
+                className="px-4 py-2 text-sm rounded-lg bg-accent text-white hover:bg-accent-dark disabled:opacity-40 transition-colors"
               >
                 {saving ? "Saving..." : "Save"}
               </button>

@@ -79,14 +79,14 @@ function TreeIndent({ depth, isLast }: { depth: number; isLast: boolean }) {
   return (
     <span className="inline-flex shrink-0" aria-hidden>
       {Array.from({ length: depth - 1 }, (_, i) => (
-        <span key={i} className="inline-block w-4 border-l border-gray-300 dark:border-gray-600" />
+        <span key={i} className="inline-block w-4 border-l border-gray-700" />
       ))}
       <span
-        className={`inline-block w-4 border-l border-gray-300 dark:border-gray-600 ${
+        className={`inline-block w-4 border-l border-gray-700 ${
           isLast ? "h-1/2 self-start" : ""
         }`}
       />
-      <span className="inline-block w-2 border-b border-gray-300 dark:border-gray-600 self-center" />
+      <span className="inline-block w-2 border-b border-gray-700 self-center" />
     </span>
   );
 }
@@ -138,13 +138,13 @@ function DirNode({
     <div>
       <button
         onClick={toggle}
-        className="flex items-center w-full py-0.5 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 rounded transition-colors"
+        className="flex items-center w-full py-0.5 text-left text-gray-300 hover:bg-gray-800/50 rounded transition-colors"
       >
         <TreeIndent depth={depth} isLast={isLast} />
         {open ? (
-          <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+          <ChevronDown className="w-3.5 h-3.5 text-gray-500 shrink-0" />
         ) : (
-          <ChevronRight className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+          <ChevronRight className="w-3.5 h-3.5 text-gray-500 shrink-0" />
         )}
         <Folder className="w-3.5 h-3.5 text-amber-500 shrink-0" style={{ margin: "0 0.25rem" }} />
         <span className="truncate text-xs font-medium">{name}</span>
@@ -204,8 +204,8 @@ function FileNode({
       onClick={() => onSelect(path)}
       className={`flex items-center w-full py-0.5 text-left rounded transition-colors text-xs ${
         selected
-          ? "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300"
-          : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50"
+          ? "bg-accent/15 text-accent-light"
+          : "text-gray-400 hover:bg-gray-800/50"
       }`}
     >
       <TreeIndent depth={depth} isLast={isLast} />

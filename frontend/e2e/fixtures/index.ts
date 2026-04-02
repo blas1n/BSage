@@ -33,6 +33,8 @@ const MOCK_PLUGINS_RESPONSE: EntryMeta[] = [
     has_credentials: true,
     credentials_configured: false,
     enabled: false,
+    trigger: { type: "webhook" },
+    entry_type: "plugin",
   },
   {
     name: "shell-executor",
@@ -43,10 +45,37 @@ const MOCK_PLUGINS_RESPONSE: EntryMeta[] = [
     has_credentials: false,
     credentials_configured: true,
     enabled: true,
+    trigger: { type: "on_demand" },
+    entry_type: "plugin",
   },
 ];
 
-const MOCK_SKILLS_RESPONSE: unknown[] = [];
+const MOCK_SKILLS_RESPONSE: EntryMeta[] = [
+  {
+    name: "weekly-digest",
+    version: "1.0.0",
+    category: "process",
+    description: "Generate a weekly digest from recent garden notes",
+    is_dangerous: false,
+    has_credentials: false,
+    credentials_configured: true,
+    enabled: true,
+    trigger: { type: "cron", schedule: "0 9 * * MON" },
+    entry_type: "skill",
+  },
+  {
+    name: "insight-linker",
+    version: "1.0.0",
+    category: "process",
+    description: "Link related insights across vault notes",
+    is_dangerous: false,
+    has_credentials: false,
+    credentials_configured: true,
+    enabled: false,
+    trigger: { type: "on_demand" },
+    entry_type: "skill",
+  },
+];
 
 const MOCK_CHAT_RESPONSE = {
   response: "Hello! I am BSage, your AI assistant. How can I help you today?",
@@ -101,10 +130,18 @@ export const test = base.extend<CustomFixtures>({
   // Auto-use fixture: routes are set up for every test automatically
   mockApiResponses: [
     async ({ page }, use) => {
-      // Inject a fake auth token so the app skips the login landing page
-      await page.addInitScript(() => {
-        localStorage.setItem("bsage_access_token", "e2e-test-token");
-      });
+      // Inject a fake JWT with far-future expiry so the app skips login.
+      // getAccessToken() parses the JWT payload and checks exp field.
+      // header={"alg":"none"}, payload={"sub":"e2e","exp":4102444800} (year 2100)
+      const header = btoa(JSON.stringify({ alg: "none" }));
+      const payload = btoa(JSON.stringify({ sub: "e2e", email: "e2e@bsvibe.dev", exp: 4102444800 }));
+      const fakeJwt = `${header}.${payload}.fake`;
+      await page.addInitScript((token: string) => {
+        // Clear session data for test isolation
+        localStorage.removeItem("bsage_chat_sessions");
+        localStorage.removeItem("bsage_active_session");
+        localStorage.setItem("bsage_access_token", token);
+      }, fakeJwt);
 
       // Health check
       await page.route("**/api/health", (route) => {
@@ -227,7 +264,17 @@ export const test = base.extend<CustomFixtures>({
         route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify({ nodes: [], links: [], truncated: false }),
+          body: JSON.stringify({
+            nodes: [
+              { id: "garden/index.md", name: "index", group: "garden" },
+              { id: "garden/idea-1.md", name: "idea-1", group: "garden" },
+              { id: "seeds/slack-input/messages.md", name: "messages", group: "seeds" },
+            ],
+            links: [
+              { source: "garden/index.md", target: "garden/idea-1.md" },
+            ],
+            truncated: false,
+          }),
         });
       });
 
@@ -237,6 +284,17 @@ export const test = base.extend<CustomFixtures>({
           status: 200,
           contentType: "application/json",
           body: JSON.stringify([]),
+        });
+      });
+
+      // Toggle entry endpoint
+      await page.route("**/api/entries/*/toggle", (route) => {
+        const url = new URL(route.request().url());
+        const name = url.pathname.split("/api/entries/")[1]?.split("/toggle")[0] || "unknown";
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ name, enabled: true }),
         });
       });
 

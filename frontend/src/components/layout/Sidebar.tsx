@@ -1,55 +1,96 @@
-import { Brain, FolderOpen, LayoutDashboard, LogOut, MessageSquare, Settings } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
+import { Icon } from "../common/Icon";
 
 const NAV_ITEMS = [
-  { hash: "#/", icon: MessageSquare, label: "Chat" },
-  { hash: "#/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-  { hash: "#/vault", icon: FolderOpen, label: "Vault" },
-  { hash: "#/settings", icon: Settings, label: "Settings" },
+  { hash: "#/", icon: "chat_bubble", label: "Current Chat" },
+  { hash: "#/graph", icon: "hub", label: "Knowledge Base" },
+  { hash: "#/vault", icon: "folder_open", label: "Vault Browser" },
+  { hash: "#/plugins", icon: "extension", label: "Plugins" },
+  { hash: "#/settings", icon: "settings", label: "Settings" },
 ];
 
 interface SidebarProps {
   currentHash: string;
 }
 
+/** Parse JWT payload to extract email (best-effort, no crypto verification). */
+function extractEmailFromToken(): string | null {
+  try {
+    const token = localStorage.getItem("bsage_access_token");
+    if (!token) return null;
+    const b64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(b64));
+    return payload.email ?? payload.sub ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function Sidebar({ currentHash }: SidebarProps) {
   const active = currentHash || "#/";
   const { signOut } = useAuth();
+  const userEmail = extractEmailFromToken();
 
   return (
-    <aside className="flex flex-col w-56 bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700">
-      <div className="flex items-center gap-2 px-4 py-4 border-b border-gray-200 dark:border-gray-700">
-        <Brain className="w-6 h-6 text-green-600 dark:text-green-400" />
-        <span className="text-lg font-bold text-gray-800 dark:text-gray-100">BSage</span>
-      </div>
-      <nav className="flex-1 py-2">
-        {NAV_ITEMS.map(({ hash, icon: Icon, label }) => {
-          const isActive = active === hash || (hash !== "#/" && active.startsWith(hash));
-          return (
-            <a
-              key={hash}
-              href={hash}
-              className={`flex items-center gap-3 px-4 py-2.5 mx-2 rounded-lg text-sm transition-colors ${
-                isActive
-                  ? "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300 font-medium"
-                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              {label}
-            </a>
-          );
-        })}
-      </nav>
-      <div className="border-t border-gray-200 dark:border-gray-700 px-4 py-3">
-        <button
-          onClick={() => signOut()}
-          className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-        >
-          <LogOut className="w-3.5 h-3.5" />
-          Sign out
-        </button>
-      </div>
-    </aside>
+      <aside className="flex flex-col h-screen w-64 bg-surface-dim border-r border-white/5 shrink-0">
+        {/* Logo */}
+        <div className="flex items-center gap-3 px-6 py-5 mb-2">
+          <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
+            <Icon name="hub" className="text-gray-950 text-lg" filled />
+          </div>
+          <div>
+            <h1 className="font-headline font-bold text-lg tracking-tighter leading-tight text-on-surface">BSage</h1>
+            <p className="text-[10px] uppercase tracking-widest text-gray-400 font-mono">The Kinetic Archivist</p>
+          </div>
+        </div>
+
+        {/* New Session button */}
+        <div className="px-4 mb-6">
+          <a
+            href="#/"
+            className="w-full py-2.5 px-4 bg-accent-light text-gray-950 font-bold rounded-lg flex items-center justify-center gap-2 hover:opacity-90 transition-all active:scale-95 text-xs"
+          >
+            <Icon name="add" size={16} />
+            <span>New Session</span>
+          </a>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 px-2 space-y-0.5">
+          {NAV_ITEMS.map(({ hash, icon, label }) => {
+            const isActive = active === hash || (hash !== "#/" && active.startsWith(hash));
+            return (
+              <a
+                key={hash}
+                href={hash}
+                className={`flex items-center gap-3 px-3 py-2 rounded-md text-xs font-medium transition-all ${
+                  isActive
+                    ? "bg-accent-light/10 text-accent-light translate-x-0.5"
+                    : "text-gray-500 hover:bg-white/5 hover:text-accent-light"
+                }`}
+              >
+                <Icon name={icon} size={20} />
+                <span className="font-sans">{label}</span>
+              </a>
+            );
+          })}
+        </nav>
+
+        {/* Footer */}
+        <div className="border-t border-white/5 px-2 py-3 space-y-1">
+          {userEmail && (
+            <p className="px-3 text-[10px] text-gray-600 truncate" title={userEmail}>
+              {userEmail}
+            </p>
+          )}
+          <button
+            onClick={() => signOut()}
+            className="flex items-center gap-3 px-3 py-2 text-gray-500 hover:bg-white/5 hover:text-red-400 rounded-md transition-all w-full text-xs font-medium"
+          >
+            <Icon name="logout" size={20} />
+            <span className="font-sans">Sign out</span>
+          </button>
+        </div>
+      </aside>
   );
 }

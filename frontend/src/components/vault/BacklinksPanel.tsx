@@ -13,10 +13,10 @@ export function BacklinksPanel({ backlinks, onNavigate }: BacklinksPanelProps) {
   if (backlinks.length === 0) return null;
 
   return (
-    <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-4">
+    <div className="mt-6 border-t border-gray-800 pt-4">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+        className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-300 transition-colors"
       >
         {open ? (
           <ChevronDown className="w-3.5 h-3.5" />
@@ -32,12 +32,12 @@ export function BacklinksPanel({ backlinks, onNavigate }: BacklinksPanelProps) {
             <li key={bl.path}>
               <button
                 onClick={() => onNavigate(bl.path)}
-                className="w-full text-left text-xs px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors group"
+                className="w-full text-left text-xs px-2 py-1 rounded hover:bg-gray-800/50 transition-colors group"
               >
-                <span className="text-violet-600 dark:text-violet-400 group-hover:underline">
+                <span className="text-accent-light group-hover:underline">
                   {bl.title}
                 </span>
-                <span className="ml-2 text-gray-400 dark:text-gray-500 font-mono text-[10px]">
+                <span className="ml-2 text-gray-600 font-mono text-[10px]">
                   {bl.path}
                 </span>
               </button>

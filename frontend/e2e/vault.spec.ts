@@ -1,66 +1,117 @@
-import { test, expect } from "./fixtures/index";
-import { VaultPage } from "./pages/VaultPage";
+import { test, expect } from "./fixtures";
 
-test.describe("Vault", () => {
-  let vaultPage: VaultPage;
-
+test.describe("Vault Browser view", () => {
   test.beforeEach(async ({ page }) => {
-    vaultPage = new VaultPage(page);
-    await vaultPage.goto();
+    await page.goto("/#/vault");
   });
 
-  test("renders directory tree", async ({}) => {
-    const gardenVisible = await vaultPage.isFileEntryVisible("garden");
-    const seedsVisible = await vaultPage.isFileEntryVisible("seeds");
-
-    expect(gardenVisible).toBeTruthy();
-    expect(seedsVisible).toBeTruthy();
+  test("shows Vault Explorer and Graph View tab switcher", async ({ page }) => {
+    await expect(page.getByRole("button", { name: "Vault Explorer" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Graph View" })).toBeVisible();
   });
 
-  test("click file — displays content", async ({}) => {
-    await vaultPage.clickFileEntry("index.md");
-    await vaultPage.fileContent.waitFor({ timeout: 10000 });
-
-    const content = await vaultPage.getFileContentText();
-    expect(content).toBeTruthy();
-    expect(content).toContain("BSage Vault");
+  test("shows file tree sidebar with search input", async ({ page }) => {
+    const fileTree = page.locator("[data-testid='vault-file-tree']");
+    await expect(fileTree).toBeVisible();
+    await expect(fileTree.getByPlaceholder("Search vault...").first()).toBeVisible();
   });
 
-  test("Raw/Rendered toggle", async ({}) => {
-    await vaultPage.clickFileEntry("index.md");
-    await vaultPage.fileContent.waitFor({ timeout: 10000 });
-
-    // Check initial rendered mode
-    let isRaw = await vaultPage.isRawMode();
-    expect(isRaw).toBeFalsy();
-
-    // Switch to raw — switchToRaw now waits for content update
-    await vaultPage.switchToRaw();
-    isRaw = await vaultPage.isRawMode();
-    expect(isRaw).toBeTruthy();
-
-    // Switch back to rendered
-    await vaultPage.switchToRendered();
-    isRaw = await vaultPage.isRawMode();
-    expect(isRaw).toBeFalsy();
+  test("shows sidebar category buttons — Seeds, Garden, Actions", async ({ page }) => {
+    const fileTree = page.locator("[data-testid='vault-file-tree']");
+    // Category buttons are in .px-2.space-y-1 container
+    const categoryNav = fileTree.locator(".px-2.space-y-1");
+    await expect(categoryNav.getByText("Seeds")).toBeVisible();
+    await expect(categoryNav.getByText("Garden")).toBeVisible();
+    await expect(categoryNav.getByText("Actions")).toBeVisible();
   });
 
-  test("empty vault guidance message", async ({ page }) => {
-    // Mock empty vault response — unroute first to avoid handler collision
-    await page.unroute("**/api/vault/tree");
-    await page.route("**/api/vault/tree", (route) => {
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify([{ path: "", dirs: [], files: [] }]),
-      });
-    });
+  test("shows directory tree with vault folders", async ({ page }) => {
+    const fileTree = page.locator("[data-testid='vault-file-tree']");
+    // Directory tree is in the overflow-y-auto section (font-mono)
+    const dirTree = fileTree.locator(".overflow-y-auto.font-mono");
+    await expect(dirTree.getByText("garden").first()).toBeVisible();
+    await expect(dirTree.getByText("seeds").first()).toBeVisible();
+  });
 
-    // Reload page and wait for it to finish loading
-    await page.reload();
-    await vaultPage.heading.waitFor({ timeout: 10000 });
+  test("shows New Note button at the bottom of file tree", async ({ page }) => {
+    await expect(page.getByRole("button", { name: "New Note" })).toBeVisible();
+  });
 
-    const isEmpty = await vaultPage.isEmptyState();
-    expect(isEmpty).toBeTruthy();
+  test("shows empty state when no file is selected", async ({ page }) => {
+    await expect(page.getByText("Select a file to view its contents")).toBeVisible();
+  });
+
+  test("shows Create Seed FAB button", async ({ page }) => {
+    await expect(page.getByText("Create Seed")).toBeVisible();
+  });
+});
+
+test.describe("Note viewer", () => {
+  test("clicking a file in tree shows note content with breadcrumbs", async ({ page }) => {
+    await page.goto("/#/vault");
+
+    // Click on a file in the directory tree (index.md under garden)
+    await page.getByText("index.md").click();
+
+    // Breadcrumb should show path parts
+    await expect(page.getByText("Vault").first()).toBeVisible();
+
+    // File content area should be visible
+    const contentArea = page.locator("[data-testid='vault-file-content']");
+    await expect(contentArea).toBeVisible();
+  });
+
+  test("note viewer shows title derived from filename", async ({ page }) => {
+    await page.goto("/#/vault");
+    await page.getByText("index.md").click();
+
+    // Title is derived from the filename (index)
+    await expect(page.getByRole("heading", { name: "index" })).toBeVisible();
+  });
+
+  test("shows metadata panel with YAML frontmatter", async ({ page }) => {
+    await page.goto("/#/vault");
+    await page.getByText("index.md").click();
+
+    // Metadata section shows "Metadata (YAML)" label
+    await expect(page.getByText("Metadata (YAML)")).toBeVisible();
+  });
+
+  test("shows raw/rendered toggle button", async ({ page }) => {
+    await page.goto("/#/vault");
+    await page.getByText("index.md").click();
+
+    // Raw button should be visible
+    await expect(page.getByText("Raw")).toBeVisible();
+  });
+
+  test("toggling to raw mode shows raw markdown content", async ({ page }) => {
+    await page.goto("/#/vault");
+    await page.getByText("index.md").click();
+
+    // Click raw toggle
+    await page.getByText("Raw").click();
+
+    // Raw content should show the markdown source
+    const rawContent = page.locator("[data-testid='vault-raw-content']");
+    await expect(rawContent).toBeVisible();
+    await expect(rawContent).toContainText("---");
+  });
+
+  test("shows footer metadata bar with key-value pairs", async ({ page }) => {
+    await page.goto("/#/vault");
+    await page.getByText("index.md").click();
+
+    // Footer shows metadata from frontmatter
+    const footer = page.locator("footer");
+    await expect(footer).toBeVisible();
+    await expect(footer.getByText("type:")).toBeVisible();
+  });
+
+  test("shows Synced status indicator in breadcrumb bar", async ({ page }) => {
+    await page.goto("/#/vault");
+    await page.getByText("index.md").click();
+
+    await expect(page.getByText("Synced")).toBeVisible();
   });
 });

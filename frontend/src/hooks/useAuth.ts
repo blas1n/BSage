@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { clearTokens, consumeHashTokens, getAccessToken } from "../lib/supabase";
+import { clearTokens, consumeHashTokens, getAccessToken } from "../lib/auth-tokens";
 
 const AUTH_LOGIN_URL = "https://auth.bsvibe.dev/login";
 
@@ -33,7 +33,9 @@ export function useAuth(): AuthState {
 
 /** Redirect browser to external auth login page. */
 export function redirectToLogin() {
-  const callbackUrl = `${window.location.origin}/api/auth/callback`;
-  const state = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const callbackUrl = `${window.location.origin}/auth/callback`;
+  const stateBytes = new Uint8Array(16);
+  crypto.getRandomValues(stateBytes);
+  const state = Array.from(stateBytes, (b) => b.toString(16).padStart(2, "0")).join("");
   window.location.href = `${AUTH_LOGIN_URL}?redirect_uri=${encodeURIComponent(callbackUrl)}&state=${encodeURIComponent(state)}`;
 }

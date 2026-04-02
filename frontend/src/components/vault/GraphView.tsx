@@ -9,10 +9,10 @@ interface GraphViewProps {
 }
 
 const GROUP_COLORS: Record<string, string> = {
-  garden: "#22c55e",
+  garden: "#10b981",   // emerald accent
   seeds: "#3b82f6",
   actions: "#f59e0b",
-  root: "#8b5cf6",
+  root: "#a78bfa",
 };
 
 export function GraphView({ onSelectFile, selectedPath }: GraphViewProps) {
@@ -55,7 +55,7 @@ export function GraphView({ onSelectFile, selectedPath }: GraphViewProps) {
     [onSelectFile],
   );
 
-  // react-force-graph-2d mutates data objects in place — deep-clone to avoid stale refs
+  // react-force-graph-2d mutates data objects in place -- deep-clone to avoid stale refs
   const forceData = useMemo(() => {
     if (!graphData) return null;
     return {
@@ -68,9 +68,17 @@ export function GraphView({ onSelectFile, selectedPath }: GraphViewProps) {
     (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const label = node.name || "";
       const fontSize = Math.max(12 / globalScale, 3);
-      const nodeColor = GROUP_COLORS[node.group] || "#8b5cf6";
+      const nodeColor = GROUP_COLORS[node.group] || "#a78bfa";
       const isSelected = node.id === selectedPath;
       const radius = isSelected ? 6 : 4;
+
+      // Glow effect for emerald nodes
+      if (node.group === "garden") {
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, radius + 3, 0, 2 * Math.PI);
+        ctx.fillStyle = "rgba(16, 185, 129, 0.15)";
+        ctx.fill();
+      }
 
       // Node circle
       ctx.beginPath();
@@ -80,16 +88,16 @@ export function GraphView({ onSelectFile, selectedPath }: GraphViewProps) {
 
       // Selection ring
       if (isSelected) {
-        ctx.strokeStyle = "#ffffff";
+        ctx.strokeStyle = "#e4e6ee";
         ctx.lineWidth = 2 / globalScale;
         ctx.stroke();
       }
 
       // Label
-      ctx.font = `${fontSize}px sans-serif`;
+      ctx.font = `${fontSize}px "Plus Jakarta Sans", sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
-      ctx.fillStyle = nodeColor;
+      ctx.fillStyle = "#a8adc6";
       ctx.fillText(label, node.x, node.y + radius + 2);
     },
     [selectedPath],
@@ -99,15 +107,15 @@ export function GraphView({ onSelectFile, selectedPath }: GraphViewProps) {
     !loading && forceData && forceData.nodes.length > 0 && dimensions;
 
   return (
-    <div ref={containerRef} className="w-full h-full absolute inset-0">
+    <div ref={containerRef} className="w-full h-full absolute inset-0 bg-gray-950">
       {loading && (
-        <div className="flex items-center justify-center h-full text-gray-400">
+        <div className="flex items-center justify-center h-full text-gray-600">
           Loading graph...
         </div>
       )}
 
       {!loading && (!forceData || forceData.nodes.length === 0) && (
-        <div className="flex items-center justify-center h-full text-gray-400">
+        <div className="flex items-center justify-center h-full text-gray-600">
           <p className="text-sm">No notes to graph</p>
         </div>
       )}
@@ -119,7 +127,7 @@ export function GraphView({ onSelectFile, selectedPath }: GraphViewProps) {
           height={dimensions.height}
           nodeCanvasObject={nodeCanvasObject}
           onNodeClick={handleNodeClick}
-          linkColor={() => "rgba(156, 163, 175, 0.4)"}
+          linkColor={() => "rgba(42, 45, 66, 0.6)"}
           linkWidth={1.5}
           linkDirectionalParticles={1}
           linkDirectionalParticleWidth={2}
