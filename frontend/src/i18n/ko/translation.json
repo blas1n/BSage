@@ -1,0 +1,54 @@
+{
+  "nav": {
+    "chat": "채팅",
+    "graph": "그래프",
+    "plugins": "플러그인",
+    "vault": "볼트",
+    "dashboard": "대시보드",
+    "settings": "설정",
+    "logout": "로그아웃"
+  },
+  "common": {
+    "save": "저장",
+    "cancel": "취소",
+    "delete": "삭제",
+    "edit": "수정",
+    "create": "생성",
+    "search": "검색",
+    "loading": "로딩 중...",
+    "error": "오류가 발생했습니다",
+    "noData": "데이터가 없습니다",
+    "confirm": "확인",
+    "send": "전송"
+  },
+  "chat": {
+    "title": "채팅",
+    "newSession": "새 세션",
+    "placeholder": "메시지를 입력하세요...",
+    "thinking": "생각 중..."
+  },
+  "graph": {
+    "title": "지식 그래프",
+    "nodes": "노드",
+    "edges": "엣지",
+    "search": "그래프 검색"
+  },
+  "plugins": {
+    "title": "플러그인",
+    "enable": "활성화",
+    "disable": "비활성화",
+    "configure": "설정",
+    "active": "활성",
+    "inactive": "비활성"
+  },
+  "vault": {
+    "title": "볼트",
+    "browse": "탐색",
+    "search": "볼트 검색"
+  },
+  "help": {
+    "button": "도움말",
+    "close": "닫기",
+    "viewDocs": "문서 보기"
+  }
+}
