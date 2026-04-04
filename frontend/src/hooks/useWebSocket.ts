@@ -10,9 +10,10 @@ export function useWebSocket() {
   const [events, setEvents] = useState<WSEvent[]>([]);
 
   useEffect(() => {
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host;
-    const url = `${proto}//${host}/ws`;
+    const envWsUrl = import.meta.env.VITE_WS_URL;
+    const url = envWsUrl
+      ? envWsUrl
+      : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`;
     const token = getAccessToken() ?? undefined;
     wsManager.connect(url, token);
 
