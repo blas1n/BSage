@@ -1,5 +1,5 @@
 import { Brain, Network, Search, Puzzle, Leaf } from "lucide-react";
-import { redirectToLogin } from "../../hooks/useAuth";
+import { useAuth } from "../../hooks/useAuth";
 
 const features = [
   {
@@ -23,6 +23,8 @@ const features = [
 ];
 
 export function LandingPage() {
+  const { login, signup } = useAuth();
+
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-gray-950 px-4 overflow-hidden">
       {/* Emerald gradient glow */}
@@ -76,12 +78,23 @@ export function LandingPage() {
         </div>
 
         {/* Sign In Button */}
-        <button
-          onClick={() => redirectToLogin()}
-          className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white hover:bg-accent-dark focus:outline-none focus:ring-2 focus:ring-accent/50 focus:ring-offset-2 focus:ring-offset-gray-950 transition-colors cursor-pointer"
-        >
-          Sign in with BSVibe
-        </button>
+        <div className="space-y-3">
+          <button
+            onClick={login}
+            className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white hover:bg-accent-dark focus:outline-none focus:ring-2 focus:ring-accent/50 focus:ring-offset-2 focus:ring-offset-gray-950 transition-colors cursor-pointer"
+          >
+            Sign in with BSVibe
+          </button>
+          <p className="text-sm text-gray-500">
+            Don't have an account?{" "}
+            <button
+              onClick={signup}
+              className="text-accent hover:text-accent-light font-medium transition-colors"
+            >
+              Sign up
+            </button>
+          </p>
+        </div>
 
         {/* Footer */}
         <p className="text-xs text-gray-600">

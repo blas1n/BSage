@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { WSEvent } from "../api/types";
 import { type ConnectionState, wsManager } from "../api/websocket";
-import { getAccessToken } from "../lib/auth-tokens";
+import { getToken } from "./useAuth";
 
 const MAX_EVENTS = 100;
 
@@ -14,7 +14,7 @@ export function useWebSocket() {
     const url = envWsUrl
       ? envWsUrl
       : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`;
-    const token = getAccessToken() ?? undefined;
+    const token = getToken() ?? undefined;
     wsManager.connect(url, token);
 
     const unsubState = wsManager.onStateChange(setConnectionState);

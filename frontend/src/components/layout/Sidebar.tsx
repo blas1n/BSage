@@ -13,14 +13,13 @@ interface SidebarProps {
   currentHash: string;
 }
 
-/** Parse JWT payload to extract email (best-effort, no crypto verification). */
-function extractEmailFromToken(): string | null {
+/** Extract email from stored BSVibe user session. */
+function extractEmail(): string | null {
   try {
-    const token = localStorage.getItem("bsage_access_token");
-    if (!token) return null;
-    const b64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-    const payload = JSON.parse(atob(b64));
-    return payload.email ?? payload.sub ?? null;
+    const raw = localStorage.getItem("bsvibe_user");
+    if (!raw) return null;
+    const user = JSON.parse(raw);
+    return user.email ?? null;
   } catch {
     return null;
   }
@@ -29,7 +28,7 @@ function extractEmailFromToken(): string | null {
 export function Sidebar({ currentHash }: SidebarProps) {
   const active = currentHash || "#/";
   const { signOut } = useAuth();
-  const userEmail = extractEmailFromToken();
+  const userEmail = extractEmail();
 
   return (
       <aside className="flex flex-col h-screen w-64 bg-surface-dim border-r border-white/5 shrink-0">

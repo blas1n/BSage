@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
-import { clearTokens, consumeHashTokens, getAccessToken } from "../lib/auth-tokens";
+import { BSVibeAuth } from "../lib/bsvibe-auth";
 
-const AUTH_LOGIN_URL = "https://auth.bsvibe.dev/login";
+const AUTH_URL = "https://auth.bsvibe.dev";
+
+const auth = new BSVibeAuth({
+  authUrl: AUTH_URL,
+  callbackPath: "/auth/callback",
+});
 
 interface AuthState {
   token: string | null;
   loading: boolean;
   signOut: () => void;
+  login: () => void;
+  signup: () => void;
 }
 
 export function useAuth(): AuthState {
@@ -15,27 +22,47 @@ export function useAuth(): AuthState {
 
   useEffect(() => {
     // 1. Check if we just came back from auth callback (tokens in hash)
-    consumeHashTokens();
+    const callbackUser = auth.handleCallback();
+    if (callbackUser) {
+      setToken(callbackUser.accessToken);
+      setLoading(false);
+      return;
+    }
 
-    // 2. Read token from storage
-    setToken(getAccessToken());
-    setLoading(false);
+    // 2. Check local session
+    const localUser = auth.getUser();
+    if (localUser) {
+      setToken(localUser.accessToken);
+      setLoading(false);
+      return;
+    }
+
+    // 3. Silent SSO check
+    auth.checkSession().then((ssoUser) => {
+      if (ssoUser) {
+        setToken(ssoUser.accessToken);
+      }
+      setLoading(false);
+    });
   }, []);
 
   const signOut = useCallback(() => {
-    clearTokens();
     setToken(null);
-    redirectToLogin();
+    auth.logout();
   }, []);
 
-  return { token, loading, signOut };
+  const login = useCallback(() => {
+    auth.redirectToLogin();
+  }, []);
+
+  const signup = useCallback(() => {
+    auth.redirectToSignup();
+  }, []);
+
+  return { token, loading, signOut, login, signup };
 }
 
-/** Redirect browser to external auth login page. */
-export function redirectToLogin() {
-  const callbackUrl = `${window.location.origin}/auth/callback`;
-  const stateBytes = new Uint8Array(16);
-  crypto.getRandomValues(stateBytes);
-  const state = Array.from(stateBytes, (b) => b.toString(16).padStart(2, "0")).join("");
-  window.location.href = `${AUTH_LOGIN_URL}?redirect_uri=${encodeURIComponent(callbackUrl)}&state=${encodeURIComponent(state)}`;
+/** Get current access token for API calls (can be called outside React) */
+export function getToken(): string | null {
+  return auth.getToken();
 }
