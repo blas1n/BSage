@@ -121,14 +121,14 @@ class AppState:
             credential_store=self.credential_store, event_bus=self.event_bus
         )
 
-        # Index reader for vault search
-        self.index_reader = FileIndexReader(vault=self.vault)
-
-        # Knowledge graph
+        # Knowledge graph + ontology (created before index_reader so it can use ontology)
         graph_db_path = settings.vault_path / ".bsage" / "graph.db"
         self.graph_store = GraphStore(graph_db_path)
         ontology_path = settings.vault_path / ".bsage" / "ontology.yaml"
         self.ontology = OntologyRegistry(ontology_path)
+
+        # Index reader for vault search (uses ontology for dynamic categories)
+        self.index_reader = FileIndexReader(vault=self.vault, ontology=self.ontology)
 
         async def _llm_extract_fn(system: str, text: str) -> str:
             return await self.llm_client.chat(

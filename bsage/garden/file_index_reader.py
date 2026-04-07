@@ -14,6 +14,7 @@ from bsage.garden.index_reader import NoteSummary
 from bsage.garden.markdown_utils import extract_frontmatter, extract_title
 
 if TYPE_CHECKING:
+    from bsage.garden.ontology import OntologyRegistry
     from bsage.garden.vault import Vault
 
 logger = structlog.get_logger(__name__)
@@ -98,14 +99,34 @@ class FileIndexReader:
     Obsidian can display these natively.
     """
 
-    def __init__(self, vault: Vault) -> None:
+    def __init__(self, vault: Vault, ontology: OntologyRegistry | None = None) -> None:
         self._vault = vault
+        self._ontology = ontology
         self._entries: dict[str, NoteSummary] = {}  # keyed by note_path
         self._loaded = False
 
     @property
     def _index_dir(self) -> Path:
         return self._vault.root / _INDEX_DIR
+
+    def _resolve_categories(self) -> list[str]:
+        """Build scan categories from ontology (dynamic) with legacy fallbacks."""
+        cats: list[str] = ["seeds"]
+        if self._ontology:
+            for _etype, meta in self._ontology.get_entity_types().items():
+                folder = meta.get("folder", "").rstrip("/")
+                if folder:
+                    cats.append(folder)
+        else:
+            # Fallback: scan vault root for directories that look like gardens
+            for child in sorted(self._vault.root.iterdir()):
+                if child.is_dir() and not child.name.startswith((".", "_")):
+                    name = child.name
+                    if name not in ("seeds", "actions", "tmp", "node_modules"):
+                        cats.append(name)
+        # Legacy garden/ paths for backward compatibility
+        cats.extend(["garden/idea", "garden/insight", "garden/project"])
+        return cats
 
     async def _ensure_loaded(self) -> None:
         """Load all index files from disk into memory on first access.
@@ -124,22 +145,7 @@ class FileIndexReader:
         Reads note files directly rather than parsing index markdown,
         since the table format does not preserve all fields (e.g. path).
         """
-        # v2.2 ontology uses top-level folders (ideas/, insights/, etc.)
-        # alongside legacy garden/ paths. Scan both.
-        categories = [
-            "seeds",
-            "garden/idea",
-            "garden/insight",
-            "garden/project",
-            "ideas",
-            "insights",
-            "projects",
-            "people",
-            "events",
-            "tasks",
-            "facts",
-            "preferences",
-        ]
+        categories = self._resolve_categories()
         for cat in categories:
             try:
                 await self._scan_category(cat)

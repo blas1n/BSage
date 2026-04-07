@@ -669,6 +669,7 @@ def create_routes(state: AppState) -> APIRouter:
             vault=state.vault,
             garden_writer=state.garden_writer,
             graph_store=state.graph_store,
+            ontology=state.ontology,
             stale_days=stale_days,
         )
         report = await linter.lint()

@@ -22,21 +22,11 @@ from bsage.garden.markdown_utils import extract_frontmatter, extract_title
 from bsage.garden.writer import GardenNote
 
 if TYPE_CHECKING:
+    from bsage.garden.ontology import OntologyRegistry
     from bsage.garden.vault import Vault
     from bsage.garden.writer import GardenWriter
 
 logger = structlog.get_logger(__name__)
-
-_GARDEN_DIRS = (
-    "ideas",
-    "insights",
-    "projects",
-    "people",
-    "events",
-    "tasks",
-    "facts",
-    "preferences",
-)
 
 
 @dataclass
@@ -68,12 +58,30 @@ class VaultLinter:
         vault: Vault,
         garden_writer: GardenWriter,
         graph_store: Any | None = None,
+        ontology: OntologyRegistry | None = None,
         stale_days: int = 90,
     ) -> None:
         self._vault = vault
         self._writer = garden_writer
         self._graph_store = graph_store
+        self._ontology = ontology
         self._stale_days = stale_days
+
+    def _resolve_garden_dirs(self) -> list[str]:
+        """Build garden directory list from ontology or vault scan."""
+        if self._ontology:
+            return [
+                meta.get("folder", "").rstrip("/")
+                for meta in self._ontology.get_entity_types().values()
+                if meta.get("folder")
+            ]
+        # Fallback: scan vault root for non-system directories
+        dirs: list[str] = []
+        skip = {"seeds", "actions", "tmp", "node_modules"}
+        for child in sorted(self._vault.root.iterdir()):
+            if child.is_dir() and not child.name.startswith((".", "_")) and child.name not in skip:
+                dirs.append(child.name)
+        return dirs
 
     async def lint(self) -> LintReport:
         """Run all lint checks and write a report note.
@@ -104,8 +112,9 @@ class VaultLinter:
     async def _scan_all_notes(self) -> list[dict[str, Any]]:
         """Scan all garden notes and return parsed metadata."""
         notes: list[dict[str, Any]] = []
+        garden_dirs = self._resolve_garden_dirs()
 
-        for subdir in _GARDEN_DIRS:
+        for subdir in garden_dirs:
             dir_path = self._vault.root / subdir
             if not dir_path.is_dir():
                 continue
