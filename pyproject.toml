@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "bsage"
 version = "0.1.0"
 description = "Personal AI agent that records everything in your 2nd Brain and proactively acts on it"
+license = {text = "BSL-1.1"}
 requires-python = ">=3.11"
 dependencies = [
     "pydantic-settings>=2.0.0",
