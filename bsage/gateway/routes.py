@@ -656,6 +656,37 @@ def create_routes(state: AppState) -> APIRouter:
 
         return SearchResponse(results=results)
 
+    # -- Vault lint ----------------------------------------------------------
+
+    @protected.post("/vault/lint")
+    async def run_vault_lint(
+        stale_days: int = Query(default=90, ge=1, description="Days threshold for stale check"),
+    ) -> dict[str, Any]:
+        """Run a comprehensive vault health check."""
+        from bsage.garden.vault_linter import VaultLinter
+
+        linter = VaultLinter(
+            vault=state.vault,
+            garden_writer=state.garden_writer,
+            graph_store=state.graph_store,
+            stale_days=stale_days,
+        )
+        report = await linter.lint()
+        return {
+            "total_notes_scanned": report.total_notes_scanned,
+            "issues_count": len(report.issues),
+            "issues": [
+                {
+                    "check": i.check,
+                    "severity": i.severity,
+                    "path": i.path,
+                    "description": i.description,
+                }
+                for i in report.issues
+            ],
+            "timestamp": report.timestamp,
+        }
+
     # -- Knowledge catalog ---------------------------------------------------
 
     @protected.get("/knowledge/catalog")
