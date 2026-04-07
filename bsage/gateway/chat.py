@@ -9,6 +9,7 @@ import structlog
 if TYPE_CHECKING:
     from bsage.core.agent_loop import AgentLoop
     from bsage.core.prompt_registry import PromptRegistry
+    from bsage.garden.ingest_compiler import IngestCompiler
     from bsage.garden.retriever import VaultRetriever
     from bsage.garden.writer import GardenWriter
 
@@ -91,6 +92,7 @@ async def handle_chat(
     prompt_registry: PromptRegistry,
     context_paths: list[str] | None = None,
     retriever: VaultRetriever | None = None,
+    ingest_compiler: IngestCompiler | None = None,
 ) -> str:
     """Process a chat request via AgentLoop with skill tool use."""
     paths = context_paths or DEFAULT_CONTEXT_PATHS
@@ -109,5 +111,12 @@ async def handle_chat(
 
     # Full transcript as a seed for downstream ProcessSkills
     await garden_writer.write_seed("chat", {"user": message, "assistant": response})
+
+    # Promote valuable Q&A to garden notes (Karpathy Wiki pattern)
+    if ingest_compiler:
+        await ingest_compiler.compile(
+            seed_content=f"Q: {message}\nA: {response}",
+            seed_source="chat",
+        )
 
     return response

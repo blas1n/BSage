@@ -34,6 +34,7 @@ async def test_chat_calls_handle_chat(bridge_deps) -> None:
         prompt_registry=bridge_deps["prompt_registry"],
         context_paths=None,
         retriever=bridge_deps["retriever"],
+        ingest_compiler=None,
     )
 
 

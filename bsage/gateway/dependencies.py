@@ -261,6 +261,7 @@ class AppState:
             prompt_registry=self.prompt_registry,
             retriever=self.retriever,
             reply_fn=None,
+            ingest_compiler=ingest_compiler,
         )
 
         self.runtime_config.rebuild_enabled(registry, self.credential_store)

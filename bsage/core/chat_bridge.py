@@ -10,6 +10,7 @@ import structlog
 if TYPE_CHECKING:
     from bsage.core.agent_loop import AgentLoop
     from bsage.core.prompt_registry import PromptRegistry
+    from bsage.garden.ingest_compiler import IngestCompiler
     from bsage.garden.retriever import VaultRetriever
     from bsage.garden.writer import GardenWriter
 
@@ -38,12 +39,14 @@ class ChatBridge:
         prompt_registry: PromptRegistry,
         retriever: VaultRetriever | None = None,
         reply_fn: ReplyFn | None = None,
+        ingest_compiler: IngestCompiler | None = None,
     ) -> None:
         self._agent_loop = agent_loop
         self._garden_writer = garden_writer
         self._prompt_registry = prompt_registry
         self._retriever = retriever
         self._reply_fn = reply_fn
+        self._ingest_compiler = ingest_compiler
 
     async def chat(
         self,
@@ -62,6 +65,7 @@ class ChatBridge:
             prompt_registry=self._prompt_registry,
             context_paths=context_paths,
             retriever=self._retriever,
+            ingest_compiler=self._ingest_compiler,
         )
 
         if reply and reply.strip() and self._reply_fn:
