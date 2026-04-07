@@ -656,6 +656,25 @@ def create_routes(state: AppState) -> APIRouter:
 
         return SearchResponse(results=results)
 
+    # -- Knowledge catalog ---------------------------------------------------
+
+    @protected.get("/knowledge/catalog")
+    async def knowledge_catalog() -> dict[str, Any]:
+        """Return the auto-generated vault catalog grouped by note type."""
+        summaries = await state.index_reader.get_all_summaries()
+        by_type: dict[str, list[dict[str, Any]]] = {}
+        for s in summaries:
+            key = s.note_type or "uncategorized"
+            by_type.setdefault(key, []).append(
+                {
+                    "title": s.title,
+                    "path": s.path,
+                    "tags": s.tags,
+                    "captured_at": s.captured_at,
+                }
+            )
+        return {"total": len(summaries), "categories": by_type}
+
     # -- Knowledge write -----------------------------------------------------
 
     @protected.post(

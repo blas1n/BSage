@@ -124,7 +124,22 @@ class FileIndexReader:
         Reads note files directly rather than parsing index markdown,
         since the table format does not preserve all fields (e.g. path).
         """
-        categories = ["seeds", "garden/idea", "garden/insight", "garden/project"]
+        # v2.2 ontology uses top-level folders (ideas/, insights/, etc.)
+        # alongside legacy garden/ paths. Scan both.
+        categories = [
+            "seeds",
+            "garden/idea",
+            "garden/insight",
+            "garden/project",
+            "ideas",
+            "insights",
+            "projects",
+            "people",
+            "events",
+            "tasks",
+            "facts",
+            "preferences",
+        ]
         for cat in categories:
             try:
                 await self._scan_category(cat)
@@ -281,3 +296,37 @@ class FileIndexReader:
         """Parse a note and update the index — called by IndexSubscriber."""
         summary = _note_to_summary(note_path, content)
         await self.update_entry(note_path, summary)
+
+    async def write_catalog(self) -> None:
+        """Generate a human-browsable index.md at the vault root.
+
+        Groups notes by ``note_type`` with wikilinks and tags,
+        inspired by Karpathy Wiki's browsable catalog pattern.
+        """
+        await self._ensure_loaded()
+        summaries = list(self._entries.values())
+
+        # Group by note_type
+        by_type: dict[str, list[NoteSummary]] = {}
+        for s in summaries:
+            key = s.note_type or "uncategorized"
+            by_type.setdefault(key, []).append(s)
+
+        lines = ["# Knowledge Index\n"]
+        lines.append(f"*Auto-generated. {len(summaries)} notes.*\n")
+
+        for type_name in sorted(by_type):
+            group = by_type[type_name]
+            lines.append(f"## {type_name.title()} ({len(group)})\n")
+            for s in sorted(group, key=lambda x: x.captured_at or "0000", reverse=True):
+                tags = " ".join(f"#{t}" for t in s.tags[:3]) if s.tags else ""
+                entry = f"- [[{s.title}]]"
+                if tags:
+                    entry += f" {tags}"
+                lines.append(entry)
+            lines.append("")
+
+        content = "\n".join(lines)
+        catalog_path = self._vault.root / "index.md"
+        await asyncio.to_thread(catalog_path.write_text, content, encoding="utf-8")
+        logger.info("catalog_written", notes=len(summaries))
