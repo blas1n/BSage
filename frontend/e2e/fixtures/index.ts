@@ -278,6 +278,43 @@ export const test = base.extend<CustomFixtures>({
         });
       });
 
+      // Knowledge catalog endpoint (Karpathy Wiki feature)
+      await page.route("**/api/knowledge/catalog", (route) => {
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            total: 3,
+            categories: {
+              idea: [
+                { title: "AI Overview", path: "ideas/ai-overview.md", tags: ["ai"], captured_at: "2026-04-07" },
+              ],
+              insight: [
+                { title: "Neural Networks", path: "insights/neural-networks.md", tags: ["ml", "deep-learning"], captured_at: "2026-04-06" },
+                { title: "Knowledge Graphs", path: "insights/knowledge-graphs.md", tags: ["graph"], captured_at: "2026-04-05" },
+              ],
+            },
+          }),
+        });
+      });
+
+      // Vault lint endpoint (Karpathy Wiki feature)
+      await page.route("**/api/vault/lint**", (route) => {
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            total_notes_scanned: 10,
+            issues_count: 2,
+            issues: [
+              { check: "orphan", severity: "warning", path: "ideas/lonely.md", description: "'Lonely' has no related links (orphan page)" },
+              { check: "stale", severity: "warning", path: "facts/old-fact.md", description: "'Old Fact' captured 120 days ago (threshold: 90 days)" },
+            ],
+            timestamp: "2026-04-07T12:00:00+00:00",
+          }),
+        });
+      });
+
       // Vault search endpoint
       await page.route("**/api/vault/search**", (route) => {
         route.fulfill({
