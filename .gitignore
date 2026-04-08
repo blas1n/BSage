@@ -39,6 +39,16 @@ Thumbs.db
 frontend/node_modules/
 frontend/dist/
 
+# pnpm store (should never be committed)
+.pnpm-store/
+
+# Agent artifacts
+.agent/
+
+# Playwright test artifacts
+test-results/
+playwright-report/
+
 # Internal Docs
 docs/internal
 
