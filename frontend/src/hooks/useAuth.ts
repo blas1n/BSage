@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { BSVibeAuth } from "../lib/bsvibe-auth";
 
-const AUTH_URL = "https://auth.bsvibe.dev";
+const AUTH_URL = import.meta.env.VITE_AUTH_URL || "https://auth.bsvibe.dev";
 
 const auth = new BSVibeAuth({
   authUrl: AUTH_URL,

@@ -3,7 +3,7 @@ import { test, expect } from "./fixtures";
 test.describe("Sidebar navigation", () => {
   test("shows BSage logo with hub icon and subtitle", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "BSage" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "BSage", level: 1 })).toBeVisible();
     await expect(page.getByText("The Kinetic Archivist")).toBeVisible();
   });
 

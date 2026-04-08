@@ -170,42 +170,30 @@ test.describe("Search mode toggle", () => {
   });
 });
 
-test.describe("Help button", () => {
-  test("clicking help button opens help modal", async ({ page }) => {
+test.describe("Help panel", () => {
+  test("clicking help button opens help panel with overlay", async ({ page }) => {
     await page.goto("/");
-    await page.getByRole("button", { name: "Help" }).click();
-    await expect(page.getByRole("dialog", { name: "Help" })).toBeVisible();
-    await expect(page.getByText("Features")).toBeVisible();
-    await expect(page.getByText("Keyboard Shortcuts")).toBeVisible();
+    await page.getByRole("button", { name: "Toggle help panel" }).click();
+    // Overlay backdrop appears when panel is open
+    await expect(page.locator(".bg-black\\/40")).toBeVisible();
+    await expect(page.getByText("도움말")).toBeVisible();
   });
 
-  test("help modal can be closed with close button", async ({ page }) => {
+  test("help panel can be toggled closed", async ({ page }) => {
     await page.goto("/");
-    await page.getByRole("button", { name: "Help" }).click();
-    await expect(page.getByRole("dialog", { name: "Help" })).toBeVisible();
+    const toggleBtn = page.getByRole("button", { name: "Toggle help panel" });
+    await toggleBtn.click();
+    await expect(page.locator(".bg-black\\/40")).toBeVisible();
 
-    await page.getByRole("button", { name: "Close help" }).click();
-    await expect(page.getByRole("dialog", { name: "Help" })).not.toBeVisible();
+    // Click the overlay backdrop to close
+    await page.locator(".bg-black\\/40").click();
+    await expect(page.locator(".bg-black\\/40")).not.toBeAttached();
   });
 
-  test("help modal can be closed with Escape key", async ({ page }) => {
+  test("help panel shows default BSage section", async ({ page }) => {
     await page.goto("/");
-    await page.getByRole("button", { name: "Help" }).click();
-    await expect(page.getByRole("dialog", { name: "Help" })).toBeVisible();
-
-    await page.keyboard.press("Escape");
-    await expect(page.getByRole("dialog", { name: "Help" })).not.toBeVisible();
-  });
-
-  test("help modal shows feature list", async ({ page }) => {
-    await page.goto("/");
-    await page.getByRole("button", { name: "Help" }).click();
-
-    const dialog = page.getByRole("dialog", { name: "Help" });
-    await expect(dialog.getByText("Chat", { exact: true })).toBeVisible();
-    await expect(dialog.getByText("Knowledge Graph", { exact: true })).toBeVisible();
-    await expect(dialog.getByText("Plugins", { exact: true })).toBeVisible();
-    await expect(dialog.getByText("Vault Browser", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Toggle help panel" }).click();
+    await expect(page.getByText("BSage는 온톨로지 기반 지식 관리 AI 비서입니다")).toBeVisible();
   });
 });
 

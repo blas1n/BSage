@@ -130,18 +130,27 @@ export const test = base.extend<CustomFixtures>({
   // Auto-use fixture: routes are set up for every test automatically
   mockApiResponses: [
     async ({ page }, use) => {
-      // Inject a fake JWT with far-future expiry so the app skips login.
-      // getAccessToken() parses the JWT payload and checks exp field.
-      // header={"alg":"none"}, payload={"sub":"e2e","exp":4102444800} (year 2100)
+      // Inject a fake BSVibeUser session so the app skips SSO redirect.
+      // BSVibeAuthClient.checkSession() reads bsvibe_user from localStorage.
       const header = btoa(JSON.stringify({ alg: "none" }));
       const payload = btoa(JSON.stringify({ sub: "e2e", email: "e2e@bsvibe.dev", exp: 4102444800 }));
       const fakeJwt = `${header}.${payload}.fake`;
-      await page.addInitScript((token: string) => {
+      const fakeUser = {
+        id: "e2e-user",
+        email: "e2e@bsvibe.dev",
+        tenantId: "e2e-tenant",
+        role: "admin",
+        accessToken: fakeJwt,
+        refreshToken: "fake-refresh",
+        expiresAt: 4102444800, // year 2100
+      };
+      await page.addInitScript((user: typeof fakeUser) => {
         // Clear session data for test isolation
         localStorage.removeItem("bsage_chat_sessions");
         localStorage.removeItem("bsage_active_session");
-        localStorage.setItem("bsage_access_token", token);
-      }, fakeJwt);
+        // Set the session that BSVibeAuthClient.getUser() reads
+        localStorage.setItem("bsvibe_user", JSON.stringify(user));
+      }, fakeUser);
 
       // Health check
       await page.route("**/api/health", (route) => {
