@@ -8,11 +8,10 @@ import { test as base } from "@playwright/test";
 
 base.describe("LandingPage (unauthenticated)", () => {
   base.beforeEach(async ({ page }) => {
-    // Ensure no session and skip SSO redirect
-    await page.addInitScript(() => {
-      localStorage.removeItem("bsvibe_user");
-      (window as unknown as Record<string, unknown>).__E2E_SKIP_SSO__ = true;
-    });
+    // Return 401 from auth.bsvibe.dev/api/session → unauthenticated
+    await page.route("**/auth.bsvibe.dev/api/session", (route) =>
+      route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: "no session" }) }),
+    );
 
     // Mock API routes so no real backend is needed
     await page.route("**/api/health", (route) =>

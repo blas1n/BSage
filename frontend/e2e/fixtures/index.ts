@@ -126,31 +126,42 @@ Welcome to your personal AI agent's vault.
 `,
 };
 
+// Build a fake JWT for e2e authenticated sessions
+const E2E_JWT_HEADER = btoa(JSON.stringify({ alg: "none" }));
+const E2E_JWT_PAYLOAD = btoa(
+  JSON.stringify({
+    sub: "e2e-user",
+    email: "e2e@bsvibe.dev",
+    exp: 4102444800,
+    app_metadata: { tenant_id: "e2e-tenant", role: "admin" },
+  }),
+);
+const E2E_FAKE_JWT = `${E2E_JWT_HEADER}.${E2E_JWT_PAYLOAD}.fake`;
+
+const MOCK_SESSION_RESPONSE = {
+  access_token: E2E_FAKE_JWT,
+  refresh_token: "fake-refresh",
+  expires_in: 3600,
+};
+
 export const test = base.extend<CustomFixtures>({
   // Auto-use fixture: routes are set up for every test automatically
   mockApiResponses: [
     async ({ page }, use) => {
-      // Inject a fake BSVibeUser session so the app skips SSO redirect.
-      // BSVibeAuthClient.checkSession() reads bsvibe_user from localStorage.
-      const header = btoa(JSON.stringify({ alg: "none" }));
-      const payload = btoa(JSON.stringify({ sub: "e2e", email: "e2e@bsvibe.dev", exp: 4102444800 }));
-      const fakeJwt = `${header}.${payload}.fake`;
-      const fakeUser = {
-        id: "e2e-user",
-        email: "e2e@bsvibe.dev",
-        tenantId: "e2e-tenant",
-        role: "admin",
-        accessToken: fakeJwt,
-        refreshToken: "fake-refresh",
-        expiresAt: 4102444800, // year 2100
-      };
-      await page.addInitScript((user: typeof fakeUser) => {
-        // Clear session data for test isolation
+      // Clear chat session data for test isolation
+      await page.addInitScript(() => {
         localStorage.removeItem("bsage_chat_sessions");
         localStorage.removeItem("bsage_active_session");
-        // Set the session that BSVibeAuthClient.getUser() reads
-        localStorage.setItem("bsvibe_user", JSON.stringify(user));
-      }, fakeUser);
+      });
+
+      // Intercept auth.bsvibe.dev/api/session → return a valid session (authenticated)
+      await page.route("**/auth.bsvibe.dev/api/session", (route) => {
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(MOCK_SESSION_RESPONSE),
+        });
+      });
 
       // Health check
       await page.route("**/api/health", (route) => {
