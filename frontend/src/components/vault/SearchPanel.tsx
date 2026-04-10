@@ -100,7 +100,3 @@ export function SearchPanel({ onSelectFile }: SearchPanelProps) {
   );
 }
 
-export function useSearchActive(): [boolean, (v: boolean) => void] {
-  const [active, setActive] = useState(false);
-  return [active, setActive];
-}

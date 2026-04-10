@@ -134,10 +134,10 @@ export function KnowledgeGraphView() {
     };
   }, [graphData, activeFilters, searchQuery]);
 
-  const handleNodeClick = useCallback(async (node: { id?: string }) => {
+  const handleNodeClick = useCallback(async (node: { id?: string; name?: string; group?: string }) => {
     if (!node.id) return;
     const id = node.id as string;
-    setSelectedNode({ id, name: (node as any).name || id, group: (node as any).group || "root" });
+    setSelectedNode({ id, name: node.name || id, group: node.group || "root" });
     setNoteLoading(true);
     setNoteContent(null);
     try {
@@ -157,21 +157,25 @@ export function KnowledgeGraphView() {
   }, []);
 
   const nodeCanvasObject = useCallback(
-    (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
-      const label = node.name || "";
+    (
+      rawNode: { x?: number; y?: number; id?: string; name?: string; group?: string },
+      ctx: CanvasRenderingContext2D,
+      globalScale: number,
+    ) => {
+      const x = rawNode.x ?? 0;
+      const y = rawNode.y ?? 0;
+      const group = rawNode.group ?? "";
+      const label = rawNode.name || "";
       const fontSize = Math.max(12 / globalScale, 3);
-      const nodeColor = NODE_COLORS[node.group] || "#a78bfa";
-      const isSelected = selectedNode?.id === node.id;
+      const nodeColor = NODE_COLORS[group] || "#a78bfa";
+      const isSelected = selectedNode?.id === rawNode.id;
       const radius = isSelected ? 7 : 4;
 
       // Glow for selected node
       if (isSelected) {
         ctx.beginPath();
-        ctx.arc(node.x, node.y, radius + 10, 0, 2 * Math.PI);
-        const gradient = ctx.createRadialGradient(
-          node.x, node.y, radius,
-          node.x, node.y, radius + 10,
-        );
+        ctx.arc(x, y, radius + 10, 0, 2 * Math.PI);
+        const gradient = ctx.createRadialGradient(x, y, radius, x, y, radius + 10);
         gradient.addColorStop(0, nodeColor + "40");
         gradient.addColorStop(1, nodeColor + "00");
         ctx.fillStyle = gradient;
@@ -179,7 +183,7 @@ export function KnowledgeGraphView() {
 
         // Dashed orbit ring
         ctx.beginPath();
-        ctx.arc(node.x, node.y, radius + 6, 0, 2 * Math.PI);
+        ctx.arc(x, y, radius + 6, 0, 2 * Math.PI);
         ctx.strokeStyle = nodeColor + "60";
         ctx.lineWidth = 1 / globalScale;
         ctx.setLineDash([4 / globalScale, 2 / globalScale]);
@@ -188,16 +192,16 @@ export function KnowledgeGraphView() {
       }
 
       // Subtle glow for garden nodes
-      if (node.group === "garden" && !isSelected) {
+      if (group === "garden" && !isSelected) {
         ctx.beginPath();
-        ctx.arc(node.x, node.y, radius + 3, 0, 2 * Math.PI);
+        ctx.arc(x, y, radius + 3, 0, 2 * Math.PI);
         ctx.fillStyle = "rgba(78, 222, 163, 0.12)";
         ctx.fill();
       }
 
       // Node circle
       ctx.beginPath();
-      ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI);
+      ctx.arc(x, y, radius, 0, 2 * Math.PI);
       ctx.fillStyle = nodeColor;
       ctx.fill();
 
@@ -213,7 +217,7 @@ export function KnowledgeGraphView() {
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
       ctx.fillStyle = isSelected ? "#f2f3f7" : "#86948a";
-      ctx.fillText(label, node.x, node.y + radius + 2);
+      ctx.fillText(label, x, y + radius + 2);
     },
     [selectedNode],
   );
@@ -334,9 +338,9 @@ export function KnowledgeGraphView() {
               linkWidth={1.5}
               linkDirectionalParticles={1}
               linkDirectionalParticleWidth={2}
-              nodePointerAreaPaint={(node: any, color, ctx) => {
+              nodePointerAreaPaint={(node: { x?: number; y?: number }, color, ctx) => {
                 ctx.beginPath();
-                ctx.arc(node.x, node.y, 8, 0, 2 * Math.PI);
+                ctx.arc(node.x ?? 0, node.y ?? 0, 8, 0, 2 * Math.PI);
                 ctx.fillStyle = color;
                 ctx.fill();
               }}

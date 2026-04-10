@@ -72,11 +72,13 @@ export function DashboardView() {
       setRecentFiles(allFiles.slice(0, 8));
     } catch {
       // errors shown via event panel
+    } finally {
+      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadData().finally(() => setLoading(false));
+    void loadData();
   }, [loadData]);
 
   useEffect(() => {

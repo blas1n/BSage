@@ -86,16 +86,16 @@ export function MiniGraph() {
             graphData={forceData}
             width={dimensions.width}
             height={dimensions.height}
-            nodeCanvasObject={(node: any, ctx: CanvasRenderingContext2D) => {
-              const color = GROUP_COLORS[node.group] || "#a78bfa";
+            nodeCanvasObject={(node: { x?: number; y?: number; group?: string }, ctx: CanvasRenderingContext2D) => {
+              const color = GROUP_COLORS[node.group ?? ""] || "#a78bfa";
               ctx.beginPath();
-              ctx.arc(node.x, node.y, 2.5, 0, 2 * Math.PI);
+              ctx.arc(node.x ?? 0, node.y ?? 0, 2.5, 0, 2 * Math.PI);
               ctx.fillStyle = color;
               ctx.fill();
             }}
-            nodePointerAreaPaint={(node: any, color, ctx) => {
+            nodePointerAreaPaint={(node: { x?: number; y?: number }, color, ctx) => {
               ctx.beginPath();
-              ctx.arc(node.x, node.y, 4, 0, 2 * Math.PI);
+              ctx.arc(node.x ?? 0, node.y ?? 0, 4, 0, 2 * Math.PI);
               ctx.fillStyle = color;
               ctx.fill();
             }}

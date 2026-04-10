@@ -2,7 +2,8 @@ import Markdown from "react-markdown";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import type { ChatMessage } from "../../api/types";
-import { SourceCitation, extractWikilinks } from "./SourceCitation";
+import { SourceCitation } from "./SourceCitation";
+import { extractWikilinks } from "./wikilinks";
 import { useMemo } from "react";
 
 /** Allow inline code elements (used for wikilink pills) through sanitizer. */

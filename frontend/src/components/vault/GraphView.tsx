@@ -65,24 +65,31 @@ export function GraphView({ onSelectFile, selectedPath }: GraphViewProps) {
   }, [graphData]);
 
   const nodeCanvasObject = useCallback(
-    (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
-      const label = node.name || "";
+    (
+      rawNode: { x?: number; y?: number; id?: string; name?: string; group?: string },
+      ctx: CanvasRenderingContext2D,
+      globalScale: number,
+    ) => {
+      const x = rawNode.x ?? 0;
+      const y = rawNode.y ?? 0;
+      const group = rawNode.group ?? "";
+      const label = rawNode.name || "";
       const fontSize = Math.max(12 / globalScale, 3);
-      const nodeColor = GROUP_COLORS[node.group] || "#a78bfa";
-      const isSelected = node.id === selectedPath;
+      const nodeColor = GROUP_COLORS[group] || "#a78bfa";
+      const isSelected = rawNode.id === selectedPath;
       const radius = isSelected ? 6 : 4;
 
       // Glow effect for emerald nodes
-      if (node.group === "garden") {
+      if (group === "garden") {
         ctx.beginPath();
-        ctx.arc(node.x, node.y, radius + 3, 0, 2 * Math.PI);
+        ctx.arc(x, y, radius + 3, 0, 2 * Math.PI);
         ctx.fillStyle = "rgba(16, 185, 129, 0.15)";
         ctx.fill();
       }
 
       // Node circle
       ctx.beginPath();
-      ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI);
+      ctx.arc(x, y, radius, 0, 2 * Math.PI);
       ctx.fillStyle = nodeColor;
       ctx.fill();
 
@@ -98,7 +105,7 @@ export function GraphView({ onSelectFile, selectedPath }: GraphViewProps) {
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
       ctx.fillStyle = "#a8adc6";
-      ctx.fillText(label, node.x, node.y + radius + 2);
+      ctx.fillText(label, x, y + radius + 2);
     },
     [selectedPath],
   );
@@ -131,9 +138,9 @@ export function GraphView({ onSelectFile, selectedPath }: GraphViewProps) {
           linkWidth={1.5}
           linkDirectionalParticles={1}
           linkDirectionalParticleWidth={2}
-          nodePointerAreaPaint={(node: any, color, ctx) => {
+          nodePointerAreaPaint={(node: { x?: number; y?: number }, color, ctx) => {
             ctx.beginPath();
-            ctx.arc(node.x, node.y, 8, 0, 2 * Math.PI);
+            ctx.arc(node.x ?? 0, node.y ?? 0, 8, 0, 2 * Math.PI);
             ctx.fillStyle = color;
             ctx.fill();
           }}
