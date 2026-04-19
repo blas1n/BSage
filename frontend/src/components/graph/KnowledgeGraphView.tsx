@@ -147,8 +147,11 @@ export function KnowledgeGraphView() {
   const filteredData = useMemo(() => {
     if (!graphData) return null;
     const query = searchQuery.toLowerCase();
+    const knownGroups = new Set(Object.keys(NODE_LABELS));
     const nodes = graphData.nodes.filter((n) => {
-      if (!activeFilters.has(n.group)) return false;
+      // Unknown groups fall into "root" (Other) bucket
+      const bucket = knownGroups.has(n.group) ? n.group : "root";
+      if (!activeFilters.has(bucket)) return false;
       if (query && !n.name.toLowerCase().includes(query)) return false;
       return true;
     });

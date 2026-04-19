@@ -560,8 +560,19 @@ def create_routes(state: AppState) -> APIRouter:
         else:
             graph = state.graph_store.to_networkx()
         communities = detect_communities(graph, algorithm=algorithm, min_size=min_size)
+        # Remap entity UUIDs → vault file paths so members match /vault/graph node IDs
+        data = communities_to_graph_data(communities)
+        for comm in data:
+            remapped: list[str] = []
+            for mid in comm["members"]:
+                if graph.has_node(mid):
+                    src = graph.nodes[mid].get("source_path")
+                    remapped.append(src or mid)
+                else:
+                    remapped.append(mid)
+            comm["members"] = remapped
         return {
-            "communities": communities_to_graph_data(communities),
+            "communities": data,
             "algorithm": algorithm,
             "total": len(communities),
         }
