@@ -51,14 +51,27 @@ def _slug_from_path(path: str) -> str:
     return stem.replace("-", " ").replace("_", " ").strip()
 
 
-def _extract_wikilink_names(items: list[Any]) -> list[str]:
-    """Extract wikilink target names from a list of strings."""
-    names: list[str] = []
+def _extract_wikilink_names(items: list[Any]) -> list[tuple[str, str]]:
+    """Extract wikilink target names from a list of strings.
+
+    Returns list of (name, confidence) tuples. A trailing ``?`` after
+    the wikilink (e.g. ``[[Alice]]?``) marks the target as AMBIGUOUS.
+    """
+    results: list[tuple[str, str]] = []
     for item in items:
         if isinstance(item, str):
+            # Check for [[name]]? pattern (ambiguous marker)
+            ambiguous = item.rstrip().endswith("?")
             found = WIKILINK_RE.findall(item)
-            names.extend(found if found else [item])
-    return names
+            if found:
+                conf = ConfidenceLevel.AMBIGUOUS if ambiguous else ConfidenceLevel.EXTRACTED
+                results.extend((name, conf) for name in found)
+            else:
+                plain = item.rstrip("? ") if ambiguous else item
+                if plain:
+                    conf = ConfidenceLevel.AMBIGUOUS if ambiguous else ConfidenceLevel.EXTRACTED
+                    results.append((plain, conf))
+    return results
 
 
 class GraphExtractor:
@@ -125,14 +138,22 @@ class GraphExtractor:
             subject_raw = fm.get("subject", "")
             predicate = fm.get("predicate", "")
             object_raw = fm.get("object", "")
-            subject_names = _extract_wikilink_names([subject_raw]) if subject_raw else []
-            object_names = _extract_wikilink_names([object_raw]) if object_raw else []
-            if subject_names and predicate and object_names:
+            subject_pairs = _extract_wikilink_names([subject_raw]) if subject_raw else []
+            object_pairs = _extract_wikilink_names([object_raw]) if object_raw else []
+            if subject_pairs and predicate and object_pairs:
+                subj_name, subj_conf = subject_pairs[0]
+                obj_name, obj_conf = object_pairs[0]
                 subj_entity = GraphEntity(
-                    name=subject_names[0], entity_type="concept", source_path=rel_path
+                    name=subj_name,
+                    entity_type="concept",
+                    source_path=rel_path,
+                    confidence=subj_conf,
                 )
                 obj_entity = GraphEntity(
-                    name=object_names[0], entity_type="concept", source_path=rel_path
+                    name=obj_name,
+                    entity_type="concept",
+                    source_path=rel_path,
+                    confidence=obj_conf,
                 )
                 entities.extend([subj_entity, obj_entity])
                 relationships.append(
@@ -156,14 +177,17 @@ class GraphExtractor:
                         edge_type="strong",
                     )
                 )
-                all_related_names.update(subject_names + object_names)
+                all_related_names.update(n for n, _ in subject_pairs + object_pairs)
             # Supersedes chain
             supersedes_raw = fm.get("supersedes", "")
             if supersedes_raw:
-                sup_names = _extract_wikilink_names([supersedes_raw])
-                for sup_name in sup_names:
+                sup_pairs = _extract_wikilink_names([supersedes_raw])
+                for sup_name, sup_conf in sup_pairs:
                     sup_entity = GraphEntity(
-                        name=sup_name, entity_type="fact", source_path=rel_path
+                        name=sup_name,
+                        entity_type="fact",
+                        source_path=rel_path,
+                        confidence=sup_conf,
                     )
                     entities.append(sup_entity)
                     relationships.append(
@@ -226,11 +250,14 @@ class GraphExtractor:
             # Value must be a list of wikilinks
             if not isinstance(value, list):
                 value = [value]
-            targets = _extract_wikilink_names(value)
-            for target_name in targets:
+            target_pairs = _extract_wikilink_names(value)
+            for target_name, target_conf in target_pairs:
                 all_related_names.add(target_name)
                 target_entity = GraphEntity(
-                    name=target_name, entity_type="concept", source_path=rel_path
+                    name=target_name,
+                    entity_type="concept",
+                    source_path=rel_path,
+                    confidence=target_conf,
                 )
                 entities.append(target_entity)
                 relationships.append(
@@ -241,6 +268,7 @@ class GraphExtractor:
                         source_path=rel_path,
                         weight=self._get_relation_weight(key),
                         edge_type="strong",
+                        confidence=target_conf,
                     )
                 )
 
@@ -248,13 +276,16 @@ class GraphExtractor:
         related = fm.get("related", [])
         if not isinstance(related, list):
             related = []
-        related_names = _extract_wikilink_names(related)
-        for target_name in related_names:
+        related_pairs = _extract_wikilink_names(related)
+        for target_name, target_conf in related_pairs:
             if target_name in all_related_names:
                 continue
             all_related_names.add(target_name)
             target_entity = GraphEntity(
-                name=target_name, entity_type="concept", source_path=rel_path
+                name=target_name,
+                entity_type="concept",
+                source_path=rel_path,
+                confidence=target_conf,
             )
             entities.append(target_entity)
             relationships.append(
@@ -265,6 +296,7 @@ class GraphExtractor:
                     source_path=rel_path,
                     weight=self._get_relation_weight("related_to"),
                     edge_type="strong",
+                    confidence=target_conf,
                 )
             )
 
