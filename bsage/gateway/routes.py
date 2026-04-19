@@ -544,6 +544,28 @@ def create_routes(state: AppState) -> APIRouter:
 
         return {"nodes": nodes, "links": links, "truncated": truncated}
 
+    @protected.get("/vault/communities")
+    async def vault_communities(
+        algorithm: str = Query(default="louvain", description="louvain or label_propagation"),
+        min_size: int = Query(default=2, ge=2, le=100, description="Minimum community size"),
+    ) -> dict[str, Any]:
+        """Detect communities in the knowledge graph and return them."""
+        from bsage.garden.community import (
+            communities_to_graph_data,
+            detect_communities,
+        )
+
+        if hasattr(state.graph_store, "build_networkx_snapshot"):
+            graph = await state.graph_store.build_networkx_snapshot()
+        else:
+            graph = state.graph_store.to_networkx()
+        communities = detect_communities(graph, algorithm=algorithm, min_size=min_size)
+        return {
+            "communities": communities_to_graph_data(communities),
+            "algorithm": algorithm,
+            "total": len(communities),
+        }
+
     @protected.get("/vault/tags")
     async def vault_tags(
         max_files: int = Query(default=500, ge=1, le=2000, description="Max files to scan"),

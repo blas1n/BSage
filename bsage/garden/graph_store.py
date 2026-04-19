@@ -716,13 +716,46 @@ class GraphStore(GraphBackend):
     def to_networkx(self) -> nx.MultiDiGraph:
         """Build a NetworkX MultiDiGraph snapshot from SQLite data.
 
-        This is an on-demand snapshot, not a live view. For live graph
-        analysis, use VaultBackend instead.
+        Note: This loads synchronously from an internal cache built by
+        ``build_networkx_snapshot()``. Call that first if the cache is stale.
         """
-        raise NotImplementedError(
-            "GraphStore.to_networkx() requires async data loading. "
-            "Use VaultBackend for live NetworkX graph access."
-        )
+        if not hasattr(self, "_nx_cache") or self._nx_cache is None:
+            self._nx_cache = nx.MultiDiGraph()
+        return self._nx_cache
+
+    async def build_networkx_snapshot(self) -> nx.MultiDiGraph:
+        """Build a fresh NetworkX snapshot from all SQLite data."""
+        graph = nx.MultiDiGraph()
+        entities = await self._fetchall("SELECT * FROM entities")
+        for row in entities:
+            ent = self._row_to_entity(row)
+            graph.add_node(
+                ent.id,
+                name=ent.name,
+                entity_type=ent.entity_type,
+                source_path=ent.source_path,
+                confidence=ent.confidence,
+                knowledge_layer=ent.knowledge_layer,
+            )
+        rels = await self._fetchall("SELECT * FROM relationships")
+        for row in rels:
+            try:
+                props = json.loads(row[5])
+            except (json.JSONDecodeError, TypeError):
+                props = {}
+            graph.add_edge(
+                row[1],  # source_id
+                row[2],  # target_id
+                key=row[0],  # id
+                rel_type=row[3],
+                source_path=row[4],
+                properties=props,
+                confidence=row[6],
+                weight=row[7],
+                edge_type=row[8],
+            )
+        self._nx_cache = graph
+        return graph
 
     # ------------------------------------------------------------------
     # GraphBackend — Hyperedge (stub for SQLite backend)
