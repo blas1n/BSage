@@ -1,6 +1,11 @@
 """Tests for graph_models dataclasses."""
 
-from bsage.garden.graph_models import GraphEntity, GraphRelationship, ProvenanceRecord
+from bsage.garden.graph_models import (
+    ConfidenceLevel,
+    GraphEntity,
+    GraphRelationship,
+    ProvenanceRecord,
+)
 
 
 def test_graph_entity_defaults():
@@ -8,7 +13,8 @@ def test_graph_entity_defaults():
     assert e.name == "BSage"
     assert e.entity_type == "project"
     assert e.source_path == "garden/idea/bsage.md"
-    assert e.confidence == 1.0
+    assert e.confidence == ConfidenceLevel.EXTRACTED
+    assert e.knowledge_layer is None
     assert e.properties == {}
     assert e.id  # auto-generated UUID
 
@@ -20,11 +26,11 @@ def test_graph_entity_custom_fields():
         source_path="garden/idea/meeting.md",
         id="custom-id",
         properties={"role": "engineer"},
-        confidence=0.8,
+        confidence=ConfidenceLevel.INFERRED,
     )
     assert e.id == "custom-id"
     assert e.properties["role"] == "engineer"
-    assert e.confidence == 0.8
+    assert e.confidence == ConfidenceLevel.INFERRED
 
 
 def test_graph_entity_unique_ids():
@@ -38,7 +44,7 @@ def test_graph_relationship_defaults():
     assert r.source_id == "s1"
     assert r.target_id == "t1"
     assert r.rel_type == "related_to"
-    assert r.confidence == 1.0
+    assert r.confidence == ConfidenceLevel.EXTRACTED
     assert r.id  # auto-generated
 
 
@@ -47,8 +53,8 @@ def test_provenance_record():
         entity_id="e1",
         source_path="garden/idea/x.md",
         extraction_method="rule",
-        confidence=1.0,
+        confidence=ConfidenceLevel.EXTRACTED,
         extracted_at="2026-03-12T00:00:00Z",
     )
     assert p.extraction_method == "rule"
-    assert p.confidence == 1.0
+    assert p.confidence == ConfidenceLevel.EXTRACTED
