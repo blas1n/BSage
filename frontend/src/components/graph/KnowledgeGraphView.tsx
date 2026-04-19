@@ -7,7 +7,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkWikiLink from "../../lib/remarkWikiLink";
 import { api } from "../../api/client";
-import type { VaultGraph, VaultGraphNode, VaultBacklink } from "../../api/types";
+import type { VaultGraph, VaultGraphNode, VaultBacklink, VaultCommunity } from "../../api/types";
 import { Icon } from "../common/Icon";
 
 const NODE_COLORS: Record<string, string> = {
@@ -73,6 +73,8 @@ export function KnowledgeGraphView() {
   const [noteContent, setNoteContent] = useState<string | null>(null);
   const [noteLoading, setNoteLoading] = useState(false);
   const [backlinks, setBacklinks] = useState<VaultBacklink[]>([]);
+  const [communities, setCommunities] = useState<VaultCommunity[]>([]);
+  const [colorMode, setColorMode] = useState<"group" | "community">("group");
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState<{
     width: number;
@@ -85,6 +87,10 @@ export function KnowledgeGraphView() {
       .then(setGraphData)
       .catch(() => setGraphData({ nodes: [], links: [], truncated: false }))
       .finally(() => setLoading(false));
+    api
+      .vaultCommunities()
+      .then((res) => setCommunities(res.communities))
+      .catch(() => setCommunities([]));
   }, []);
 
   useEffect(() => {
@@ -115,6 +121,28 @@ export function KnowledgeGraphView() {
       return next;
     });
   }, []);
+
+  // Build node -> community color lookup
+  const communityColorMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const c of communities) {
+      for (const memberId of c.members) {
+        map[memberId] = c.color;
+      }
+    }
+    return map;
+  }, [communities]);
+
+  // Build node id -> community lookup for sidebar
+  const nodeCommunityMap = useMemo(() => {
+    const map: Record<string, VaultCommunity> = {};
+    for (const c of communities) {
+      for (const memberId of c.members) {
+        map[memberId] = c;
+      }
+    }
+    return map;
+  }, [communities]);
 
   const filteredData = useMemo(() => {
     if (!graphData) return null;
@@ -167,7 +195,10 @@ export function KnowledgeGraphView() {
       const group = rawNode.group ?? "";
       const label = rawNode.name || "";
       const fontSize = Math.max(12 / globalScale, 3);
-      const nodeColor = NODE_COLORS[group] || "#a78bfa";
+      const nodeColor =
+        colorMode === "community" && rawNode.id && communityColorMap[rawNode.id as string]
+          ? communityColorMap[rawNode.id as string]
+          : NODE_COLORS[group] || "#a78bfa";
       const isSelected = selectedNode?.id === rawNode.id;
       const radius = isSelected ? 7 : 4;
 
@@ -219,7 +250,7 @@ export function KnowledgeGraphView() {
       ctx.fillStyle = isSelected ? "#f2f3f7" : "#86948a";
       ctx.fillText(label, x, y + radius + 2);
     },
-    [selectedNode],
+    [selectedNode, colorMode, communityColorMap],
   );
 
   const parsed = useMemo(() => {
@@ -353,15 +384,54 @@ export function KnowledgeGraphView() {
 
           {/* Legend */}
           <div className="absolute bottom-6 left-6 flex flex-col gap-3 bg-surface-container-low/50 backdrop-blur p-4 rounded-xl border border-white/5">
-            {Object.entries(NODE_LABELS).map(([group, label]) => (
-              <div key={group} className="flex items-center gap-3">
-                <div
-                  className="w-2 h-2 rounded-full"
-                  style={{ backgroundColor: NODE_COLORS[group] }}
-                />
-                <span className="font-mono text-[9px] uppercase tracking-widest text-gray-400">{label}</span>
+            {/* Color mode toggle */}
+            {communities.length > 0 && (
+              <div className="flex gap-1 mb-1">
+                <button
+                  onClick={() => setColorMode("group")}
+                  className={`px-2 py-0.5 rounded text-[9px] font-mono uppercase tracking-widest transition-all ${
+                    colorMode === "group"
+                      ? "bg-accent-light/20 text-accent-light"
+                      : "text-gray-500 hover:text-gray-400"
+                  }`}
+                >
+                  Type
+                </button>
+                <button
+                  onClick={() => setColorMode("community")}
+                  className={`px-2 py-0.5 rounded text-[9px] font-mono uppercase tracking-widest transition-all ${
+                    colorMode === "community"
+                      ? "bg-accent-light/20 text-accent-light"
+                      : "text-gray-500 hover:text-gray-400"
+                  }`}
+                >
+                  Community
+                </button>
               </div>
-            ))}
+            )}
+
+            {colorMode === "group"
+              ? Object.entries(NODE_LABELS).map(([group, label]) => (
+                  <div key={group} className="flex items-center gap-3">
+                    <div
+                      className="w-2 h-2 rounded-full"
+                      style={{ backgroundColor: NODE_COLORS[group] }}
+                    />
+                    <span className="font-mono text-[9px] uppercase tracking-widest text-gray-400">{label}</span>
+                  </div>
+                ))
+              : communities.map((c) => (
+                  <div key={c.id} className="flex items-center gap-3">
+                    <div
+                      className="w-2 h-2 rounded-full"
+                      style={{ backgroundColor: c.color }}
+                    />
+                    <span className="font-mono text-[9px] tracking-widest text-gray-400 truncate max-w-[140px]">
+                      {c.label}
+                      <span className="text-gray-600 ml-1">({c.size})</span>
+                    </span>
+                  </div>
+                ))}
           </div>
         </div>
       </div>
@@ -384,13 +454,24 @@ export function KnowledgeGraphView() {
               <h1 className="text-xl font-headline font-bold tracking-tight text-on-surface">
                 {selectedNode.name}
               </h1>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <span className="font-mono text-[10px] bg-accent-light/10 text-accent-light px-2 py-0.5 rounded">
                   {selectedNode.id.split("/").pop()}
                 </span>
                 <span className="font-mono text-[10px] bg-secondary/10 text-secondary px-2 py-0.5 rounded uppercase">
                   {selectedNode.group}
                 </span>
+                {nodeCommunityMap[selectedNode.id] && (
+                  <span
+                    className="font-mono text-[10px] px-2 py-0.5 rounded"
+                    style={{
+                      backgroundColor: nodeCommunityMap[selectedNode.id].color + "20",
+                      color: nodeCommunityMap[selectedNode.id].color,
+                    }}
+                  >
+                    {nodeCommunityMap[selectedNode.id].label}
+                  </span>
+                )}
               </div>
             </div>
           </div>

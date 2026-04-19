@@ -136,6 +136,22 @@ export interface VaultGraphLink {
   target: string;
 }
 
+/** GET /api/vault/communities response. */
+export interface VaultCommunities {
+  communities: VaultCommunity[];
+  algorithm: string;
+  total: number;
+}
+
+export interface VaultCommunity {
+  id: number;
+  label: string;
+  size: number;
+  cohesion: number;
+  members: string[];
+  color: string;
+}
+
 /** GET /api/vault/tags response. */
 export interface VaultTags {
   tags: Record<string, string[]>;

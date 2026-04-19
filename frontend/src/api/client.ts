@@ -9,6 +9,7 @@ import type {
   VaultFileResponse,
   VaultGraph,
   VaultSearchResult,
+  VaultCommunities,
   VaultTags,
   VaultTreeEntry,
 } from "./types";
@@ -82,6 +83,8 @@ export const api = {
     request<VaultBacklink[]>(`/vault/backlinks?path=${encodeURIComponent(path)}`),
 
   vaultGraph: () => request<VaultGraph>("/vault/graph"),
+
+  vaultCommunities: () => request<VaultCommunities>("/vault/communities"),
 
   vaultTags: () => request<VaultTags>("/vault/tags"),
 };
