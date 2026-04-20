@@ -163,18 +163,31 @@ export function VaultView() {
       .catch(() => setFilterPaths(null));
   }, []);
 
-  // Category → top-level dirs it includes.
-  // "Garden" spans all entity-type folders (BSage v2.2) plus the legacy
-  // garden/ dir so the user sees everything knowledge-related in one click.
-  const categoryDirs: Record<string, string[]> = useMemo(() => ({
-    seeds: ["seeds"],
-    garden: [
-      "ideas", "insights", "projects", "people",
-      "events", "tasks", "facts", "preferences",
-      "garden",
-    ],
-    actions: ["actions"],
-  }), []);
+  // Category → top-level dirs it includes. Seeds/Actions are fixed (they're
+  // BSage structural folders); Garden absorbs every other top-level dir so
+  // new ontology entity types (auto-evolved from OntologyRegistry) show up
+  // without a frontend change. Metadata dirs (.bsage, _index) are excluded
+  // from all three and remain visible only in the unfiltered default view.
+  const META_DIRS = useMemo(() => new Set([".bsage", "_index"]), []);
+  const FIXED_CATEGORY_DIRS = useMemo(
+    () => ({ seeds: ["seeds"], actions: ["actions"] }),
+    [],
+  );
+
+  const categoryDirs = useMemo((): Record<string, string[]> => {
+    const root = tree.find((e) => e.path === "");
+    const topDirs = root?.dirs ?? [];
+    const reserved = new Set<string>([
+      ...FIXED_CATEGORY_DIRS.seeds,
+      ...FIXED_CATEGORY_DIRS.actions,
+      ...META_DIRS,
+    ]);
+    const gardenDirs = topDirs.filter((d) => !reserved.has(d));
+    return {
+      ...FIXED_CATEGORY_DIRS,
+      garden: gardenDirs,
+    };
+  }, [tree, META_DIRS, FIXED_CATEGORY_DIRS]);
 
   const collectFilesUnder = useCallback((dirs: string[]): Set<string> => {
     const paths = new Set<string>();
@@ -305,9 +318,9 @@ export function VaultView() {
             {/* Sidebar categories */}
             <div className="px-2 space-y-1 mb-4">
               {[
-                { id: "seeds", label: "Seeds", icon: "psychology" },
-                { id: "garden", label: "Garden", icon: "local_florist" },
-                { id: "actions", label: "Actions", icon: "bolt" },
+                { id: "garden", label: "Knowledge", icon: "local_florist" },
+                { id: "seeds", label: "Inbox", icon: "psychology" },
+                { id: "actions", label: "Log", icon: "bolt" },
               ].map((cat) => {
                 const active = activeCategory === cat.id;
                 return (
