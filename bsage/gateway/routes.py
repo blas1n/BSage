@@ -462,6 +462,30 @@ def create_routes(state: AppState) -> APIRouter:
                 lookup[stem] = rel
         return lookup
 
+    def _canonicalize_link(text: str) -> str:
+        """Collapse a wikilink target or filename stem to a comparison key.
+
+        Strips every non-alphanumeric character and lowercases. Makes
+        "프로젝트: 온톨로지 구축" match "프로젝트-온톨로지-구축" — the same
+        identity rendered as prose vs as a slugified filename.
+        """
+        return "".join(ch for ch in text.lower() if ch.isalnum())
+
+    def _build_alias_lookup(files: list[tuple[str, str]]) -> dict[str, str]:
+        """Map canonical stem AND frontmatter title → relative path."""
+        lookup: dict[str, str] = {}
+        for rel, content in files:
+            stem_key = _canonicalize_link(Path(rel).stem)
+            if stem_key and stem_key not in lookup:
+                lookup[stem_key] = rel
+            fm = extract_frontmatter(content) if content.startswith("---\n") else {}
+            title = fm.get("title") if isinstance(fm, dict) else None
+            if isinstance(title, str):
+                title_key = _canonicalize_link(title)
+                if title_key and title_key not in lookup:
+                    lookup[title_key] = rel
+        return lookup
+
     @protected.get("/vault/search")
     async def vault_search(
         q: str = Query(..., min_length=1, description="Search query"),
@@ -516,6 +540,7 @@ def create_routes(state: AppState) -> APIRouter:
         files = await _scan_vault_md_files(max_files=max_files)
         truncated = len(files) >= max_files
         stem_lookup = _build_stem_lookup(files)
+        alias_lookup = _build_alias_lookup(files)
         known_paths = {rel for rel, _ in files}
 
         nodes: list[dict[str, str]] = []
@@ -539,6 +564,10 @@ def create_routes(state: AppState) -> APIRouter:
                     target = link + ".md"
                 elif link_lower in stem_lookup:
                     target = stem_lookup[link_lower]
+                else:
+                    canon = _canonicalize_link(link)
+                    if canon and canon in alias_lookup:
+                        target = alias_lookup[canon]
                 if target and target != rel:
                     links.append({"source": rel, "target": target})
 

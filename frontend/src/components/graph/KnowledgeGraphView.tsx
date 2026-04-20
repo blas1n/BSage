@@ -10,26 +10,37 @@ import { api } from "../../api/client";
 import type { VaultGraph, VaultGraphNode, VaultBacklink, VaultCommunity } from "../../api/types";
 import { Icon } from "../common/Icon";
 
-const NODE_COLORS: Record<string, string> = {
-  garden: "#4edea3",
-  seeds: "#adc6ff",
-  actions: "#ffb95f",
-  root: "#a78bfa",
+// Palette applied in deterministic order to whatever groups show up in the
+// graph response. New ontology entity types land on a fresh slot without any
+// frontend change.
+const GROUP_PALETTE = [
+  "#4edea3", "#adc6ff", "#ffb95f", "#ff7eb3", "#7ec8e3",
+  "#c4b5fd", "#fca5a5", "#86efac", "#fde68a", "#a5b4fc",
+  "#f0abfc", "#67e8f9", "#fdba74", "#d9f99d", "#cbd5e1",
+];
+const FALLBACK_COLOR = "#a78bfa";
+
+// Optional icon hints for known structural groups; unknown groups get folder_open.
+const GROUP_ICON_HINTS: Record<string, string> = {
+  seeds: "psychology",
+  actions: "bolt",
+  garden: "local_florist",
+  _index: "list",
+  people: "person",
+  projects: "work",
+  ideas: "lightbulb",
+  insights: "auto_awesome",
+  events: "event",
+  tasks: "check_circle",
+  facts: "fact_check",
+  preferences: "favorite",
 };
 
-const NODE_LABELS: Record<string, string> = {
-  garden: "Ideas",
-  seeds: "Seeds",
-  actions: "Actions",
-  root: "Other",
-};
-
-const NODE_ICONS: Record<string, string> = {
-  garden: "lightbulb",
-  seeds: "bolt",
-  actions: "description",
-  root: "folder_open",
-};
+function humanizeGroup(group: string): string {
+  if (!group) return "Other";
+  const cleaned = group.replace(/^_/, "").replace(/[-_]/g, " ");
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
 
 /** Split YAML frontmatter from markdown body. */
 function splitFrontmatter(text: string): {
@@ -66,9 +77,9 @@ export function KnowledgeGraphView() {
   const [graphData, setGraphData] = useState<VaultGraph | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilters, setActiveFilters] = useState<Set<string>>(
-    new Set(["garden", "seeds", "actions", "root"]),
-  );
+  // `null` = no filter applied (all groups visible). When the user toggles
+  // one off, the set becomes the explicit allowlist.
+  const [activeFilters, setActiveFilters] = useState<Set<string> | null>(null);
   const [selectedNode, setSelectedNode] = useState<VaultGraphNode | null>(null);
   const [noteContent, setNoteContent] = useState<string | null>(null);
   const [noteLoading, setNoteLoading] = useState(false);
@@ -110,17 +121,41 @@ export function KnowledgeGraphView() {
     return () => observer.disconnect();
   }, []);
 
+  // Compute legend entries from actual graph data: each unique group gets
+  // a color (icon hinted when known) and node count. Palette cycles.
+  const groupsInfo = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const n of graphData?.nodes ?? []) {
+      counts[n.group] = (counts[n.group] ?? 0) + 1;
+    }
+    return Object.entries(counts)
+      .sort(([, a], [, b]) => b - a)
+      .map(([group, count], idx) => ({
+        group,
+        count,
+        label: humanizeGroup(group),
+        color: GROUP_PALETTE[idx % GROUP_PALETTE.length],
+        icon: GROUP_ICON_HINTS[group] ?? "folder_open",
+      }));
+  }, [graphData]);
+
+  const groupColorMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const g of groupsInfo) map[g.group] = g.color;
+    return map;
+  }, [groupsInfo]);
+
   const toggleFilter = useCallback((group: string) => {
     setActiveFilters((prev) => {
-      const next = new Set(prev);
-      if (next.has(group)) {
-        next.delete(group);
-      } else {
-        next.add(group);
-      }
+      // First click initializes the allowlist to every known group, then
+      // toggles this one off. Subsequent clicks toggle individual groups.
+      const base = prev ?? new Set(groupsInfo.map((g) => g.group));
+      const next = new Set(base);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
       return next;
     });
-  }, []);
+  }, [groupsInfo]);
 
   // Build node -> community color lookup
   const communityColorMap = useMemo(() => {
@@ -147,11 +182,8 @@ export function KnowledgeGraphView() {
   const filteredData = useMemo(() => {
     if (!graphData) return null;
     const query = searchQuery.toLowerCase();
-    const knownGroups = new Set(Object.keys(NODE_LABELS));
     const nodes = graphData.nodes.filter((n) => {
-      // Unknown groups fall into "root" (Other) bucket
-      const bucket = knownGroups.has(n.group) ? n.group : "root";
-      if (!activeFilters.has(bucket)) return false;
+      if (activeFilters && !activeFilters.has(n.group)) return false;
       if (query && !n.name.toLowerCase().includes(query)) return false;
       return true;
     });
@@ -194,7 +226,7 @@ export function KnowledgeGraphView() {
       const nodeColor =
         colorMode === "community" && rawNode.id && communityColorMap[rawNode.id as string]
           ? communityColorMap[rawNode.id as string]
-          : NODE_COLORS[group] || "#a78bfa";
+          : groupColorMap[group] ?? FALLBACK_COLOR;
       const isSelected = selectedNode?.id === rawNode.id;
       const radius = isSelected ? 7 : 4;
 
@@ -246,7 +278,7 @@ export function KnowledgeGraphView() {
       ctx.fillStyle = isSelected ? "#f2f3f7" : "#86948a";
       ctx.fillText(label, x, y + radius + 2);
     },
-    [selectedNode, colorMode, communityColorMap],
+    [selectedNode, colorMode, communityColorMap, groupColorMap],
   );
 
   const parsed = useMemo(() => {
@@ -267,15 +299,6 @@ export function KnowledgeGraphView() {
 
   const showGraph =
     !loading && filteredData && filteredData.nodes.length > 0 && dimensions;
-
-  const groups = useMemo(() => {
-    if (!graphData) return {};
-    const counts: Record<string, number> = {};
-    for (const n of graphData.nodes) {
-      counts[n.group] = (counts[n.group] || 0) + 1;
-    }
-    return counts;
-  }, [graphData]);
 
   return (
     <div className="flex h-full relative">
@@ -302,12 +325,9 @@ export function KnowledgeGraphView() {
             )}
           </div>
 
-          <div className="flex items-center gap-1.5">
-            {Object.entries(NODE_LABELS).map(([group, label]) => {
-              const icon = NODE_ICONS[group] || "folder_open";
-              const color = NODE_COLORS[group] || "#a78bfa";
-              const active = activeFilters.has(group);
-              const count = groups[group] || 0;
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {groupsInfo.map(({ group, count, label, color, icon }) => {
+              const active = activeFilters === null || activeFilters.has(group);
               return (
                 <button
                   key={group}
@@ -325,9 +345,7 @@ export function KnowledgeGraphView() {
                     {icon}
                   </span>
                   {label}
-                  {count > 0 && (
-                    <span className="text-[10px] opacity-60">{count}</span>
-                  )}
+                  <span className="text-[10px] opacity-60">{count}</span>
                 </button>
               );
             })}
@@ -347,7 +365,7 @@ export function KnowledgeGraphView() {
                 <div className="text-center">
                   <Icon name="folder_open" className="mx-auto mb-2 opacity-50" size={32} />
                   <p className="text-sm">
-                    {searchQuery || activeFilters.size < 4
+                    {searchQuery || activeFilters
                       ? "No nodes match your filters"
                       : "No notes to graph"}
                   </p>
@@ -407,11 +425,11 @@ export function KnowledgeGraphView() {
             )}
 
             {colorMode === "group"
-              ? Object.entries(NODE_LABELS).map(([group, label]) => (
+              ? groupsInfo.map(({ group, label, color }) => (
                   <div key={group} className="flex items-center gap-3">
                     <div
                       className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: NODE_COLORS[group] }}
+                      style={{ backgroundColor: color }}
                     />
                     <span className="font-mono text-[9px] uppercase tracking-widest text-gray-400">{label}</span>
                   </div>
