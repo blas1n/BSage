@@ -5,9 +5,8 @@ test.describe("Vault Browser view", () => {
     await page.goto("/#/vault");
   });
 
-  test("shows Vault Explorer and Graph View tab switcher", async ({ page }) => {
-    await expect(page.getByRole("button", { name: "Vault Explorer" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Graph View" })).toBeVisible();
+  test("shows Vault Explorer header", async ({ page }) => {
+    await expect(page.getByRole("heading", { name: "Vault Explorer" })).toBeVisible();
   });
 
   test("shows file tree sidebar with search input", async ({ page }) => {
@@ -16,13 +15,13 @@ test.describe("Vault Browser view", () => {
     await expect(fileTree.getByPlaceholder("Search vault...").first()).toBeVisible();
   });
 
-  test("shows sidebar category buttons — Seeds, Garden, Actions", async ({ page }) => {
+  test("shows sidebar category buttons — Knowledge, Inbox, Log", async ({ page }) => {
     const fileTree = page.locator("[data-testid='vault-file-tree']");
     // Category buttons are in .px-2.space-y-1 container
     const categoryNav = fileTree.locator(".px-2.space-y-1");
-    await expect(categoryNav.getByText("Seeds")).toBeVisible();
-    await expect(categoryNav.getByText("Garden")).toBeVisible();
-    await expect(categoryNav.getByText("Actions")).toBeVisible();
+    await expect(categoryNav.getByRole("button", { name: /Knowledge/ })).toBeVisible();
+    await expect(categoryNav.getByRole("button", { name: /Inbox/ })).toBeVisible();
+    await expect(categoryNav.getByRole("button", { name: /Log/ })).toBeVisible();
   });
 
   test("shows directory tree with vault folders", async ({ page }) => {

@@ -116,14 +116,11 @@ def create_ws_routes(
         # Accept the socket but don't add to broadcast pool yet
         await websocket.accept()
 
-        # Always require authentication — reject if no auth provider configured
+        # Dev/local mode: no auth provider → accept anonymous connections.
+        # Production always has auth_provider and requires first-message token.
         if auth_provider is None:
-            logger.warning("ws_rejected", reason="auth not configured")
-            await websocket.close(code=4003, reason="Authentication not configured")
-            return
-
-        # Authenticate before joining the broadcast pool
-        if not await _authenticate_ws(websocket, auth_provider):
+            logger.info("ws_anonymous_accepted")
+        elif not await _authenticate_ws(websocket, auth_provider):
             return
 
         # Now safe to add to the broadcast pool

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from bsage.garden.graph_models import GraphEntity, GraphRelationship
+from bsage.garden.graph_models import ConfidenceLevel, GraphEntity, GraphRelationship
 
 if TYPE_CHECKING:
     from bsage.garden.ontology import OntologyRegistry
@@ -50,7 +50,7 @@ class LLMExtractor:
 
     The ontology schema constrains what types the LLM can produce,
     preventing hallucinated entity/relationship types.
-    All LLM-extracted items have ``confidence=0.8``.
+    All LLM-extracted items have ``confidence=ConfidenceLevel.INFERRED``.
     """
 
     def __init__(
@@ -147,7 +147,7 @@ class LLMExtractor:
                 entity_type=entity_type,
                 source_path=rel_path,
                 properties=raw.get("properties", {}),
-                confidence=0.8,
+                confidence=ConfidenceLevel.INFERRED,
             )
             entities.append(entity)
             entity_name_map[name] = entity.id
@@ -196,7 +196,7 @@ class LLMExtractor:
                     target_id=target_id,
                     rel_type=rel_type,
                     source_path=rel_path,
-                    confidence=0.8,
+                    confidence=ConfidenceLevel.INFERRED,
                 )
             )
 

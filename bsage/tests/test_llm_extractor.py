@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from bsage.garden.graph_models import ConfidenceLevel
 from bsage.garden.llm_extractor import LLMExtractor
 from bsage.garden.ontology import OntologyRegistry
 
@@ -46,7 +47,7 @@ async def test_extract_entities(ontology, mock_llm_fn):
     assert len(entities) == 2
     assert entities[0].name == "Python"
     assert entities[0].entity_type == "tool"
-    assert entities[0].confidence == 0.8
+    assert entities[0].confidence == ConfidenceLevel.INFERRED
     assert entities[1].name == "BSage"
     assert entities[1].entity_type == "project"
 
@@ -68,7 +69,7 @@ async def test_extract_relationships(ontology, mock_llm_fn):
 
     assert len(rels) == 1
     assert rels[0].rel_type == "uses"
-    assert rels[0].confidence == 0.8
+    assert rels[0].confidence == ConfidenceLevel.INFERRED
 
 
 async def test_invalid_entity_type_falls_back(ontology, mock_llm_fn):

@@ -9,6 +9,11 @@ interface User {
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL || "https://auth.bsvibe.dev";
 
+// LocalStorage keys for non-cookie-SSO environments (local dev, Tailscale, etc.)
+const LS_ACCESS_TOKEN = "bsage_access_token";
+const LS_REFRESH_TOKEN = "bsage_refresh_token";
+const LS_EXPIRES_AT = "bsage_expires_at";
+
 interface SessionResponse {
   access_token: string;
   refresh_token: string;
@@ -17,10 +22,45 @@ interface SessionResponse {
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
 
+function loadTokenFromLocalStorage(): { value: string; expiresAt: number } | null {
+  const value = localStorage.getItem(LS_ACCESS_TOKEN);
+  const expiresAtStr = localStorage.getItem(LS_EXPIRES_AT);
+  if (!value || !expiresAtStr) return null;
+  const expiresAt = Number(expiresAtStr);
+  if (!Number.isFinite(expiresAt)) return null;
+  return { value, expiresAt };
+}
+
+function saveTokenToLocalStorage(
+  accessToken: string,
+  refreshToken: string,
+  expiresIn: number,
+): void {
+  const expiresAt = Date.now() + expiresIn * 1000;
+  localStorage.setItem(LS_ACCESS_TOKEN, accessToken);
+  localStorage.setItem(LS_REFRESH_TOKEN, refreshToken);
+  localStorage.setItem(LS_EXPIRES_AT, String(expiresAt));
+}
+
+function clearLocalStorageTokens(): void {
+  localStorage.removeItem(LS_ACCESS_TOKEN);
+  localStorage.removeItem(LS_REFRESH_TOKEN);
+  localStorage.removeItem(LS_EXPIRES_AT);
+}
+
 export async function getAccessToken(): Promise<string | null> {
   if (cachedToken && Date.now() < cachedToken.expiresAt - 30_000) {
     return cachedToken.value;
   }
+
+  // Non-cookie-SSO fallback: token stashed in localStorage by auth callback.
+  const stored = loadTokenFromLocalStorage();
+  if (stored && Date.now() < stored.expiresAt - 30_000) {
+    cachedToken = stored;
+    return stored.value;
+  }
+
+  // Production path: cross-subdomain cookie SSO via auth.bsvibe.dev.
   try {
     const res = await fetch(`${AUTH_URL}/api/session`, { credentials: "include" });
     if (!res.ok) return null;
@@ -37,6 +77,37 @@ export async function getAccessToken(): Promise<string | null> {
 
 export function clearTokenCache() {
   cachedToken = null;
+  clearLocalStorageTokens();
+}
+
+/**
+ * Parse tokens from the OAuth callback URL fragment and persist them.
+ * Called by the /auth/callback route handler. Returns true if a token
+ * was found and stored.
+ */
+export function consumeAuthCallback(): boolean {
+  // Hash looks like: "#/auth/callback#access_token=...&refresh_token=...&expires_in=..."
+  // after the route hash, tokens are in a second fragment. We also support
+  // the plain "?access_token=..." query form as a fallback.
+  const raw = window.location.hash || "";
+  const queryRaw = window.location.search || "";
+  const tokenPart = raw.includes("access_token=")
+    ? raw.slice(raw.indexOf("access_token="))
+    : queryRaw.includes("access_token=")
+      ? queryRaw.slice(queryRaw.indexOf("access_token="))
+      : "";
+  if (!tokenPart) return false;
+  const params = new URLSearchParams(tokenPart);
+  const accessToken = params.get("access_token");
+  const refreshToken = params.get("refresh_token") ?? "";
+  const expiresIn = Number(params.get("expires_in") ?? "3600");
+  if (!accessToken) return false;
+  saveTokenToLocalStorage(accessToken, refreshToken, expiresIn);
+  cachedToken = {
+    value: accessToken,
+    expiresAt: Date.now() + expiresIn * 1000,
+  };
+  return true;
 }
 
 function decodeJwt(token: string): Record<string, unknown> {
@@ -70,16 +141,27 @@ export function useAuth() {
     })();
   }, []);
 
+  function callbackUrl(): string {
+    // Hash-route callback so SPA can parse fragment tokens.
+    return `${window.location.origin}/#/auth/callback`;
+  }
+
   function login() {
-    window.location.href = `${AUTH_URL}/login`;
+    const redirect = encodeURIComponent(callbackUrl());
+    window.location.href = `${AUTH_URL}/login?redirect_uri=${redirect}`;
   }
 
   function signup() {
-    window.location.href = `${AUTH_URL}/signup`;
+    const redirect = encodeURIComponent(callbackUrl());
+    window.location.href = `${AUTH_URL}/signup?redirect_uri=${redirect}`;
   }
 
   async function logout() {
-    await fetch(`${AUTH_URL}/api/session`, { method: "DELETE", credentials: "include" });
+    try {
+      await fetch(`${AUTH_URL}/api/session`, { method: "DELETE", credentials: "include" });
+    } catch {
+      // Cookie session may not exist (localStorage-only env) — ignore.
+    }
     clearTokenCache();
     setUser(null);
     window.location.href = "https://bsvibe.dev/";

@@ -9,8 +9,10 @@ import type {
   VaultFileResponse,
   VaultGraph,
   VaultSearchResult,
+  VaultCommunities,
   VaultTags,
   VaultTreeEntry,
+  LlmTestResult,
 } from "./types";
 import { getAccessToken } from "../hooks/useAuth";
 
@@ -53,6 +55,9 @@ export const api = {
   updateConfig: (update: ConfigUpdate) =>
     request<RuntimeConfig>("/config", { method: "PATCH", body: JSON.stringify(update) }),
 
+  testLlm: () =>
+    request<LlmTestResult>("/config/test-llm", { method: "POST" }),
+
   actions: () => request<string[]>("/vault/actions"),
 
   // Credential setup
@@ -82,6 +87,8 @@ export const api = {
     request<VaultBacklink[]>(`/vault/backlinks?path=${encodeURIComponent(path)}`),
 
   vaultGraph: () => request<VaultGraph>("/vault/graph"),
+
+  vaultCommunities: () => request<VaultCommunities>("/vault/communities"),
 
   vaultTags: () => request<VaultTags>("/vault/tags"),
 };

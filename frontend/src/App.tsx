@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useApproval } from "./hooks/useApproval";
-import { useAuth } from "./hooks/useAuth";
+import { consumeAuthCallback, useAuth } from "./hooks/useAuth";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { ApprovalModal } from "./components/approval/ApprovalModal";
 import { ChatView } from "./components/chat/ChatView";
@@ -42,6 +42,12 @@ function RouteContent({ hash }: { hash: string }) {
 }
 
 export default function App() {
+  useEffect(() => {
+    if (window.location.hash.startsWith("#/auth/callback") && consumeAuthCallback()) {
+      window.location.replace(window.location.pathname + "#/");
+    }
+  }, []);
+
   const hash = useHashRoute();
   const { user, loading } = useAuth();
   const { connectionState, events, clearEvents } = useWebSocket();

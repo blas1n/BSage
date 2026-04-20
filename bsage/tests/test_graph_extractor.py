@@ -1,6 +1,7 @@
 """Tests for GraphExtractor — rule-based entity/relationship extraction."""
 
 from bsage.garden.graph_extractor import GraphExtractor
+from bsage.garden.graph_models import ConfidenceLevel
 
 
 def _make_note(
@@ -39,7 +40,7 @@ def test_extract_note_entity():
     assert len(note_entities) == 1
     assert note_entities[0].name == "BSage Project"
     assert note_entities[0].source_path == "garden/idea/bsage.md"
-    assert note_entities[0].confidence == 1.0
+    assert note_entities[0].confidence == ConfidenceLevel.EXTRACTED
 
 
 def test_extract_note_entity_from_filename():
@@ -334,3 +335,28 @@ def test_extract_fact_without_supersedes():
 
     sup_rels = [r for r in relationships if r.rel_type == "supersedes"]
     assert len(sup_rels) == 0
+
+
+def test_extract_ambiguous_related():
+    """v3.0: [[target]]? suffix marks relationships as AMBIGUOUS."""
+    content = '---\ntype: person\ntitle: Bob\nrelated:\n  - "[[Alice]]"\n  - "[[Charlie]]?"\n---\n'
+    extractor = GraphExtractor()
+    entities, relationships = extractor.extract_from_note("people/bob.md", content)
+
+    related_rels = [r for r in relationships if r.rel_type == "related_to"]
+    assert len(related_rels) == 2
+
+    alice_rel = [
+        r for r in related_rels if any(e.name == "Alice" and e.id == r.target_id for e in entities)
+    ]
+    charlie_rel = [
+        r
+        for r in related_rels
+        if any(e.name == "Charlie" and e.id == r.target_id for e in entities)
+    ]
+    assert alice_rel[0].confidence == ConfidenceLevel.EXTRACTED
+    assert charlie_rel[0].confidence == ConfidenceLevel.AMBIGUOUS
+
+    # Charlie entity itself should also be AMBIGUOUS
+    charlie_ents = [e for e in entities if e.name == "Charlie"]
+    assert charlie_ents[0].confidence == ConfidenceLevel.AMBIGUOUS

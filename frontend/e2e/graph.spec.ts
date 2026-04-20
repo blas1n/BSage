@@ -98,3 +98,37 @@ test.describe("Node Inspector sidebar", () => {
     // This test validates the sidebar structure exists when shown.
   });
 });
+
+test.describe("Community visualization (Phase 1)", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/#/graph");
+    await page.waitForTimeout(500);
+  });
+
+  test("renders Type/Community color mode toggle when communities exist", async ({
+    page,
+  }) => {
+    // Mock fixture returns 1 community, so toggle buttons should render
+    const legend = page.locator(".absolute.bottom-6.left-6");
+    await expect(legend.getByRole("button", { name: "Type" })).toBeVisible();
+    await expect(legend.getByRole("button", { name: "Community" })).toBeVisible();
+  });
+
+  test("switches to community mode and shows community legend", async ({ page }) => {
+    const legend = page.locator(".absolute.bottom-6.left-6");
+    await legend.getByRole("button", { name: "Community" }).click();
+    // Community label from fixture: "index (garden)" with size 2
+    await expect(legend.getByText(/index \(garden\)/)).toBeVisible();
+    await expect(legend.getByText(/\(2\)/)).toBeVisible();
+  });
+
+  test("community colors apply to nodes when community mode active", async ({
+    page,
+  }) => {
+    const legend = page.locator(".absolute.bottom-6.left-6");
+    await legend.getByRole("button", { name: "Community" }).click();
+    // Fixture community color is #4edea3 — look for the swatch in legend
+    const swatch = legend.locator('div[style*="background-color: rgb(78, 222, 163)"]');
+    await expect(swatch.first()).toBeVisible();
+  });
+});

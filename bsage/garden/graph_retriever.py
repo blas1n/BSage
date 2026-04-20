@@ -1,4 +1,10 @@
-"""GraphRetriever — graph-based note retrieval for knowledge graph RAG (v2.2)."""
+"""GraphRetriever — graph-based note retrieval for knowledge graph RAG (v3.0).
+
+v3.0 changes:
+- Uses GraphBackend ABC instead of GraphStore directly
+- Removed knowledge_layer decay (replaced by bi-temporal in Phase 2)
+- Uses ConfidenceLevel enum for scoring
+"""
 
 from __future__ import annotations
 
@@ -6,37 +12,38 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from bsage.garden.confidence import DecayConfig, effective_confidence
+from bsage.garden.graph_models import ConfidenceLevel
 
 if TYPE_CHECKING:
-    from bsage.garden.graph_models import GraphEntity, GraphRelationship
-    from bsage.garden.graph_store import GraphStore
+    from bsage.garden.graph_backend import GraphBackend
+    from bsage.garden.graph_models import GraphEntity
     from bsage.garden.ontology import OntologyRegistry
     from bsage.garden.vault import Vault
 
 logger = structlog.get_logger(__name__)
 
+# Numeric scores for confidence levels (used in retrieval ranking)
+_CONFIDENCE_SCORES: dict[str, float] = {
+    ConfidenceLevel.EXTRACTED: 1.0,
+    ConfidenceLevel.INFERRED: 0.8,
+    ConfidenceLevel.AMBIGUOUS: 0.4,
+}
 
-def _score(confidence: float, weight: float, depth: int) -> float:
+
+def _confidence_score(confidence: str) -> float:
+    """Convert ConfidenceLevel to numeric score for ranking."""
+    return _CONFIDENCE_SCORES.get(confidence, 0.5)
+
+
+def _score(confidence: str, weight: float, depth: int) -> float:
     """Compute a retrieval relevance score.
 
-    Higher is better.  ``confidence * weight / depth`` ensures that
+    Higher is better.  ``confidence_score * weight / depth`` ensures that
     high-confidence, strong edges at shallow depth rank highest.
     """
     if depth <= 0:
         depth = 1
-    return confidence * weight / depth
-
-
-def _decayed_confidence(rel: GraphRelationship, neighbor: GraphEntity) -> float:
-    """Apply time-based decay to relationship confidence using entity's knowledge layer."""
-    updated_at = neighbor.properties.get("updated_at")
-    return effective_confidence(
-        rel.confidence,
-        updated_at,
-        neighbor.knowledge_layer,
-        config=DecayConfig(),
-    )
+    return _confidence_score(confidence) * weight / depth
 
 
 class GraphRetriever:
@@ -49,7 +56,7 @@ class GraphRetriever:
 
     def __init__(
         self,
-        graph_store: GraphStore,
+        graph_store: GraphBackend,
         vault: Vault,
         ontology: OntologyRegistry | None = None,
     ) -> None:
@@ -102,8 +109,7 @@ class GraphRetriever:
                     f"**{neighbor.name}** ({neighbor.entity_type})"
                 )
                 if neighbor.source_path:
-                    conf = _decayed_confidence(rel, neighbor)
-                    s = _score(conf, rel.weight, 1)
+                    s = _score(rel.confidence, rel.weight, 1)
                     source_scores[neighbor.source_path] = max(
                         source_scores.get(neighbor.source_path, 0.0), s
                     )

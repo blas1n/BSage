@@ -455,6 +455,33 @@ class TestConfigEndpoints:
         # Model should not change
         assert response.json()["llm_model"] == "anthropic/claude-sonnet-4-20250514"
 
+    def test_test_llm_success(self, client, mock_state) -> None:
+        mock_state.llm_client.chat = AsyncMock(return_value="pong")
+        response = client.post("/api/config/test-llm")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+        assert data["reply"] == "pong"
+        assert data["model"] == "anthropic/claude-sonnet-4-20250514"
+        assert isinstance(data["latency_ms"], int)
+
+    def test_test_llm_missing_key(self, client, mock_state) -> None:
+        mock_state.runtime_config.update(llm_api_key="")
+        response = client.post("/api/config/test-llm")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is False
+        assert data["error"] == "missing_api_key"
+
+    def test_test_llm_upstream_failure(self, client, mock_state) -> None:
+        mock_state.llm_client.chat = AsyncMock(side_effect=RuntimeError("upstream 503"))
+        response = client.post("/api/config/test-llm")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is False
+        assert data["error"] == "RuntimeError"
+        assert "upstream 503" in data["detail"]
+
 
 class TestSyncBackendsEndpoint:
     """Test GET /api/sync-backends."""
@@ -935,19 +962,23 @@ class TestAuthEndpoints:
 class TestWebSocketAuth:
     """Test WebSocket authentication flow."""
 
-    async def test_ws_rejects_when_auth_provider_is_none(self) -> None:
-        """When auth_provider is None (jwt_secret empty), WS must be rejected."""
-        from starlette.websockets import WebSocketDisconnect
+    async def test_ws_accepts_anonymously_when_auth_provider_is_none(self) -> None:
+        """When auth_provider is None (local dev), WS must accept anonymously.
 
+        Tightened auth-less rejection used to close with 4003, but the
+        frontend would retry forever. For dev/Tailscale use the endpoint
+        now joins the broadcast pool without a token. Production always
+        configures auth_provider, so this path is dev-only.
+        """
         from bsage.gateway.ws import create_ws_routes
 
         app = FastAPI()
         app.include_router(create_ws_routes(auth_provider=None))
 
         with TestClient(app) as c, c.websocket_connect("/ws") as ws:
-            with pytest.raises(WebSocketDisconnect) as exc_info:
-                ws.receive_json()
-            assert exc_info.value.code == 4003
+            ws.send_json({"type": "ping"})
+            data = ws.receive_json()
+            assert data["type"] == "ack"
 
     async def test_ws_connects_with_valid_auth(self) -> None:
         """When auth_provider verifies token, WS connects successfully."""

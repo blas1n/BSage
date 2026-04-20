@@ -4,7 +4,12 @@ import asyncio
 
 import pytest
 
-from bsage.garden.graph_models import GraphEntity, GraphRelationship, ProvenanceRecord
+from bsage.garden.graph_models import (
+    ConfidenceLevel,
+    GraphEntity,
+    GraphRelationship,
+    ProvenanceRecord,
+)
 from bsage.garden.graph_store import GraphStore
 
 
@@ -61,7 +66,7 @@ async def test_upsert_entity_updates_properties(store: GraphStore):
         entity_type="person",
         source_path="b.md",
         properties={"role": "lead"},
-        confidence=0.9,
+        confidence=ConfidenceLevel.INFERRED,
     )
     await store.upsert_entity(e2)
 
@@ -69,7 +74,7 @@ async def test_upsert_entity_updates_properties(store: GraphStore):
     assert found is not None
     assert found.source_path == "b.md"
     assert found.properties["role"] == "lead"
-    assert found.confidence == 0.9
+    assert found.confidence == ConfidenceLevel.INFERRED
 
 
 # ------------------------------------------------------------------
@@ -255,7 +260,7 @@ async def test_add_provenance(store: GraphStore):
         entity_id=eid,
         source_path="a.md",
         extraction_method="rule",
-        confidence=1.0,
+        confidence=ConfidenceLevel.EXTRACTED,
         extracted_at="2026-03-12T00:00:00Z",
     )
     await store.add_provenance(record)
@@ -366,14 +371,14 @@ async def test_count_distinct_sources(store: GraphStore):
         entity_id=eid,
         source_path="a.md",
         extraction_method="rule",
-        confidence=1.0,
+        confidence=ConfidenceLevel.EXTRACTED,
         extracted_at="2026-01-01T00:00:00",
     )
     p2 = ProvenanceRecord(
         entity_id=eid,
         source_path="b.md",
         extraction_method="rule",
-        confidence=1.0,
+        confidence=ConfidenceLevel.EXTRACTED,
         extracted_at="2026-01-01T00:00:00",
     )
     await store.add_provenance(p1)
@@ -434,7 +439,7 @@ async def test_count_distinct_sources_fallback_normalized(store: GraphStore):
         entity_id=eid,
         source_path="z.md",
         extraction_method="rule",
-        confidence=1.0,
+        confidence=ConfidenceLevel.EXTRACTED,
         extracted_at="2026-01-01T00:00:00",
     )
     await store.add_provenance(p)

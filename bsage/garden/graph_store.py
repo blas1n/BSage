@@ -10,9 +10,17 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
+import networkx as nx
 import structlog
 
-from bsage.garden.graph_models import GraphEntity, GraphRelationship, ProvenanceRecord
+from bsage.garden.graph_backend import GraphBackend
+from bsage.garden.graph_models import (
+    GraphEntity,
+    GraphRelationship,
+    Hyperedge,
+    ProvenanceRecord,
+    normalize_name,
+)
 
 if TYPE_CHECKING:
     from bsage.garden.graph_extractor import GraphExtractor
@@ -28,8 +36,8 @@ CREATE TABLE IF NOT EXISTS entities (
     entity_type TEXT NOT NULL,
     source_path TEXT NOT NULL,
     properties TEXT NOT NULL DEFAULT '{}',
-    confidence REAL NOT NULL DEFAULT 1.0,
-    knowledge_layer TEXT NOT NULL DEFAULT 'semantic',
+    confidence TEXT NOT NULL DEFAULT 'extracted',
+    knowledge_layer TEXT DEFAULT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -50,9 +58,12 @@ CREATE TABLE IF NOT EXISTS relationships (
     rel_type TEXT NOT NULL,
     source_path TEXT NOT NULL,
     properties TEXT NOT NULL DEFAULT '{}',
-    confidence REAL NOT NULL DEFAULT 1.0,
+    confidence TEXT NOT NULL DEFAULT 'extracted',
     weight REAL NOT NULL DEFAULT 0.5,
     edge_type TEXT NOT NULL DEFAULT 'weak',
+    valid_from TEXT DEFAULT NULL,
+    valid_to TEXT DEFAULT NULL,
+    recorded_at TEXT DEFAULT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (source_id) REFERENCES entities(id) ON DELETE CASCADE,
     FOREIGN KEY (target_id) REFERENCES entities(id) ON DELETE CASCADE
@@ -68,7 +79,7 @@ CREATE TABLE IF NOT EXISTS provenance (
     entity_id TEXT NOT NULL,
     source_path TEXT NOT NULL,
     extraction_method TEXT NOT NULL,
-    confidence REAL NOT NULL DEFAULT 1.0,
+    confidence TEXT NOT NULL DEFAULT 'extracted',
     extracted_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE
 );
@@ -87,11 +98,6 @@ CREATE TABLE IF NOT EXISTS source_hashes (
 """
 
 
-def _normalize(name: str) -> str:
-    """Normalize an entity name for deduplication."""
-    return name.lower().strip()
-
-
 # Columns shared by both halves of the UNION ALL in query_neighbors.
 _NEIGHBOR_COLS = (
     "r.id, r.source_id, r.target_id, r.rel_type,"
@@ -102,7 +108,7 @@ _NEIGHBOR_COLS = (
 )
 
 
-class GraphStore:
+class GraphStore(GraphBackend):
     """Async SQLite-backed graph storage.
 
     Stores entities and relationships as a derived index over the vault.
@@ -160,7 +166,7 @@ class GraphStore:
 
     async def _upsert_entity_locked(self, entity: GraphEntity) -> str:
         # Caller must hold _write_lock
-        norm = _normalize(entity.name)
+        norm = normalize_name(entity.name)
         row = await self._fetchone(
             "SELECT id FROM entities WHERE name_normalized = ? AND entity_type = ?",
             (norm, entity.entity_type),
@@ -231,8 +237,8 @@ class GraphStore:
         await self._conn.execute(
             """INSERT INTO relationships
                (id, source_id, target_id, rel_type, source_path, properties,
-                confidence, weight, edge_type)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                confidence, weight, edge_type, valid_from, valid_to, recorded_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 rel.id,
                 rel.source_id,
@@ -243,6 +249,9 @@ class GraphStore:
                 rel.confidence,
                 rel.weight,
                 rel.edge_type,
+                rel.valid_from,
+                rel.valid_to,
+                rel.recorded_at,
             ),
         )
         return rel.id
@@ -318,7 +327,7 @@ class GraphStore:
         self, name: str, entity_type: str | None = None
     ) -> GraphEntity | None:
         """Look up an entity by (normalized) name and optional type."""
-        norm = _normalize(name)
+        norm = normalize_name(name)
         if entity_type:
             row = await self._fetchone(
                 "SELECT * FROM entities WHERE name_normalized = ? AND entity_type = ?",
@@ -330,7 +339,7 @@ class GraphStore:
 
     async def search_entities(self, query: str, *, limit: int = 20) -> list[GraphEntity]:
         """Search entities by name substring (case-insensitive)."""
-        norm = _normalize(query)
+        norm = normalize_name(query)
         rows = await self._fetchall(
             """SELECT * FROM entities
                WHERE name_normalized LIKE '%' || ? || '%'
@@ -454,7 +463,7 @@ class GraphStore:
 
         Matches by source_path or normalized entity name in a single query.
         """
-        norm = _normalize(entity_name)
+        norm = normalize_name(entity_name)
         row = await self._fetchone(
             """SELECT COUNT(*) FROM (
                    SELECT r.id FROM relationships r
@@ -471,7 +480,7 @@ class GraphStore:
 
     async def count_distinct_sources(self, entity_name: str) -> int:
         """Count distinct source_path entries in provenance for an entity."""
-        norm = _normalize(entity_name)
+        norm = normalize_name(entity_name)
         row = await self._fetchone(
             """SELECT COUNT(DISTINCT p.source_path) FROM provenance p
                JOIN entities e ON e.id = p.entity_id
@@ -490,7 +499,7 @@ class GraphStore:
 
     async def get_entity_updated_at(self, entity_name: str) -> str | None:
         """Return the updated_at timestamp for an entity."""
-        norm = _normalize(entity_name)
+        norm = normalize_name(entity_name)
         row = await self._fetchone(
             "SELECT updated_at FROM entities WHERE source_path = ? LIMIT 1",
             (entity_name,),
@@ -697,3 +706,66 @@ class GraphStore:
             confidence=row[6],
             knowledge_layer=row[7],
         )
+
+    # ------------------------------------------------------------------
+    # GraphBackend — NetworkX snapshot
+    # ------------------------------------------------------------------
+
+    def to_networkx(self) -> nx.MultiDiGraph:
+        """Return the last built snapshot (may be stale).
+
+        Callers that need fresh data should use ``to_networkx_snapshot()``
+        (async, rebuilds from SQLite).
+        """
+        if not hasattr(self, "_nx_cache") or self._nx_cache is None:
+            self._nx_cache = nx.MultiDiGraph()
+        return self._nx_cache
+
+    async def to_networkx_snapshot(self) -> nx.MultiDiGraph:
+        """Build a fresh NetworkX snapshot from all SQLite data."""
+        graph = nx.MultiDiGraph()
+        entities = await self._fetchall("SELECT * FROM entities")
+        for row in entities:
+            ent = self._row_to_entity(row)
+            graph.add_node(
+                ent.id,
+                name=ent.name,
+                entity_type=ent.entity_type,
+                source_path=ent.source_path,
+                confidence=ent.confidence,
+                knowledge_layer=ent.knowledge_layer,
+            )
+        rels = await self._fetchall("SELECT * FROM relationships")
+        for row in rels:
+            try:
+                props = json.loads(row[5])
+            except (json.JSONDecodeError, TypeError):
+                props = {}
+            graph.add_edge(
+                row[1],  # source_id
+                row[2],  # target_id
+                key=row[0],  # id
+                rel_type=row[3],
+                source_path=row[4],
+                properties=props,
+                confidence=row[6],
+                weight=row[7],
+                edge_type=row[8],
+                valid_from=row[9] if len(row) > 9 else None,
+                valid_to=row[10] if len(row) > 10 else None,
+                recorded_at=row[11] if len(row) > 11 else None,
+            )
+        self._nx_cache = graph
+        return graph
+
+    # ------------------------------------------------------------------
+    # GraphBackend — Hyperedge (stub for SQLite backend)
+    # ------------------------------------------------------------------
+
+    async def add_hyperedge(self, hyperedge: Hyperedge) -> str:
+        """Add a hyperedge. Not yet implemented for SQLite backend."""
+        raise NotImplementedError("Hyperedge support requires VaultBackend")
+
+    async def get_hyperedges(self) -> list[Hyperedge]:
+        """Get all hyperedges. Not yet implemented for SQLite backend."""
+        raise NotImplementedError("Hyperedge support requires VaultBackend")

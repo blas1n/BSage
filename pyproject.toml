@@ -22,6 +22,7 @@ dependencies = [
     "jsonschema>=4.0.0",
     "bsvibe-auth[fastapi] @ git+https://github.com/BSVibe/BSVibe-Auth.git@v0.4.0#subdirectory=python",
     "python-dateutil>=2.9.0.post0",
+    "networkx>=3.0",
 ]
 
 [project.optional-dependencies]

@@ -462,6 +462,30 @@ def create_routes(state: AppState) -> APIRouter:
                 lookup[stem] = rel
         return lookup
 
+    def _canonicalize_link(text: str) -> str:
+        """Collapse a wikilink target or filename stem to a comparison key.
+
+        Strips every non-alphanumeric character and lowercases. Makes
+        "프로젝트: 온톨로지 구축" match "프로젝트-온톨로지-구축" — the same
+        identity rendered as prose vs as a slugified filename.
+        """
+        return "".join(ch for ch in text.lower() if ch.isalnum())
+
+    def _build_alias_lookup(files: list[tuple[str, str]]) -> dict[str, str]:
+        """Map canonical stem AND frontmatter title → relative path."""
+        lookup: dict[str, str] = {}
+        for rel, content in files:
+            stem_key = _canonicalize_link(Path(rel).stem)
+            if stem_key and stem_key not in lookup:
+                lookup[stem_key] = rel
+            fm = extract_frontmatter(content) if content.startswith("---\n") else {}
+            title = fm.get("title") if isinstance(fm, dict) else None
+            if isinstance(title, str):
+                title_key = _canonicalize_link(title)
+                if title_key and title_key not in lookup:
+                    lookup[title_key] = rel
+        return lookup
+
     @protected.get("/vault/search")
     async def vault_search(
         q: str = Query(..., min_length=1, description="Search query"),
@@ -516,6 +540,7 @@ def create_routes(state: AppState) -> APIRouter:
         files = await _scan_vault_md_files(max_files=max_files)
         truncated = len(files) >= max_files
         stem_lookup = _build_stem_lookup(files)
+        alias_lookup = _build_alias_lookup(files)
         known_paths = {rel for rel, _ in files}
 
         nodes: list[dict[str, str]] = []
@@ -539,10 +564,73 @@ def create_routes(state: AppState) -> APIRouter:
                     target = link + ".md"
                 elif link_lower in stem_lookup:
                     target = stem_lookup[link_lower]
+                else:
+                    canon = _canonicalize_link(link)
+                    if canon and canon in alias_lookup:
+                        target = alias_lookup[canon]
                 if target and target != rel:
                     links.append({"source": rel, "target": target})
 
         return {"nodes": nodes, "links": links, "truncated": truncated}
+
+    @protected.get("/vault/communities")
+    async def vault_communities(
+        algorithm: str = Query(default="louvain", description="louvain or label_propagation"),
+        min_size: int = Query(default=2, ge=2, le=100, description="Minimum community size"),
+    ) -> dict[str, Any]:
+        """Detect communities in the knowledge graph and return them."""
+        from bsage.garden.community import (
+            communities_to_graph_data,
+            detect_communities,
+        )
+
+        graph = await state.graph_store.to_networkx_snapshot()
+        communities = detect_communities(graph, algorithm=algorithm, min_size=min_size)
+        # Remap entity UUIDs → vault file paths so members match /vault/graph node IDs
+        data = communities_to_graph_data(communities)
+        for comm in data:
+            remapped: list[str] = []
+            for mid in comm["members"]:
+                if graph.has_node(mid):
+                    src = graph.nodes[mid].get("source_path")
+                    remapped.append(src or mid)
+                else:
+                    remapped.append(mid)
+            comm["members"] = remapped
+        return {
+            "communities": data,
+            "algorithm": algorithm,
+            "total": len(communities),
+        }
+
+    @protected.get("/vault/analytics")
+    async def vault_analytics(
+        top_k: int = Query(default=20, ge=1, le=100),
+        include_betweenness: bool = Query(default=False),
+    ) -> dict[str, Any]:
+        """Return graph analytics: centrality, stats, god nodes, gaps."""
+        from dataclasses import asdict
+
+        from bsage.garden.analytics import (
+            compute_centrality,
+            compute_graph_stats,
+            find_god_nodes,
+            find_knowledge_gaps,
+        )
+
+        graph = await state.graph_store.to_networkx_snapshot()
+
+        stats = compute_graph_stats(graph)
+        top_nodes = compute_centrality(graph, top_k=top_k, include_betweenness=include_betweenness)
+        god_nodes = find_god_nodes(graph, top_k=10)
+        gaps = find_knowledge_gaps(graph)
+
+        return {
+            "stats": asdict(stats),
+            "centrality": [asdict(n) for n in top_nodes],
+            "god_nodes": [asdict(n) for n in god_nodes],
+            "gaps": gaps,
+        }
 
     @protected.get("/vault/tags")
     async def vault_tags(
@@ -894,6 +982,52 @@ def create_routes(state: AppState) -> APIRouter:
         snap["has_llm_api_key"] = bool(state.runtime_config.llm_api_key)
         snap["index_available"] = state.retriever.index_available
         return snap
+
+    @protected.post("/config/test-llm")
+    async def test_llm() -> dict[str, Any]:
+        """Send a minimal ping to the configured LLM and report result.
+
+        Does not modify any state. Uses current runtime_config (model +
+        api_key + api_base). Returns latency, reply preview, or an error
+        with a user-facing hint.
+        """
+        import time
+
+        cfg = state.runtime_config
+        if not cfg.llm_api_key:
+            return {
+                "ok": False,
+                "error": "missing_api_key",
+                "hint": "Save an API key first.",
+            }
+        if not cfg.llm_model:
+            return {
+                "ok": False,
+                "error": "missing_model",
+                "hint": "Set an LLM model first.",
+            }
+
+        start = time.perf_counter()
+        try:
+            reply = await state.llm_client.chat(
+                system="Reply with exactly the word: pong",
+                messages=[{"role": "user", "content": "ping"}],
+            )
+        except Exception as exc:
+            logger.warning("llm_test_failed", error=str(exc))
+            return {
+                "ok": False,
+                "error": type(exc).__name__,
+                "detail": str(exc)[:300],
+                "model": cfg.llm_model,
+            }
+        latency_ms = round((time.perf_counter() - start) * 1000)
+        return {
+            "ok": True,
+            "model": cfg.llm_model,
+            "latency_ms": latency_ms,
+            "reply": reply[:200],
+        }
 
     @protected.post("/chat")
     async def chat(body: ChatMessage) -> dict[str, str]:

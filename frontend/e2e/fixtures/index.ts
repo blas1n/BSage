@@ -298,6 +298,63 @@ export const test = base.extend<CustomFixtures>({
         });
       });
 
+      // Config — LLM test endpoint
+      await page.route("**/api/config/test-llm", (route) => {
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ok: true,
+            model: "claude-opus-4-5",
+            latency_ms: 42,
+            reply: "pong",
+          }),
+        });
+      });
+
+      // Vault communities endpoint (Phase 1)
+      await page.route("**/api/vault/communities**", (route) => {
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            communities: [
+              {
+                id: 0,
+                label: "index (garden)",
+                size: 2,
+                cohesion: 1.0,
+                members: ["garden/index.md", "garden/idea-1.md"],
+                color: "#4edea3",
+              },
+            ],
+            algorithm: "louvain",
+            total: 1,
+          }),
+        });
+      });
+
+      // Vault analytics endpoint (Phase 6)
+      await page.route("**/api/vault/analytics**", (route) => {
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            stats: {
+              num_nodes: 3,
+              num_edges: 1,
+              num_components: 2,
+              density: 0.17,
+              avg_degree: 0.67,
+              isolated_nodes: ["seeds/slack-input/messages.md"],
+            },
+            centrality: [],
+            god_nodes: [],
+            gaps: { isolated: [], thin: [], small_components: [] },
+          }),
+        });
+      });
+
       // Knowledge catalog endpoint (Karpathy Wiki feature)
       await page.route("**/api/knowledge/catalog", (route) => {
         route.fulfill({

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from bsage.core.patterns import WIKILINK_RE
-from bsage.garden.graph_models import GraphEntity, GraphRelationship
+from bsage.garden.graph_models import ConfidenceLevel, GraphEntity, GraphRelationship
 from bsage.garden.markdown_utils import body_after_frontmatter, extract_frontmatter
 
 if TYPE_CHECKING:
@@ -51,22 +51,35 @@ def _slug_from_path(path: str) -> str:
     return stem.replace("-", " ").replace("_", " ").strip()
 
 
-def _extract_wikilink_names(items: list[Any]) -> list[str]:
-    """Extract wikilink target names from a list of strings."""
-    names: list[str] = []
+def _extract_wikilink_names(items: list[Any]) -> list[tuple[str, str]]:
+    """Extract wikilink target names from a list of strings.
+
+    Returns list of (name, confidence) tuples. A trailing ``?`` after
+    the wikilink (e.g. ``[[Alice]]?``) marks the target as AMBIGUOUS.
+    """
+    results: list[tuple[str, str]] = []
     for item in items:
         if isinstance(item, str):
+            # Check for [[name]]? pattern (ambiguous marker)
+            ambiguous = item.rstrip().endswith("?")
             found = WIKILINK_RE.findall(item)
-            names.extend(found if found else [item])
-    return names
+            if found:
+                conf = ConfidenceLevel.AMBIGUOUS if ambiguous else ConfidenceLevel.EXTRACTED
+                results.extend((name, conf) for name in found)
+            else:
+                plain = item.rstrip("? ") if ambiguous else item
+                if plain:
+                    conf = ConfidenceLevel.AMBIGUOUS if ambiguous else ConfidenceLevel.EXTRACTED
+                    results.append((plain, conf))
+    return results
 
 
 class GraphExtractor:
     """Extracts entities and relationships from vault note content.
 
-    Primary extraction is deterministic rule-based (confidence=1.0).
+    Primary extraction is deterministic rule-based (confidence=EXTRACTED).
     When an ``LLMExtractor`` is provided, also extracts from unstructured
-    body text using LLM (confidence=0.8).
+    body text using LLM (confidence=INFERRED).
 
     v2.2: Uses frontmatter type directly as entity_type (no _TYPE_MAP).
     Extracts typed relations from frontmatter keys matching ontology relation types.
@@ -105,6 +118,12 @@ class GraphExtractor:
         if self._ontology and not fm.get("knowledge_layer"):
             knowledge_layer = self._ontology.get_knowledge_layer(fm_type)
 
+        # Bi-temporal: extract valid_from/valid_to from frontmatter
+        note_valid_from = str(fm["valid_from"]) if fm.get("valid_from") else None
+        note_valid_to = str(fm["valid_to"]) if fm.get("valid_to") else None
+        if note_valid_to == "present":
+            note_valid_to = None  # "present" means still valid
+
         # 1. Note entity — use frontmatter type directly as entity_type (v2.2: no mapping)
         note_name = fm.get("title") or _slug_from_path(rel_path)
         note_entity = GraphEntity(
@@ -112,7 +131,7 @@ class GraphExtractor:
             entity_type=fm_type,
             source_path=rel_path,
             properties={k: v for k, v in fm.items() if k in ("type", "status", "captured_at")},
-            confidence=float(fm.get("confidence", 1.0)),
+            confidence=fm.get("confidence", ConfidenceLevel.EXTRACTED),
             knowledge_layer=knowledge_layer,
         )
         entities.append(note_entity)
@@ -125,14 +144,22 @@ class GraphExtractor:
             subject_raw = fm.get("subject", "")
             predicate = fm.get("predicate", "")
             object_raw = fm.get("object", "")
-            subject_names = _extract_wikilink_names([subject_raw]) if subject_raw else []
-            object_names = _extract_wikilink_names([object_raw]) if object_raw else []
-            if subject_names and predicate and object_names:
+            subject_pairs = _extract_wikilink_names([subject_raw]) if subject_raw else []
+            object_pairs = _extract_wikilink_names([object_raw]) if object_raw else []
+            if subject_pairs and predicate and object_pairs:
+                subj_name, subj_conf = subject_pairs[0]
+                obj_name, obj_conf = object_pairs[0]
                 subj_entity = GraphEntity(
-                    name=subject_names[0], entity_type="concept", source_path=rel_path
+                    name=subj_name,
+                    entity_type="concept",
+                    source_path=rel_path,
+                    confidence=subj_conf,
                 )
                 obj_entity = GraphEntity(
-                    name=object_names[0], entity_type="concept", source_path=rel_path
+                    name=obj_name,
+                    entity_type="concept",
+                    source_path=rel_path,
+                    confidence=obj_conf,
                 )
                 entities.extend([subj_entity, obj_entity])
                 relationships.append(
@@ -143,6 +170,8 @@ class GraphExtractor:
                         source_path=rel_path,
                         weight=self._get_relation_weight(predicate),
                         edge_type="strong",
+                        valid_from=note_valid_from,
+                        valid_to=note_valid_to,
                     )
                 )
                 # Link fact note to subject
@@ -156,14 +185,17 @@ class GraphExtractor:
                         edge_type="strong",
                     )
                 )
-                all_related_names.update(subject_names + object_names)
+                all_related_names.update(n for n, _ in subject_pairs + object_pairs)
             # Supersedes chain
             supersedes_raw = fm.get("supersedes", "")
             if supersedes_raw:
-                sup_names = _extract_wikilink_names([supersedes_raw])
-                for sup_name in sup_names:
+                sup_pairs = _extract_wikilink_names([supersedes_raw])
+                for sup_name, sup_conf in sup_pairs:
                     sup_entity = GraphEntity(
-                        name=sup_name, entity_type="fact", source_path=rel_path
+                        name=sup_name,
+                        entity_type="fact",
+                        source_path=rel_path,
+                        confidence=sup_conf,
                     )
                     entities.append(sup_entity)
                     relationships.append(
@@ -226,11 +258,14 @@ class GraphExtractor:
             # Value must be a list of wikilinks
             if not isinstance(value, list):
                 value = [value]
-            targets = _extract_wikilink_names(value)
-            for target_name in targets:
+            target_pairs = _extract_wikilink_names(value)
+            for target_name, target_conf in target_pairs:
                 all_related_names.add(target_name)
                 target_entity = GraphEntity(
-                    name=target_name, entity_type="concept", source_path=rel_path
+                    name=target_name,
+                    entity_type="concept",
+                    source_path=rel_path,
+                    confidence=target_conf,
                 )
                 entities.append(target_entity)
                 relationships.append(
@@ -241,6 +276,7 @@ class GraphExtractor:
                         source_path=rel_path,
                         weight=self._get_relation_weight(key),
                         edge_type="strong",
+                        confidence=target_conf,
                     )
                 )
 
@@ -248,13 +284,16 @@ class GraphExtractor:
         related = fm.get("related", [])
         if not isinstance(related, list):
             related = []
-        related_names = _extract_wikilink_names(related)
-        for target_name in related_names:
+        related_pairs = _extract_wikilink_names(related)
+        for target_name, target_conf in related_pairs:
             if target_name in all_related_names:
                 continue
             all_related_names.add(target_name)
             target_entity = GraphEntity(
-                name=target_name, entity_type="concept", source_path=rel_path
+                name=target_name,
+                entity_type="concept",
+                source_path=rel_path,
+                confidence=target_conf,
             )
             entities.append(target_entity)
             relationships.append(
@@ -265,6 +304,7 @@ class GraphExtractor:
                     source_path=rel_path,
                     weight=self._get_relation_weight("related_to"),
                     edge_type="strong",
+                    confidence=target_conf,
                 )
             )
 
