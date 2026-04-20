@@ -455,6 +455,33 @@ class TestConfigEndpoints:
         # Model should not change
         assert response.json()["llm_model"] == "anthropic/claude-sonnet-4-20250514"
 
+    def test_test_llm_success(self, client, mock_state) -> None:
+        mock_state.llm_client.chat = AsyncMock(return_value="pong")
+        response = client.post("/api/config/test-llm")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+        assert data["reply"] == "pong"
+        assert data["model"] == "anthropic/claude-sonnet-4-20250514"
+        assert isinstance(data["latency_ms"], int)
+
+    def test_test_llm_missing_key(self, client, mock_state) -> None:
+        mock_state.runtime_config.update(llm_api_key="")
+        response = client.post("/api/config/test-llm")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is False
+        assert data["error"] == "missing_api_key"
+
+    def test_test_llm_upstream_failure(self, client, mock_state) -> None:
+        mock_state.llm_client.chat = AsyncMock(side_effect=RuntimeError("upstream 503"))
+        response = client.post("/api/config/test-llm")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is False
+        assert data["error"] == "RuntimeError"
+        assert "upstream 503" in data["detail"]
+
 
 class TestSyncBackendsEndpoint:
     """Test GET /api/sync-backends."""

@@ -954,6 +954,52 @@ def create_routes(state: AppState) -> APIRouter:
         snap["index_available"] = state.retriever.index_available
         return snap
 
+    @protected.post("/config/test-llm")
+    async def test_llm() -> dict[str, Any]:
+        """Send a minimal ping to the configured LLM and report result.
+
+        Does not modify any state. Uses current runtime_config (model +
+        api_key + api_base). Returns latency, reply preview, or an error
+        with a user-facing hint.
+        """
+        import time
+
+        cfg = state.runtime_config
+        if not cfg.llm_api_key:
+            return {
+                "ok": False,
+                "error": "missing_api_key",
+                "hint": "Save an API key first.",
+            }
+        if not cfg.llm_model:
+            return {
+                "ok": False,
+                "error": "missing_model",
+                "hint": "Set an LLM model first.",
+            }
+
+        start = time.perf_counter()
+        try:
+            reply = await state.llm_client.chat(
+                system="Reply with exactly the word: pong",
+                messages=[{"role": "user", "content": "ping"}],
+            )
+        except Exception as exc:
+            logger.warning("llm_test_failed", error=str(exc))
+            return {
+                "ok": False,
+                "error": type(exc).__name__,
+                "detail": str(exc)[:300],
+                "model": cfg.llm_model,
+            }
+        latency_ms = round((time.perf_counter() - start) * 1000)
+        return {
+            "ok": True,
+            "model": cfg.llm_model,
+            "latency_ms": latency_ms,
+            "reply": reply[:200],
+        }
+
     @protected.post("/chat")
     async def chat(body: ChatMessage) -> dict[str, str]:
         """Vault-aware conversational chat with plugin tool use."""

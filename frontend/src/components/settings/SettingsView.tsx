@@ -1,7 +1,7 @@
 import { Eye, EyeOff } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../api/client";
-import type { RuntimeConfig } from "../../api/types";
+import type { LlmTestResult, RuntimeConfig } from "../../api/types";
 import { useAuth } from "../../hooks/useAuth";
 import { Icon } from "../common/Icon";
 import { Toggle } from "../common/Toggle";
@@ -15,6 +15,8 @@ export function SettingsView() {
   const [llmApiBase, setLlmApiBase] = useState("");
   const [llmApiKey, setLlmApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<LlmTestResult | null>(null);
 
   const refreshConfig = useCallback(async () => {
     const c = await api.getConfig();
@@ -69,10 +71,23 @@ export function SettingsView() {
       setConfig(updated);
       setLlmApiKey("");
       setShowApiKey(false);
+      setTestResult(null);
     } finally {
       setSaving(false);
     }
   }, [llmApiKey]);
+
+  const handleTestLlm = useCallback(async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      setTestResult(await api.testLlm());
+    } catch (exc) {
+      setTestResult({ ok: false, error: "request_failed", detail: String(exc) });
+    } finally {
+      setTesting(false);
+    }
+  }, []);
 
   if (loading || !config) {
     return (
@@ -186,6 +201,27 @@ export function SettingsView() {
           <p className="text-xs text-gray-600 mt-1">
             The key is stored securely and never displayed after saving.
           </p>
+
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              onClick={handleTestLlm}
+              disabled={testing || !config.has_llm_api_key}
+              className="px-3 py-1.5 text-xs rounded-lg border border-gray-700 bg-gray-850 text-gray-200 hover:bg-gray-800 disabled:opacity-40 transition-colors"
+            >
+              {testing ? "Testing..." : "Test connection"}
+            </button>
+            {testResult && (
+              <span
+                className={`text-xs ${testResult.ok ? "text-accent" : "text-amber-400"}`}
+              >
+                {testResult.ok
+                  ? `OK · ${testResult.model} · ${testResult.latency_ms}ms · "${testResult.reply}"`
+                  : `${testResult.error ?? "error"}${
+                      testResult.hint ? ` — ${testResult.hint}` : ""
+                    }${testResult.detail ? `: ${testResult.detail}` : ""}`}
+              </span>
+            )}
+          </div>
         </section>
 
         {config.embedding_model && (

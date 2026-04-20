@@ -136,6 +136,17 @@ export interface VaultGraphLink {
   target: string;
 }
 
+/** POST /api/config/test-llm response. */
+export interface LlmTestResult {
+  ok: boolean;
+  model?: string;
+  latency_ms?: number;
+  reply?: string;
+  error?: string;
+  detail?: string;
+  hint?: string;
+}
+
 /** GET /api/vault/communities response. */
 export interface VaultCommunities {
   communities: VaultCommunity[];

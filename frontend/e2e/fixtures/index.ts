@@ -298,6 +298,20 @@ export const test = base.extend<CustomFixtures>({
         });
       });
 
+      // Config — LLM test endpoint
+      await page.route("**/api/config/test-llm", (route) => {
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ok: true,
+            model: "claude-opus-4-5",
+            latency_ms: 42,
+            reply: "pong",
+          }),
+        });
+      });
+
       // Vault communities endpoint (Phase 1)
       await page.route("**/api/vault/communities**", (route) => {
         route.fulfill({
