@@ -962,19 +962,23 @@ class TestAuthEndpoints:
 class TestWebSocketAuth:
     """Test WebSocket authentication flow."""
 
-    async def test_ws_rejects_when_auth_provider_is_none(self) -> None:
-        """When auth_provider is None (jwt_secret empty), WS must be rejected."""
-        from starlette.websockets import WebSocketDisconnect
+    async def test_ws_accepts_anonymously_when_auth_provider_is_none(self) -> None:
+        """When auth_provider is None (local dev), WS must accept anonymously.
 
+        Tightened auth-less rejection used to close with 4003, but the
+        frontend would retry forever. For dev/Tailscale use the endpoint
+        now joins the broadcast pool without a token. Production always
+        configures auth_provider, so this path is dev-only.
+        """
         from bsage.gateway.ws import create_ws_routes
 
         app = FastAPI()
         app.include_router(create_ws_routes(auth_provider=None))
 
         with TestClient(app) as c, c.websocket_connect("/ws") as ws:
-            with pytest.raises(WebSocketDisconnect) as exc_info:
-                ws.receive_json()
-            assert exc_info.value.code == 4003
+            ws.send_json({"type": "ping"})
+            data = ws.receive_json()
+            assert data["type"] == "ack"
 
     async def test_ws_connects_with_valid_auth(self) -> None:
         """When auth_provider verifies token, WS connects successfully."""
