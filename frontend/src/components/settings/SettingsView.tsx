@@ -10,6 +10,7 @@ export function SettingsView() {
   const { logout } = useAuth();
   const [config, setConfig] = useState<RuntimeConfig | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [llmModel, setLlmModel] = useState("");
   const [llmApiBase, setLlmApiBase] = useState("");
@@ -19,14 +20,22 @@ export function SettingsView() {
   const [testResult, setTestResult] = useState<LlmTestResult | null>(null);
 
   const refreshConfig = useCallback(async () => {
-    const c = await api.getConfig();
-    setConfig(c);
-    setLlmModel(c.llm_model);
-    setLlmApiBase(c.llm_api_base ?? "");
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const c = await api.getConfig();
+      setConfig(c);
+      setLlmModel(c.llm_model);
+      setLlmApiBase(c.llm_api_base ?? "");
+    } catch (exc) {
+      setLoadError(exc instanceof Error ? exc.message : String(exc));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    refreshConfig().then(() => setLoading(false));
+    void refreshConfig();
   }, [refreshConfig]);
 
   const handleSafeMode = useCallback(async (checked: boolean) => {
@@ -89,9 +98,28 @@ export function SettingsView() {
     }
   }, []);
 
-  if (loading || !config) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-full text-gray-600">Loading...</div>
+    );
+  }
+
+  if (loadError || !config) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-400">
+        <p className="text-sm">Failed to load settings.</p>
+        {loadError && (
+          <p className="text-xs text-gray-600 font-mono max-w-md text-center break-all">
+            {loadError}
+          </p>
+        )}
+        <button
+          onClick={() => void refreshConfig()}
+          className="px-3 py-1.5 text-xs rounded-lg border border-gray-700 bg-gray-850 text-gray-200 hover:bg-gray-800 transition-colors"
+        >
+          Retry
+        </button>
+      </div>
     );
   }
 
