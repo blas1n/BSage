@@ -1,9 +1,0 @@
-{
-  "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "https://api-sage.bsvibe.dev/api/:path*"
-    },
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
-}
