@@ -21,6 +21,15 @@ interface SessionResponse {
 }
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
+// Dedupe concurrent getAccessToken callers onto a single in-flight cookie-
+// SSO fetch. Without this, App.tsx's useAuth, Sidebar's useAuth,
+// useWebSocket, and api.client each fire their own /api/session request
+// at mount time. If any one returns a transient error (Cloudflare
+// challenge, cold start, brief network hiccup), its caller resolves to
+// null and the downstream API request goes out without Authorization —
+// even though a sibling caller ultimately populated cachedToken. The
+// resulting 401 leaves VaultView etc. stuck on "Vault is empty".
+let inFlightSession: Promise<string | null> | null = null;
 
 function loadTokenFromLocalStorage(): { value: string; expiresAt: number } | null {
   const value = localStorage.getItem(LS_ACCESS_TOKEN);
@@ -61,22 +70,34 @@ export async function getAccessToken(): Promise<string | null> {
   }
 
   // Production path: cross-subdomain cookie SSO via auth.bsvibe.dev.
-  try {
-    const res = await fetch(`${AUTH_URL}/api/session`, { credentials: "include" });
-    if (!res.ok) return null;
-    const data: SessionResponse = await res.json();
-    cachedToken = {
-      value: data.access_token,
-      expiresAt: Date.now() + data.expires_in * 1000,
-    };
-    return data.access_token;
-  } catch {
-    return null;
-  }
+  // Every caller during this window awaits the same Promise so a
+  // single 401/Cloudflare failure can't de-sync callers.
+  if (inFlightSession) return inFlightSession;
+  inFlightSession = (async () => {
+    try {
+      const res = await fetch(`${AUTH_URL}/api/session`, { credentials: "include" });
+      if (!res.ok) return null;
+      const data: SessionResponse = await res.json();
+      cachedToken = {
+        value: data.access_token,
+        expiresAt: Date.now() + data.expires_in * 1000,
+      };
+      // Persist so a reload doesn't require another cookie round-trip
+      // (and so sibling tabs can reuse the token).
+      saveTokenToLocalStorage(data.access_token, data.refresh_token, data.expires_in);
+      return data.access_token;
+    } catch {
+      return null;
+    } finally {
+      inFlightSession = null;
+    }
+  })();
+  return inFlightSession;
 }
 
 export function clearTokenCache() {
   cachedToken = null;
+  inFlightSession = null;
   clearLocalStorageTokens();
 }
 
