@@ -16,7 +16,17 @@ import type {
 } from "./types";
 import { getAccessToken } from "../hooks/useAuth";
 
-const BASE = import.meta.env.VITE_API_URL || "/api";
+// Normalize VITE_API_URL so operators can set either
+// `https://api.example.com` or `https://api.example.com/api` — every
+// path in this module is `/vault/tree`, `/knowledge/search`, etc. (no
+// `/api` prefix), so BASE must always end with `/api`. Without this,
+// setting VITE_API_URL to a bare host drops the prefix and every
+// request lands on the SPA fallback (200 + HTML) instead of the
+// backend, which then looks like an auth failure to the caller.
+const BASE = (() => {
+  const raw = (import.meta.env.VITE_API_URL || "/api").replace(/\/+$/, "");
+  return raw.endsWith("/api") ? raw : `${raw}/api`;
+})();
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
