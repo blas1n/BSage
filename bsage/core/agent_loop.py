@@ -1,4 +1,17 @@
-"""AgentLoop — orchestrates Plugin/Skill execution via trigger matching and tool use."""
+"""AgentLoop — orchestrates Plugin/Skill execution via trigger matching and tool use.
+
+The original module accumulated tool-dispatch, seed-refinement and on-demand
+routing helpers into one ~560-line class. During Hardening Sprint 2 (M15) the
+pure helpers were extracted into focused submodules:
+
+* :mod:`bsage.core.agent_loop_seed_refiner` — seed refinement (LLM JSON parse).
+* :mod:`bsage.core.agent_loop_tools` — registry → tool-definition translation,
+  trigger matching, on-demand collection, router-prompt formatting.
+
+This file keeps :class:`AgentLoop` as the single orchestration entry point so
+existing callers and tests are unaffected. The class delegates to the helpers
+above for the heavy lifting.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +22,20 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from bsage.core.agent_loop_seed_refiner import (
+    REFINE_PROMPT_FALLBACK,
+    refine_seed,
+    resolve_refine_prompt,
+)
+from bsage.core.agent_loop_tools import (
+    build_router_prompt_fallback,
+    build_tools,
+    collect_on_demand,
+    find_triggered,
+    format_on_demand_descriptions,
+    on_demand_tool_definitions,
+    truncate_tool_summary,
+)
 from bsage.core.chat_bridge import ReplyFn
 from bsage.core.events import emit_event
 from bsage.core.exceptions import MissingCredentialError
@@ -16,15 +43,7 @@ from bsage.core.prompt_registry import PromptRegistry
 from bsage.core.runner import Runner
 from bsage.core.safe_mode import SafeModeGuard
 from bsage.core.skill_context import GraphInterface, LLMClient, SchedulerInterface, SkillContext
-from bsage.garden.writer import (
-    APPEND_NOTE_TOOL,
-    DELETE_NOTE_TOOL,
-    SEARCH_VAULT_TOOL,
-    UPDATE_NOTE_TOOL,
-    WRITE_NOTE_TOOL,
-    WRITE_SEED_TOOL,
-    GardenWriter,
-)
+from bsage.garden.writer import GardenWriter
 
 if TYPE_CHECKING:
     from bsage.core.events import EventBus
@@ -44,6 +63,10 @@ class AgentLoop:
     can invoke them directly — both during interactive chat and when
     routing on-demand skills for automated input processing.
     """
+
+    # Re-exposed for test backward compatibility — historical callers patched
+    # ``AgentLoop._REFINE_PROMPT_FALLBACK``.
+    _REFINE_PROMPT_FALLBACK = REFINE_PROMPT_FALLBACK
 
     def __init__(
         self,
@@ -164,60 +187,22 @@ class AgentLoop:
     # Seed refinement
     # ------------------------------------------------------------------
 
-    _REFINE_PROMPT_FALLBACK = (
-        "You are a data cleaner for a personal knowledge base. "
-        "Clean the following input WITHOUT changing its meaning.\n"
-        "Rules:\n"
-        "- Fix typos and grammar\n"
-        "- Extract the core content (remove noise, repetition)\n"
-        "- Generate a concise title (under 30 chars)\n"
-        "- Assign up to 3 relevant tags\n"
-        '- Output ONLY valid JSON: {"title": "...", "content": "...", "tags": [...]}\n'
-        "- Preserve the original language (Korean, English, etc.)"
-    )
-
     @property
     def _refine_prompt(self) -> str:
         """Load seed-refiner prompt from PromptRegistry, falling back to inline."""
-        if self._prompt_registry:
-            try:
-                return self._prompt_registry.get("seed-refiner")
-            except KeyError:
-                pass
-        return self._REFINE_PROMPT_FALLBACK
+        return resolve_refine_prompt(self._prompt_registry)
 
     async def _refine_seed(self, plugin_name: str, raw_data: dict[str, Any]) -> dict[str, Any]:
         """Refine raw input data using a lightweight LLM pass.
 
         Falls back to raw_data if refinement fails.
         """
-        # If already structured (has title + content), skip refinement
-        if "title" in raw_data and "content" in raw_data:
-            return raw_data
-
-        raw_text = json.dumps(raw_data, default=str, ensure_ascii=False)
-        if len(raw_text) < 20:
-            return raw_data
-
-        response = ""
-        try:
-            response = await self._llm_client.chat(
-                system=self._refine_prompt,
-                messages=[{"role": "user", "content": raw_text}],
-            )
-            parsed = json.loads(response.strip())
-            if isinstance(parsed, dict) and "title" in parsed and "content" in parsed:
-                logger.info("seed_refined", plugin_name=plugin_name)
-                return parsed
-        except (json.JSONDecodeError, ValueError, TypeError, RuntimeError, OSError):
-            logger.debug(
-                "seed_refine_failed_using_raw",
-                plugin_name=plugin_name,
-                response_preview=response[:200],
-                exc_info=True,
-            )
-
-        return raw_data
+        return await refine_seed(
+            plugin_name=plugin_name,
+            raw_data=raw_data,
+            llm_client=self._llm_client,
+            prompt_registry=self._prompt_registry,
+        )
 
     # ------------------------------------------------------------------
     # Trigger matching
@@ -225,16 +210,7 @@ class AgentLoop:
 
     def _find_triggered(self, source_name: str) -> list[PluginMeta | SkillMeta]:
         """Find process entries with trigger.type == on_input matching source."""
-        result = []
-        for meta in self._registry.values():
-            if meta.category != "process" or not meta.trigger:
-                continue
-            if meta.trigger.get("type") != "on_input":
-                continue
-            sources = meta.trigger.get("sources")
-            if sources is None or source_name in sources:
-                result.append(meta)
-        return result
+        return find_triggered(self._registry, source_name)
 
     # ------------------------------------------------------------------
     # Tool use infrastructure (shared by chat and on_input)
@@ -246,32 +222,8 @@ class AgentLoop:
         Only plugins present in ``runtime_config.enabled_entries`` are exposed.
         When no runtime_config is set, all eligible plugins are included.
         """
-        from bsage.core.plugin_loader import PluginMeta
-
         enabled = self._runtime_config.enabled_entries if self._runtime_config else None
-        tools: list[dict] = [
-            WRITE_NOTE_TOOL,
-            WRITE_SEED_TOOL,
-            UPDATE_NOTE_TOOL,
-            APPEND_NOTE_TOOL,
-            DELETE_NOTE_TOOL,
-            SEARCH_VAULT_TOOL,
-        ]
-        for meta in self._registry.values():
-            if isinstance(meta, PluginMeta) and meta.category == "process" and meta.input_schema:
-                if enabled is not None and meta.name not in enabled:
-                    continue
-                tools.append(
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": meta.name,
-                            "description": meta.description,
-                            "parameters": meta.input_schema,
-                        },
-                    }
-                )
-        return tools
+        return build_tools(self._registry, enabled=enabled)
 
     @cached_property
     def _builtin_handlers(self) -> dict[str, Callable[[dict[str, Any]], Awaitable[Any]]]:
@@ -314,8 +266,7 @@ class AgentLoop:
             try:
                 result = await handler(args)
                 result_str = result if isinstance(result, str) else json.dumps(result, default=str)
-                summary = result_str[:200]
-                await self._garden_writer.write_action(name, summary)
+                await self._garden_writer.write_action(name, truncate_tool_summary(result_str))
                 await emit_event(
                     self._event_bus,
                     "TOOL_CALL_COMPLETE",
@@ -338,8 +289,7 @@ class AgentLoop:
         try:
             context = self.build_context(input_data=args)
             result = await self._runner.run(meta, context)
-            summary = json.dumps(result, default=str)[:200]
-            await self._garden_writer.write_action(name, summary)
+            await self._garden_writer.write_action(name, truncate_tool_summary(result))
             await emit_event(
                 self._event_bus,
                 "TOOL_CALL_COMPLETE",
@@ -364,30 +314,12 @@ class AgentLoop:
         both decides AND executes in a single pass.  Falls back to the
         text-based routing for entries without input_schema.
         """
-        from bsage.core.plugin_loader import PluginMeta
-
-        on_demand = [
-            m
-            for m in self._registry.values()
-            if m.category == "process" and (not m.trigger or m.trigger.get("type") == "on_demand")
-        ]
+        on_demand = collect_on_demand(self._registry)
         if not on_demand:
             return []
 
         # Build tool definitions for on-demand plugins with input_schema
-        tools = []
-        for m in on_demand:
-            if isinstance(m, PluginMeta) and m.input_schema:
-                tools.append(
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": m.name,
-                            "description": m.description,
-                            "parameters": m.input_schema,
-                        },
-                    }
-                )
+        tools = on_demand_tool_definitions(on_demand)
 
         system = self._build_router_prompt(on_demand)
         messages = [
@@ -456,11 +388,7 @@ class AgentLoop:
 
     def _build_router_prompt(self, on_demand: list[PluginMeta | SkillMeta]) -> str:
         """Build system prompt for on-demand routing."""
-        descriptions = "\n".join(
-            f"- {m.name}: {m.description}"
-            + (f" (hint: {m.trigger['hint']})" if m.trigger and m.trigger.get("hint") else "")
-            for m in on_demand
-        )
+        descriptions = format_on_demand_descriptions(on_demand)
         if self._prompt_registry:
             try:
                 return self._prompt_registry.render("router", skill_descriptions=descriptions)
@@ -471,13 +399,7 @@ class AgentLoop:
     @staticmethod
     def _build_router_prompt_fallback(descriptions: str) -> str:
         """Build router system prompt when PromptRegistry is unavailable."""
-        return (
-            "You are BSage's plugin router. Given input from a plugin, "
-            "decide which on-demand process plugin(s) should run.\n"
-            f"Available on-demand plugins:\n{descriptions}\n\n"
-            "Respond with ONLY the plugin name(s), one per line. "
-            "If none are appropriate, respond with 'none'."
-        )
+        return build_router_prompt_fallback(descriptions)
 
     # ------------------------------------------------------------------
     # Framework API
@@ -562,3 +484,6 @@ class AgentLoop:
     async def write_action(self, name: str, summary: str) -> None:
         """Write an action log entry for a plugin/skill execution."""
         await self._garden_writer.write_action(name, summary)
+
+
+__all__ = ["AgentLoop"]
