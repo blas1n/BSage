@@ -80,6 +80,28 @@ async def test_llm_failure_falls_back_to_raw() -> None:
 
 
 @pytest.mark.asyncio()
+async def test_llm_auth_error_falls_back_without_raising() -> None:
+    """A missing API key (or any non-stdlib exception type) must fall
+    back to raw_data instead of bubbling up to the webhook handler.
+
+    This is the scenario that turned ``POST /api/webhooks/bsnexus-input``
+    into a 500: anthropic API key missing → ``litellm.AuthenticationError``
+    raised inside _refine_seed → escaped the original (json/Value/Type/
+    Runtime/OS)Error tuple and crashed the public webhook.
+    """
+
+    class FakeAuthError(Exception):
+        pass
+
+    loop = _build_agent_loop(llm_response=FakeAuthError("Missing API key"))
+    raw = {"message": "This is a long enough unstructured message for auth-error test"}
+
+    result = await loop._refine_seed("test-plugin", raw)
+
+    assert result == raw
+
+
+@pytest.mark.asyncio()
 async def test_llm_invalid_json_falls_back_to_raw() -> None:
     """When LLM returns non-JSON text, raw_data is returned."""
     loop = _build_agent_loop(llm_response="not valid json at all")
