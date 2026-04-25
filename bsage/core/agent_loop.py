@@ -200,6 +200,12 @@ class AgentLoop:
             return raw_data
 
         response = ""
+        # Catch *anything* the LLM client can throw — refinement is a
+        # nice-to-have. A missing API key, rate limit, network blip, or
+        # malformed response must never bubble out of a public webhook
+        # handler and turn a successful seed write into a 500. The seed
+        # is already on disk; failing back to ``raw_data`` just means the
+        # refiner-derived title/tags are missing for this seed.
         try:
             response = await self._llm_client.chat(
                 system=self._refine_prompt,
@@ -209,7 +215,7 @@ class AgentLoop:
             if isinstance(parsed, dict) and "title" in parsed and "content" in parsed:
                 logger.info("seed_refined", plugin_name=plugin_name)
                 return parsed
-        except (json.JSONDecodeError, ValueError, TypeError, RuntimeError, OSError):
+        except Exception:  # noqa: BLE001 — sink-all at the LLM boundary
             logger.debug(
                 "seed_refine_failed_using_raw",
                 plugin_name=plugin_name,
