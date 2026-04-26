@@ -1,17 +1,36 @@
-"""BSage configuration via pydantic-settings."""
+"""BSage configuration via pydantic-settings.
+
+Phase A migration (2026-04-26): :class:`Settings` now extends
+:class:`bsvibe_core.BsvibeSettings` so the four-product
+``Annotated[list[str], NoDecode]`` CSV-env contract (BSupervisor §M18)
+is shared rather than re-derived. ``cors_origins`` adopts
+:func:`bsvibe_core.csv_list_field` so deployers can use either the
+legacy JSON form (``["http://a"]``) or the simpler CSV form
+(``http://a,http://b``) without crashes.
+"""
 
 from pathlib import Path
+from typing import Annotated
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from bsvibe_core import BsvibeSettings, csv_list_field, parse_csv_list
+from pydantic import Field, field_validator
+from pydantic_settings import NoDecode, SettingsConfigDict
+
+_DEFAULT_CORS_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 
-class Settings(BaseSettings):
-    """Application settings loaded from environment variables and .env file."""
+class Settings(BsvibeSettings):
+    """Application settings loaded from environment variables and .env file.
+
+    Inherits the BSVibe baseline (case-insensitive env, ``extra="ignore"``)
+    from :class:`BsvibeSettings` and re-pins ``env_file=".env"`` so BSage
+    keeps loading its existing dotfiles.
+    """
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
+        case_sensitive=False,
         extra="ignore",
     )
 
@@ -82,8 +101,24 @@ class Settings(BaseSettings):
     # principal (cron, local dev, or migration). Personal-tenant only.
     default_tenant_id: str = "tenant-default"
 
-    # CORS
-    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    # CORS — Annotated[list[str], NoDecode] + parse_csv_list per the
+    # BSVibe four-product contract (bsvibe_core.csv_list_field). Accepts
+    # either the legacy JSON shape (``["http://a"]``) or the operator-
+    # friendly CSV shape (``http://a,http://b``).
+    cors_origins: Annotated[list[str], NoDecode] = csv_list_field(
+        default=_DEFAULT_CORS_ORIGINS,
+        alias="cors_origins",
+        description="Allowed CORS origins for the BSage gateway",
+    )
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _parse_cors_origins(cls, v: object) -> list[str]:
+        if isinstance(v, str):
+            return parse_csv_list(v) or list(_DEFAULT_CORS_ORIGINS)
+        if isinstance(v, list):
+            return [str(x) for x in v]
+        return list(_DEFAULT_CORS_ORIGINS)
 
     # Rate limiting
     rate_limit_per_minute: int = Field(default=60, gt=0)

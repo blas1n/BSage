@@ -8,8 +8,9 @@ from pathlib import Path
 
 import structlog
 from bsvibe_authz import get_settings_dep as _authz_get_settings_dep
+from bsvibe_fastapi import RequestIdMiddleware, add_cors_middleware
+from bsvibe_fastapi.settings import FastApiSettings
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -64,13 +65,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     rate_limiter = RateLimiter(requests_per_minute=settings.rate_limit_per_minute)
     app.add_middleware(RateLimitMiddleware, rate_limiter=rate_limiter)
 
-    # CORS — configurable origins (defaults to Vite dev server)
-    app.add_middleware(
-        CORSMiddleware,
+    # Phase A — request id correlation + structlog contextvars binding via
+    # bsvibe-fastapi shared middleware.
+    app.add_middleware(RequestIdMiddleware)
+
+    # Phase A — CORS via bsvibe-fastapi shared helper. BSage keeps its
+    # historical permissive policy (``allow_methods=["*"]`` / ``allow_headers=["*"]``)
+    # by passing explicit overrides; the helper otherwise enforces the
+    # BSVibe baseline ``Authorization`` / ``Content-Type`` allowlist.
+    add_cors_middleware(
+        app,
+        FastApiSettings(),
         allow_origins=settings.cors_origins,
-        allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        allow_credentials=True,
     )
 
     # Register API + MCP + WebSocket routes

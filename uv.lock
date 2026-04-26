@@ -224,6 +224,8 @@ dependencies = [
     { name = "apscheduler" },
     { name = "bsvibe-auth", extra = ["fastapi"] },
     { name = "bsvibe-authz" },
+    { name = "bsvibe-core" },
+    { name = "bsvibe-fastapi" },
     { name = "click" },
     { name = "cryptography" },
     { name = "fastapi" },
@@ -261,6 +263,8 @@ requires-dist = [
     { name = "boto3", marker = "extra == 's3'", specifier = ">=1.28.0" },
     { name = "bsvibe-auth", extras = ["fastapi"], git = "https://github.com/BSVibe/BSVibe-Auth.git?subdirectory=python&rev=v0.4.0" },
     { name = "bsvibe-authz", git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-authz&rev=feat%2Fbsvibe-authz-impl" },
+    { name = "bsvibe-core", git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-core&rev=feat%2Fbsvibe-fastapi-impl" },
+    { name = "bsvibe-fastapi", git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-fastapi&rev=feat%2Fbsvibe-fastapi-impl" },
     { name = "click", specifier = ">=8.0.0" },
     { name = "cryptography", specifier = ">=43.0.0" },
     { name = "fastapi", specifier = ">=0.110.0" },
@@ -306,6 +310,28 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyjwt", extra = ["crypto"] },
+    { name = "structlog" },
+]
+
+[[package]]
+name = "bsvibe-core"
+version = "0.1.0"
+source = { git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-core&rev=feat%2Fbsvibe-fastapi-impl#8d4b6c3d127d0b06b91314deeb9cef81661da37f" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "structlog" },
+]
+
+[[package]]
+name = "bsvibe-fastapi"
+version = "0.1.0"
+source = { git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-fastapi&rev=feat%2Fbsvibe-fastapi-impl#8d4b6c3d127d0b06b91314deeb9cef81661da37f" }
+dependencies = [
+    { name = "bsvibe-core" },
+    { name = "fastapi" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
     { name = "structlog" },
 ]
 

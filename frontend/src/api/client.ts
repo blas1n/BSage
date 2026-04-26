@@ -1,3 +1,6 @@
+import { createApiFetch, setOnAuthError } from "@bsvibe/api";
+
+import { clearTokenCache, getAccessToken } from "../hooks/useAuth";
 import type {
   ChatRequest,
   ChatResponse,
@@ -6,36 +9,56 @@ import type {
   EntryMeta,
   RuntimeConfig,
   VaultBacklink,
+  VaultCommunities,
   VaultFileResponse,
   VaultGraph,
   VaultSearchResult,
-  VaultCommunities,
   VaultTags,
   VaultTreeEntry,
   LlmTestResult,
 } from "./types";
-import { getAccessToken } from "../hooks/useAuth";
 
 const BASE =
   process.env.NEXT_PUBLIC_API_URL || process.env.VITE_API_URL || "/api";
 
+// Phase A Batch 5: replace the bespoke ~30 LoC fetch wrapper with the shared
+// `@bsvibe/api` `createApiFetch`. The shared client gives us:
+//   - 401 cascading-logout latch (stops the flicker when several requests
+//     fail concurrently after a session expiry)
+//   - timeout + AbortSignal plumbing
+//   - FastAPI {detail: ...} envelope parsing
+//   - typed `ApiError` for downstream handlers
+//
+// Token resolution stays on BSage's existing hash-callback / localStorage
+// path (`hooks/useAuth.getAccessToken`) — the cookie-SSO model that the
+// shared `@bsvibe/auth` `useAuth` hook implements is a behaviour change
+// and is deferred (see `frontend/src/lib/bsvibe/README.md`).
+const apiClient = createApiFetch({
+  baseUrl: BASE,
+  getToken: () => getAccessToken(),
+});
+
+// Wire the cascading-logout guard into BSage's existing token-cache reset
+// so a session expiry mid-page-load drops the cached token exactly once.
+// On a real production cookie-SSO migration this would become a redirect
+// to `${authUrl}/login`; for the hash-route flow we just clear the cache
+// and the next render reroutes via the LandingPage component.
+setOnAuthError(() => {
+  try {
+    clearTokenCache();
+  } catch {
+    /* noop — clearTokenCache only touches localStorage */
+  }
+});
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  // Preserve the legacy "fall back to fetch on raw RequestInit" surface
+  // so existing tests and call sites that build init by hand keep working.
+  const method = (init?.method ?? "GET").toUpperCase();
+  const headers = (init?.headers as Record<string, string> | undefined) ?? {};
+  const body = init?.body;
 
-  const token = await getAccessToken();
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  const res = await fetch(`${BASE}${path}`, {
-    headers,
-    ...init,
-  });
-  if (!res.ok) {
-    const detail = await res.text().catch(() => res.statusText);
-    throw new Error(`${res.status}: ${detail}`);
-  }
-  return res.json();
+  return apiClient.request<T>(path, { method, headers, body });
 }
 
 export const api = {

@@ -1,8 +1,15 @@
 import { useEffect, useState } from "react";
+import type { User as SharedUser } from "@bsvibe/types";
 
-interface User {
-  id: string;
-  email: string;
+// BSage's local "session user" carries tenant + role denormalised out of
+// the JWT `app_metadata` claim, while the canonical `@bsvibe/types.User`
+// only models identity (id/email/name/avatar). Phase A Batch 5: we
+// extend the shared type so the BSage UI keeps the tenantId/role fields
+// it already renders, while the shared identity shape stays the source
+// of truth — once BSage migrates to the cookie-SSO `useAuth()` provider
+// (deferred, see `src/lib/bsvibe/README.md`), tenant/role will move into
+// `Tenant` from `@bsvibe/types` and this local extension goes away.
+interface User extends SharedUser {
   tenantId: string;
   role: string;
 }
