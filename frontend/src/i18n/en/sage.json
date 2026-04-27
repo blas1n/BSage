@@ -1,0 +1,206 @@
+{
+  "nav": {
+    "currentChat": "Current Chat",
+    "knowledgeBase": "Knowledge Base",
+    "vaultBrowser": "Vault Browser",
+    "plugins": "Plugins",
+    "settings": "Settings",
+    "newSession": "New Session",
+    "signOut": "Sign out"
+  },
+  "common": {
+    "loading": "Loading...",
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "retry": "Retry",
+    "search": "Search"
+  },
+  "header": {
+    "pendingApprovals": "{{count}} pending",
+    "help": "Help",
+    "language": "Language"
+  },
+  "landing": {
+    "tagline": "Your AI-powered second brain.",
+    "subtitle": "Organize knowledge, surface insights, grow ideas.",
+    "signIn": "Sign in with BSVibe",
+    "noAccount": "Don't have an account?",
+    "signUp": "Sign up",
+    "poweredBy": "Powered by",
+    "features": {
+      "graph": {
+        "title": "Knowledge Graph",
+        "description": "Visualize connections between your ideas with an interactive ontology-powered graph."
+      },
+      "search": {
+        "title": "Smart Search",
+        "description": "AI-powered search that understands context and surfaces relevant insights instantly."
+      },
+      "plugins": {
+        "title": "Plugin Ecosystem",
+        "description": "Extend your brain with plugins — collect data, automate workflows, sync everywhere."
+      }
+    }
+  },
+  "chat": {
+    "emptyTitle": "Start a conversation",
+    "emptySubtitle": "Ask anything about your 2nd Brain",
+    "modeChat": "CHAT",
+    "modeSearch": "SEARCH",
+    "placeholderChat": "Type a message or reference [[Node]]...",
+    "placeholderSearch": "Search your vault...",
+    "send": "Send",
+    "clear": "Clear",
+    "encryptionNotice": "End-to-end encrypted knowledge graph connection active",
+    "sessions": "Sessions",
+    "newSession": "New session",
+    "noSessions": "No sessions yet",
+    "noSessionsHint": "Start a conversation to create one",
+    "messageCount_one": "{{count}} message",
+    "messageCount_other": "{{count}} messages"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "totalNotes": "Total Notes",
+    "activePlugins": "Active Plugins",
+    "activeSkills": "Active Skills",
+    "knowledgeEntries": "Knowledge Entries",
+    "quickActions": "Quick Actions",
+    "newChatSession": "New Chat Session",
+    "browseVault": "Browse Vault",
+    "viewGraph": "View Graph",
+    "recentActivity": "Recent Activity",
+    "noRecentFiles": "No recent vault files",
+    "systemStatus": "System Status",
+    "websocket": "WebSocket",
+    "pluginStatus": "Plugin Status",
+    "running": "{{count}} running",
+    "stopped": "{{count}} stopped",
+    "errors": "{{count}} errors"
+  },
+  "plugins": {
+    "title": "Plugins",
+    "subtitle": "Extend your kinetic knowledge graph capabilities.",
+    "install": "Install Plugin",
+    "filterAll": "All",
+    "filterAllTypes": "All Types",
+    "filterPlugins": "Plugins",
+    "filterSkills": "Skills",
+    "searchPlaceholder": "Search plugins...",
+    "noMatch": "No entries match your filters",
+    "skillsHeading": "Skills",
+    "alwaysSafe": "Always Safe",
+    "isDangerous": "Is Dangerous",
+    "configure": "Configure",
+    "run": "Run",
+    "running": "Running...",
+    "triggerType": "Trigger Type",
+    "schedule": "Schedule",
+    "toggleAria": "Toggle {{name}}"
+  },
+  "vault": {
+    "title": "Vault Explorer",
+    "searchPlaceholder": "Search vault...",
+    "categoryKnowledge": "Knowledge",
+    "categoryInbox": "Inbox",
+    "categoryLog": "Log",
+    "empty": "Vault is empty",
+    "newNote": "New Note",
+    "viewRendered": "Rendered",
+    "viewRaw": "Raw",
+    "synced": "Synced",
+    "selectFile": "Select a file to view its contents",
+    "createSeed": "Create Seed",
+    "metadataYaml": "Metadata (YAML)",
+    "fields": "{{count}} fields",
+    "relatedNodes": "{{count}} Nodes",
+    "related": "Related",
+    "tags": "Tags",
+    "searching": "Searching...",
+    "noResults": "No results",
+    "backlinks": "Backlinks ({{count}})"
+  },
+  "graph": {
+    "searchPlaceholder": "Explore network...",
+    "showAll": "Show all",
+    "loading": "Loading graph...",
+    "noMatch": "No nodes match your filters",
+    "noNotes": "No notes to graph",
+    "colorType": "Type",
+    "colorCommunity": "Community",
+    "nodeInspector": "Node Inspector",
+    "loadFailed": "Unable to load note content.",
+    "systemMetadata": "System Metadata",
+    "previewContent": "Preview Content",
+    "relatedNodes": "Related Nodes",
+    "closeInspector": "Close Inspector"
+  },
+  "settings": {
+    "title": "Settings",
+    "loadFailed": "Failed to load settings.",
+    "safetyHeading": "Safety",
+    "safeMode": "Safe Mode",
+    "safeModeHint": "When enabled, dangerous plugins require approval before execution.",
+    "llmModelHeading": "LLM Model",
+    "llmModelHint": "Format: provider/model (e.g. anthropic/claude-sonnet-4-20250514)",
+    "llmApiBaseHeading": "LLM API Base",
+    "llmApiBasePlaceholder": "https://api.openai.com/v1",
+    "llmApiBaseHint": "Optional. Override for self-hosted models (e.g. http://localhost:11434)",
+    "llmApiKeyHeading": "LLM API Key",
+    "llmApiKeyPlaceholder": "Enter new API key",
+    "llmApiKeyConfigured": "API key configured",
+    "llmApiKeyMissing": "No API key set",
+    "llmApiKeyHint": "The key is stored securely and never displayed after saving.",
+    "testConnection": "Test connection",
+    "testing": "Testing...",
+    "embeddingModel": "Embedding Model",
+    "account": "Account",
+    "saving": "Saving..."
+  },
+  "approval": {
+    "title": "Approval Required",
+    "deny": "Deny",
+    "approve": "Approve"
+  },
+  "setup": {
+    "credentials": "Setup Credentials",
+    "noFields": "This entry has no credential fields to configure."
+  },
+  "events": {
+    "title": "Events",
+    "empty": "No events yet"
+  },
+  "actions": {
+    "title": "Action Log",
+    "empty": "No actions recorded yet"
+  },
+  "help": {
+    "title": "Help",
+    "viewDocs": "View docs",
+    "panelTitle": "Help",
+    "togglePanelAria": "Toggle help panel",
+    "closePanelAria": "Close help panel",
+    "features": "Features",
+    "keyboardShortcuts": "Keyboard Shortcuts",
+    "shortcutSendMessage": "Send message",
+    "shortcutNewLine": "New line",
+    "about": "About",
+    "aboutBody": "BSage is your personal AI agent that manages a 2nd Brain (Obsidian Vault). It collects data via input Plugins, provides tool functionality via process Plugins/Skills, and syncs the Vault to external storage via output Plugins.",
+    "feature": {
+      "chat": "Ask anything about your 2nd Brain knowledge graph.",
+      "search": "Switch to search mode to find notes in your vault.",
+      "graph": "Explore connections between notes visually.",
+      "plugins": "Manage input, process, and output plugins.",
+      "vault": "Browse and read files in your vault."
+    },
+    "section": {
+      "chat": "Chat with the AI assistant to collect knowledge.",
+      "graph": "Explore knowledge relationships in the Knowledge Graph.",
+      "plugins": "Enable and configure plugins.",
+      "vault": "Browse files in your Vault.",
+      "dashboard": "Inspect the overall BSage status.",
+      "default": "BSage is an ontology-based knowledge management AI assistant."
+    }
+  }
+}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
@@ -57,6 +58,7 @@ function buildStemLookup(tree: VaultTreeEntry[]): Map<string, string> {
 }
 
 export function VaultView() {
+  const { t } = useTranslation();
   const [tree, setTree] = useState<VaultTreeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -237,7 +239,7 @@ export function VaultView() {
     <div className="h-full flex flex-col">
       {/* Top navigation */}
       <header className="flex items-center justify-between px-6 h-14 border-b border-white/5 bg-surface shrink-0">
-        <h1 className="text-sm font-semibold tracking-tight text-accent-light">Vault Explorer</h1>
+        <h1 className="text-sm font-semibold tracking-tight text-accent-light">{t("vault.title")}</h1>
         <div className="flex items-center gap-3">
           {selectedPath && (
             <>
@@ -261,7 +263,7 @@ export function VaultView() {
                 <Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400/50 group-focus-within:text-accent-light transition-colors" size={18} />
                 <input
                   className="w-full bg-surface-dim border-none border-b-2 border-transparent focus:ring-0 focus:border-accent-light text-sm pl-10 pr-4 py-2 text-on-surface placeholder:text-gray-400/40 transition-all font-sans"
-                  placeholder="Search vault..."
+                  placeholder={t("vault.searchPlaceholder")}
                   type="text"
                 />
               </div>
@@ -271,9 +273,9 @@ export function VaultView() {
             {/* Sidebar categories */}
             <div className="px-2 space-y-1 mb-4">
               {[
-                { id: "garden", label: "Knowledge", icon: "local_florist" },
-                { id: "seeds", label: "Inbox", icon: "psychology" },
-                { id: "actions", label: "Log", icon: "bolt" },
+                { id: "garden", label: t("vault.categoryKnowledge"), icon: "local_florist" },
+                { id: "seeds", label: t("vault.categoryInbox"), icon: "psychology" },
+                { id: "actions", label: t("vault.categoryLog"), icon: "bolt" },
               ].map((cat) => {
                 const active = activeCategory === cat.id;
                 return (
@@ -303,7 +305,7 @@ export function VaultView() {
               {tree.length === 0 || (tree.length === 1 && tree[0].dirs.length === 0 && tree[0].files.length === 0) ? (
                 <div className="text-center py-8 text-gray-500">
                   <Icon name="folder_open" className="mx-auto mb-2 opacity-50" size={24} />
-                  <p className="text-xs font-sans">Vault is empty</p>
+                  <p className="text-xs font-sans">{t("vault.empty")}</p>
                 </div>
               ) : (
                 <DirectoryTree
@@ -318,7 +320,7 @@ export function VaultView() {
             {/* New Note button */}
             <div className="p-4">
               <button className="w-full py-2 bg-accent text-gray-950 font-bold text-xs uppercase tracking-widest rounded hover:bg-accent-light transition-colors">
-                New Note
+                {t("vault.newNote")}
               </button>
             </div>
           </div>
@@ -345,12 +347,12 @@ export function VaultView() {
                     className="flex items-center gap-2 text-xs text-on-surface/60 hover:text-accent-light transition-colors"
                   >
                     <Icon name={rawMode ? "visibility" : "code"} size={18} />
-                    <span>{rawMode ? "Rendered" : "Raw"}</span>
+                    <span>{rawMode ? t("vault.viewRendered") : t("vault.viewRaw")}</span>
                   </button>
                   <div className="h-4 w-px bg-outline-variant/30" />
                   <div className="flex items-center gap-1.5">
                     <div className="w-1.5 h-1.5 rounded-full bg-accent-light shadow-[0_0_8px_rgba(78,222,163,0.5)]" />
-                    <span className="text-[10px] font-mono text-accent-light/80 uppercase">Synced</span>
+                    <span className="text-[10px] font-mono text-accent-light/80 uppercase">{t("vault.synced")}</span>
                   </div>
                 </div>
               </div>
@@ -362,13 +364,13 @@ export function VaultView() {
                 <div className="flex items-center justify-center h-full text-gray-500">
                   <div className="text-center">
                     <Icon name="folder_open" className="mx-auto mb-2 opacity-50" size={32} />
-                    <p className="text-sm font-sans">Select a file to view its contents</p>
+                    <p className="text-sm font-sans">{t("vault.selectFile")}</p>
                   </div>
                 </div>
               )}
               {selectedPath && fileLoading && (
                 <div className="px-12 py-10">
-                  <p className="text-sm text-gray-500">Loading...</p>
+                  <p className="text-sm text-gray-500">{t("common.loading")}</p>
                 </div>
               )}
               {selectedPath && !fileLoading && fileContent !== null && (
@@ -385,9 +387,9 @@ export function VaultView() {
                           <div className="px-4 py-2 flex items-center justify-between cursor-pointer hover:bg-surface-container-high transition-colors">
                             <div className="flex items-center gap-2 text-[10px] font-mono text-gray-400 uppercase tracking-widest">
                               <Icon name="expand_more" size={14} />
-                              Metadata (YAML)
+                              {t("vault.metadataYaml")}
                             </div>
-                            <span className="text-[10px] font-mono text-gray-400/40">{parsed.meta.length} fields</span>
+                            <span className="text-[10px] font-mono text-gray-400/40">{t("vault.fields", { count: parsed.meta.length })}</span>
                           </div>
                         </div>
                       )}
@@ -443,8 +445,8 @@ export function VaultView() {
                 {backlinks.length > 0 && (
                   <div className="ml-auto flex items-center gap-2 text-[10px] font-mono">
                     <Icon name="hub" className="text-accent-light" size={14} />
-                    <span className="text-accent-light font-bold">{backlinks.length} Nodes</span>
-                    <span className="text-gray-400 uppercase tracking-tighter ml-1">Related</span>
+                    <span className="text-accent-light font-bold">{t("vault.relatedNodes", { count: backlinks.length })}</span>
+                    <span className="text-gray-400 uppercase tracking-tighter ml-1">{t("vault.related")}</span>
                   </div>
                 )}
               </footer>
@@ -456,7 +458,7 @@ export function VaultView() {
       <button className="fixed bottom-14 right-8 w-14 h-14 bg-accent-light text-gray-950 rounded-full shadow-[0_8px_24px_rgba(0,0,0,0.5)] flex items-center justify-center hover:scale-110 active:scale-95 transition-transform z-50 group">
         <Icon name="add" size={24} filled weight={600} />
         <div className="absolute right-full mr-4 bg-surface-container-highest text-on-surface text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none border border-outline-variant/20">
-          Create Seed
+          {t("vault.createSeed")}
         </div>
       </button>
     </div>

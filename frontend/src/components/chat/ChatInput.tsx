@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, type KeyboardEvent } from "react";
+import { useTranslation } from "react-i18next";
 import type { InputMode } from "../../hooks/useChat";
 import { Icon } from "../common/Icon";
 
@@ -10,6 +11,7 @@ interface ChatInputProps {
 }
 
 export function ChatInput({ onSend, disabled, mode, onModeChange }: ChatInputProps) {
+  const { t } = useTranslation();
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -43,8 +45,8 @@ export function ChatInput({ onSend, disabled, mode, onModeChange }: ChatInputPro
 
   const placeholder =
     mode === "search"
-      ? "Search your vault..."
-      : "Type a message or reference [[Node]]...";
+      ? t("chat.placeholderSearch")
+      : t("chat.placeholderChat");
 
   return (
     <div className="w-full max-w-4xl mx-auto px-6 pb-6 shrink-0">
@@ -61,7 +63,7 @@ export function ChatInput({ onSend, disabled, mode, onModeChange }: ChatInputPro
                   : "text-gray-400 hover:text-on-surface"
               }`}
             >
-              CHAT
+              {t("chat.modeChat")}
             </button>
             <button
               onClick={() => onModeChange("search")}
@@ -72,7 +74,7 @@ export function ChatInput({ onSend, disabled, mode, onModeChange }: ChatInputPro
                   : "text-gray-400 hover:text-on-surface"
               }`}
             >
-              SEARCH
+              {t("chat.modeSearch")}
             </button>
           </div>
           <div className="h-4 w-px bg-white/10 mx-1" />
@@ -101,7 +103,7 @@ export function ChatInput({ onSend, disabled, mode, onModeChange }: ChatInputPro
           <button
             onClick={handleSend}
             disabled={disabled || !value.trim()}
-            aria-label="Send"
+            aria-label={t("chat.send")}
             className="mb-1 w-9 h-9 flex items-center justify-center bg-accent-light text-gray-950 rounded-lg transition-all hover:scale-105 active:scale-95 shadow-lg shadow-accent-light/20 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Icon name={mode === "search" ? "search" : "arrow_forward"} size={20} />
@@ -109,7 +111,7 @@ export function ChatInput({ onSend, disabled, mode, onModeChange }: ChatInputPro
         </div>
       </div>
       <div className="mt-3 flex justify-center">
-        <p className="text-[10px] text-gray-400/50 uppercase tracking-[0.2em] font-mono">End-to-end encrypted knowledge graph connection active</p>
+        <p className="text-[10px] text-gray-400/50 uppercase tracking-[0.2em] font-mono">{t("chat.encryptionNotice")}</p>
       </div>
     </div>
   );

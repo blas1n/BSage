@@ -1,13 +1,6 @@
+import { useTranslation } from "react-i18next";
 import { useAuth } from "../../hooks/useAuth";
 import { Icon } from "../common/Icon";
-
-const NAV_ITEMS = [
-  { hash: "#/", icon: "chat_bubble", label: "Current Chat" },
-  { hash: "#/graph", icon: "hub", label: "Knowledge Base" },
-  { hash: "#/vault", icon: "folder_open", label: "Vault Browser" },
-  { hash: "#/plugins", icon: "extension", label: "Plugins" },
-  { hash: "#/settings", icon: "settings", label: "Settings" },
-];
 
 interface SidebarProps {
   currentHash: string;
@@ -16,6 +9,15 @@ interface SidebarProps {
 }
 
 export function Sidebar({ currentHash, isOpen, onClose }: SidebarProps) {
+  const { t } = useTranslation();
+  const NAV_ITEMS = [
+    { hash: "#/", icon: "chat_bubble", label: t("nav.currentChat") },
+    { hash: "#/graph", icon: "hub", label: t("nav.knowledgeBase") },
+    { hash: "#/vault", icon: "folder_open", label: t("nav.vaultBrowser") },
+    { hash: "#/plugins", icon: "extension", label: t("nav.plugins") },
+    { hash: "#/settings", icon: "settings", label: t("nav.settings") },
+  ];
+
   const active = currentHash || "#/";
   const { user, logout } = useAuth();
   const userEmail = user?.email ?? null;
@@ -50,7 +52,7 @@ export function Sidebar({ currentHash, isOpen, onClose }: SidebarProps) {
             className="w-full py-2.5 px-4 bg-accent-light text-gray-950 font-bold rounded-lg flex items-center justify-center gap-2 hover:opacity-90 transition-all active:scale-95 text-xs"
           >
             <Icon name="add" size={16} />
-            <span>New Session</span>
+            <span>{t("nav.newSession")}</span>
           </a>
         </div>
 
@@ -88,7 +90,7 @@ export function Sidebar({ currentHash, isOpen, onClose }: SidebarProps) {
             className="flex items-center gap-3 px-3 py-2 text-gray-500 hover:bg-white/5 hover:text-red-400 rounded-md transition-all w-full text-xs font-medium"
           >
             <Icon name="logout" size={20} />
-            <span className="font-sans">Sign out</span>
+            <span className="font-sans">{t("nav.signOut")}</span>
           </button>
         </div>
       </aside>

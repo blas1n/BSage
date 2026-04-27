@@ -1,5 +1,6 @@
 import { ArrowUpLeft, ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { VaultBacklink } from "../../api/types";
 
 interface BacklinksPanelProps {
@@ -8,6 +9,7 @@ interface BacklinksPanelProps {
 }
 
 export function BacklinksPanel({ backlinks, onNavigate }: BacklinksPanelProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(backlinks.length > 0);
 
   if (backlinks.length === 0) return null;
@@ -24,7 +26,7 @@ export function BacklinksPanel({ backlinks, onNavigate }: BacklinksPanelProps) {
           <ChevronRight className="w-3.5 h-3.5" />
         )}
         <ArrowUpLeft className="w-3.5 h-3.5" />
-        <span>Backlinks ({backlinks.length})</span>
+        <span>{t("vault.backlinks", { count: backlinks.length })}</span>
       </button>
       {open && (
         <ul className="mt-2 space-y-1">

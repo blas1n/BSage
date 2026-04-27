@@ -2,6 +2,7 @@
 
 import './i18n';
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useApproval } from "./hooks/useApproval";
 import { consumeAuthCallback, useAuth } from "./hooks/useAuth";
 import { useWebSocket } from "./hooks/useWebSocket";
@@ -57,11 +58,12 @@ export default function App() {
   const { user, loading } = useAuth();
   const { connectionState, events, clearEvents } = useWebSocket();
   const { current: approvalRequest, respond: respondApproval, pendingCount } = useApproval();
+  const { t } = useTranslation();
 
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-950">
-        <div className="text-gray-500">Loading...</div>
+        <div className="text-gray-500">{t("common.loading")}</div>
       </div>
     );
   }

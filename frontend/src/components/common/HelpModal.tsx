@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { Icon } from "./Icon";
 
 interface HelpModalProps {
@@ -6,20 +7,16 @@ interface HelpModalProps {
   onClose: () => void;
 }
 
-const SHORTCUTS = [
-  { keys: "Enter", description: "Send message" },
-  { keys: "Shift + Enter", description: "New line" },
-];
-
-const FEATURES = [
-  { icon: "chat_bubble", title: "Chat", description: "Ask anything about your 2nd Brain knowledge graph." },
-  { icon: "search", title: "Search", description: "Switch to search mode to find notes in your vault." },
-  { icon: "hub", title: "Knowledge Graph", description: "Explore connections between notes visually." },
-  { icon: "extension", title: "Plugins", description: "Manage input, process, and output plugins." },
-  { icon: "folder_open", title: "Vault Browser", description: "Browse and read files in your vault." },
-];
+const FEATURE_KEYS = [
+  { key: "chat", icon: "chat_bubble" },
+  { key: "search", icon: "search" },
+  { key: "graph", icon: "hub" },
+  { key: "plugins", icon: "extension" },
+  { key: "vault", icon: "folder_open" },
+] as const;
 
 export function HelpModal({ open, onClose }: HelpModalProps) {
+  const { t } = useTranslation();
   const overlayRef = useRef<HTMLDivElement>(null);
 
   const handleKeyDown = useCallback(
@@ -38,11 +35,16 @@ export function HelpModal({ open, onClose }: HelpModalProps) {
 
   if (!open) return null;
 
+  const SHORTCUTS = [
+    { keys: "Enter", description: t("help.shortcutSendMessage") },
+    { keys: "Shift + Enter", description: t("help.shortcutNewLine") },
+  ];
+
   return (
     <div
       ref={overlayRef}
       role="dialog"
-      aria-label="Help"
+      aria-label={t("help.title")}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={(e) => {
         if (e.target === overlayRef.current) onClose();
@@ -53,11 +55,11 @@ export function HelpModal({ open, onClose }: HelpModalProps) {
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
           <div className="flex items-center gap-2">
             <Icon name="help" size={20} className="text-accent-light" />
-            <h2 className="text-lg font-headline font-bold text-on-surface">Help</h2>
+            <h2 className="text-lg font-headline font-bold text-on-surface">{t("help.title")}</h2>
           </div>
           <button
             onClick={onClose}
-            aria-label="Close help"
+            aria-label={t("common.close")}
             className="text-gray-400 hover:text-on-surface p-1 rounded-lg transition-colors"
           >
             <Icon name="close" size={20} />
@@ -68,25 +70,38 @@ export function HelpModal({ open, onClose }: HelpModalProps) {
         <div className="px-6 py-5 space-y-6 max-h-[70vh] overflow-y-auto scrollbar-thin">
           {/* Features */}
           <section>
-            <h3 className="text-xs font-mono uppercase tracking-wider text-gray-400 mb-3">Features</h3>
+            <h3 className="text-xs font-mono uppercase tracking-wider text-gray-400 mb-3">{t("help.features")}</h3>
             <div className="space-y-3">
-              {FEATURES.map((f) => (
-                <div key={f.title} className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-accent-light/10 flex items-center justify-center shrink-0 mt-0.5">
-                    <Icon name={f.icon} size={16} className="text-accent-light" />
+              {FEATURE_KEYS.map((f) => {
+                // Reuse short labels from existing nav/plugin/vault keys for the title
+                const titleKey =
+                  f.key === "chat"
+                    ? "nav.currentChat"
+                    : f.key === "search"
+                      ? "common.search"
+                      : f.key === "graph"
+                        ? "nav.knowledgeBase"
+                        : f.key === "plugins"
+                          ? "plugins.title"
+                          : "nav.vaultBrowser";
+                return (
+                  <div key={f.key} className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-accent-light/10 flex items-center justify-center shrink-0 mt-0.5">
+                      <Icon name={f.icon} size={16} className="text-accent-light" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-on-surface">{t(titleKey)}</p>
+                      <p className="text-xs text-on-surface-variant">{t(`help.feature.${f.key}`)}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-on-surface">{f.title}</p>
-                    <p className="text-xs text-on-surface-variant">{f.description}</p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
 
           {/* Keyboard shortcuts */}
           <section>
-            <h3 className="text-xs font-mono uppercase tracking-wider text-gray-400 mb-3">Keyboard Shortcuts</h3>
+            <h3 className="text-xs font-mono uppercase tracking-wider text-gray-400 mb-3">{t("help.keyboardShortcuts")}</h3>
             <div className="space-y-2">
               {SHORTCUTS.map((s) => (
                 <div key={s.keys} className="flex items-center justify-between">
@@ -101,11 +116,9 @@ export function HelpModal({ open, onClose }: HelpModalProps) {
 
           {/* About */}
           <section>
-            <h3 className="text-xs font-mono uppercase tracking-wider text-gray-400 mb-2">About</h3>
+            <h3 className="text-xs font-mono uppercase tracking-wider text-gray-400 mb-2">{t("help.about")}</h3>
             <p className="text-xs text-on-surface-variant leading-relaxed">
-              BSage is your personal AI agent that manages a 2nd Brain (Obsidian Vault).
-              It collects data via input Plugins, provides tool functionality via process Plugins/Skills,
-              and syncs the Vault to external storage via output Plugins.
+              {t("help.aboutBody")}
             </p>
           </section>
         </div>

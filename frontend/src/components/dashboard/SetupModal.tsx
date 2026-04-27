@@ -1,5 +1,6 @@
 import { KeyRound, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
 import type { CredentialField } from "../../api/types";
 
@@ -10,6 +11,7 @@ interface SetupModalProps {
 }
 
 export function SetupModal({ entryName, onClose, onSuccess }: SetupModalProps) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [fields, setFields] = useState<CredentialField[]>([]);
@@ -66,7 +68,7 @@ export function SetupModal({ entryName, onClose, onSuccess }: SetupModalProps) {
               <KeyRound className="w-5 h-5 text-accent" />
             </div>
             <div>
-              <h3 className="font-semibold text-gray-100">Setup Credentials</h3>
+              <h3 className="font-semibold text-gray-100">{t("setup.credentials")}</h3>
               <p className="text-sm text-gray-500">{entryName}</p>
             </div>
           </div>
@@ -79,20 +81,20 @@ export function SetupModal({ entryName, onClose, onSuccess }: SetupModalProps) {
         </div>
 
         {loading && (
-          <p className="text-sm text-gray-600 py-4 text-center">Loading...</p>
+          <p className="text-sm text-gray-600 py-4 text-center">{t("common.loading")}</p>
         )}
 
         {!loading && fields.length === 0 && (
           <div>
             <p className="text-sm text-gray-500 mb-4">
-              This entry has no credential fields to configure.
+              {t("setup.noFields")}
             </p>
             <div className="flex justify-end">
               <button
                 onClick={onClose}
                 className="px-4 py-2 text-sm rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800 transition-colors"
               >
-                Close
+                {t("common.close")}
               </button>
             </div>
           </div>
@@ -131,14 +133,14 @@ export function SetupModal({ entryName, onClose, onSuccess }: SetupModalProps) {
                 onClick={onClose}
                 className="px-4 py-2 text-sm rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800 transition-colors"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 type="submit"
                 disabled={saving || requiredMissing}
                 className="px-4 py-2 text-sm rounded-lg bg-accent text-white hover:bg-accent-dark disabled:opacity-40 transition-colors"
               >
-                {saving ? "Saving..." : "Save"}
+                {saving ? t("settings.saving") : t("common.save")}
               </button>
             </div>
           </form>

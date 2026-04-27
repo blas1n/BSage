@@ -1,4 +1,5 @@
 import { ShieldAlert } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { ApprovalRequest } from "../../api/types";
 
 interface ApprovalModalProps {
@@ -7,6 +8,7 @@ interface ApprovalModalProps {
 }
 
 export function ApprovalModal({ request, onRespond }: ApprovalModalProps) {
+  const { t } = useTranslation();
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="bg-gray-900 border border-gray-800 rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
@@ -15,7 +17,7 @@ export function ApprovalModal({ request, onRespond }: ApprovalModalProps) {
             <ShieldAlert className="w-5 h-5 text-amber-400" />
           </div>
           <div>
-            <h3 className="font-semibold text-gray-100">Approval Required</h3>
+            <h3 className="font-semibold text-gray-100">{t("approval.title")}</h3>
             <p className="text-sm text-gray-500">{request.skill_name}</p>
           </div>
         </div>
@@ -33,13 +35,13 @@ export function ApprovalModal({ request, onRespond }: ApprovalModalProps) {
             onClick={() => onRespond(false)}
             className="px-4 py-2 text-sm rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800 transition-colors"
           >
-            Deny
+            {t("approval.deny")}
           </button>
           <button
             onClick={() => onRespond(true)}
             className="px-4 py-2 text-sm rounded-lg bg-accent text-white hover:bg-accent-dark transition-colors"
           >
-            Approve
+            {t("approval.approve")}
           </button>
         </div>
       </div>

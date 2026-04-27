@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useChat } from "../../hooks/useChat";
 import { Icon } from "../common/Icon";
 import { ChatInput } from "./ChatInput";
@@ -6,6 +7,7 @@ import { MiniGraph } from "./MiniGraph";
 import { SessionList } from "./SessionList";
 
 export function ChatView() {
+  const { t } = useTranslation();
   const {
     messages,
     isLoading,
@@ -46,7 +48,7 @@ export function ChatView() {
               className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-red-400 transition-colors"
             >
               <Icon name="delete" size={16} />
-              Clear
+              {t("chat.clear")}
             </button>
           )}
         </div>

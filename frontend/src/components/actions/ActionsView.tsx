@@ -1,8 +1,10 @@
 import { ScrollText } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
 
 export function ActionsView() {
+  const { t } = useTranslation();
   const [actions, setActions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -15,17 +17,17 @@ export function ActionsView() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-600">Loading...</div>
+      <div className="flex items-center justify-center h-full text-gray-600">{t("common.loading")}</div>
     );
   }
 
   return (
     <div className="h-full overflow-y-auto p-6 scrollbar-thin">
-      <h2 className="text-lg font-semibold mb-4 text-gray-100">Action Log</h2>
+      <h2 className="text-lg font-semibold mb-4 text-gray-100">{t("actions.title")}</h2>
       {actions.length === 0 ? (
         <div className="text-center py-12 text-gray-600">
           <ScrollText className="w-8 h-8 mx-auto mb-2 opacity-50" />
-          <p className="text-sm">No actions recorded yet</p>
+          <p className="text-sm">{t("actions.empty")}</p>
         </div>
       ) : (
         <div className="space-y-1">

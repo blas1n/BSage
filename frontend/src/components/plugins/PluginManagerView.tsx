@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
 import type { EntryMeta } from "../../api/types";
 import { Icon } from "../common/Icon";
@@ -37,6 +38,7 @@ const STATUS_DOT_STYLES: Record<string, { bg: string; label: string }> = {
 };
 
 export function PluginManagerView() {
+  const { t } = useTranslation();
   const [plugins, setPlugins] = useState<EntryMeta[]>([]);
   const [skills, setSkills] = useState<EntryMeta[]>([]);
   const [loading, setLoading] = useState(true);
@@ -104,7 +106,7 @@ export function PluginManagerView() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full text-gray-500">
-        Loading...
+        {t("common.loading")}
       </div>
     );
   }
@@ -115,13 +117,13 @@ export function PluginManagerView() {
         {/* Header */}
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
           <div>
-            <h1 className="text-4xl font-extrabold tracking-tight mb-2 text-on-surface font-headline">Plugins</h1>
-            <p className="text-on-surface-variant font-medium">Extend your kinetic knowledge graph capabilities.</p>
+            <h1 className="text-4xl font-extrabold tracking-tight mb-2 text-on-surface font-headline">{t("plugins.title")}</h1>
+            <p className="text-on-surface-variant font-medium">{t("plugins.subtitle")}</p>
           </div>
           <div className="flex items-center gap-4">
             <button className="bg-accent text-gray-950 px-6 py-2.5 rounded-lg font-bold flex items-center gap-2 hover:brightness-110 transition-all shadow-lg shadow-accent/20 text-sm">
               <Icon name="extension" size={18} />
-              Install Plugin
+              {t("plugins.install")}
             </button>
           </div>
         </header>
@@ -138,23 +140,23 @@ export function PluginManagerView() {
                   : "bg-surface-container-high text-on-surface-variant hover:text-on-surface"
               }`}
             >
-              {cat === "all" ? "All" : cat.charAt(0).toUpperCase() + cat.slice(1)}
+              {cat === "all" ? t("plugins.filterAll") : cat.charAt(0).toUpperCase() + cat.slice(1)}
             </button>
           ))}
 
           <div className="h-6 w-px bg-outline-variant/30 mx-2" />
 
-          {(["all", "plugin", "skill"] as const).map((t) => (
+          {(["all", "plugin", "skill"] as const).map((tf) => (
             <button
-              key={t}
-              onClick={() => setTypeFilter(t)}
+              key={tf}
+              onClick={() => setTypeFilter(tf)}
               className={`px-4 py-2 rounded-full text-sm transition-colors ${
-                typeFilter === t
+                typeFilter === tf
                   ? "bg-surface-container-high text-on-surface font-bold"
                   : "text-on-surface-variant hover:text-on-surface"
               }`}
             >
-              {t === "all" ? "All Types" : t === "plugin" ? "Plugins" : "Skills"}
+              {tf === "all" ? t("plugins.filterAllTypes") : tf === "plugin" ? t("plugins.filterPlugins") : t("plugins.filterSkills")}
             </button>
           ))}
 
@@ -165,7 +167,7 @@ export function PluginManagerView() {
             <Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
             <input
               type="text"
-              placeholder="Search plugins..."
+              placeholder={t("plugins.searchPlaceholder")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-3 py-2 text-sm bg-surface-container-low border-none rounded-lg text-on-surface placeholder:text-gray-500 outline-none focus:ring-1 focus:ring-accent-light/30 font-sans"
@@ -177,7 +179,7 @@ export function PluginManagerView() {
         {filtered.length === 0 ? (
           <div className="text-center py-16 text-gray-500">
             <Icon name="extension" className="mx-auto mb-3 opacity-40" size={32} />
-            <p className="text-sm">No entries match your filters</p>
+            <p className="text-sm">{t("plugins.noMatch")}</p>
           </div>
         ) : (
           <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
@@ -198,7 +200,7 @@ export function PluginManagerView() {
         {filtered.filter(e => e.entry_type === "skill").length > 0 && (
           <section className="max-w-4xl">
             <div className="flex items-center gap-4 mb-8">
-              <h2 className="text-2xl font-bold text-on-surface font-headline">Skills</h2>
+              <h2 className="text-2xl font-bold text-on-surface font-headline">{t("plugins.skillsHeading")}</h2>
               <div className="h-px flex-1 bg-outline-variant/30" />
             </div>
             <div className="grid grid-cols-1 gap-4">
@@ -245,6 +247,7 @@ function PluginCard({
   onSetup: (name: string) => void;
   running: boolean;
 }) {
+  const { t } = useTranslation();
   const needsSetup = entry.has_credentials && !entry.credentials_configured;
   const triggerType = entry.trigger?.type ?? "on_demand";
   const triggerIcon = TRIGGER_ICONS[triggerType] ?? "auto_awesome";
@@ -280,7 +283,7 @@ function PluginCard({
           {entry.is_dangerous && (
             <div className="mt-2">
               <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase bg-red-500/10 text-red-400">
-                Is Dangerous
+                {t("plugins.isDangerous")}
               </span>
             </div>
           )}
@@ -289,7 +292,7 @@ function PluginCard({
           <Toggle
             checked={entry.enabled}
             onChange={() => onToggle(entry.name)}
-            label={`Toggle ${entry.name}`}
+            label={t("plugins.toggleAria", { name: entry.name })}
           />
         )}
       </div>
@@ -302,7 +305,7 @@ function PluginCard({
       {/* Metadata */}
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between text-xs font-mono text-on-surface-variant">
-          <span>Trigger Type</span>
+          <span>{t("plugins.triggerType")}</span>
           <span className="flex items-center gap-1.5">
             <Icon name={triggerIcon} size={14} />
             {TRIGGER_LABELS[triggerType] ?? triggerType}
@@ -310,7 +313,7 @@ function PluginCard({
         </div>
         {triggerType === "cron" && entry.trigger?.schedule && (
           <div className="flex items-center justify-between text-xs font-mono text-on-surface-variant">
-            <span>Schedule</span>
+            <span>{t("plugins.schedule")}</span>
             <span className="bg-surface-container px-2 py-0.5 rounded text-[10px] text-on-surface">{entry.trigger.schedule}</span>
           </div>
         )}
@@ -323,7 +326,7 @@ function PluginCard({
             onClick={() => onSetup(entry.name)}
             className="flex-1 py-2 rounded-md bg-tertiary/10 text-tertiary text-xs font-bold hover:bg-tertiary/20 border border-tertiary/20 transition-colors"
           >
-            Configure
+            {t("plugins.configure")}
           </button>
         ) : (
           <>
@@ -332,7 +335,7 @@ function PluginCard({
               disabled={running || !entry.enabled}
               className="flex-1 py-2 rounded-md border border-outline-variant text-xs font-bold hover:bg-surface-container-high transition-colors disabled:opacity-40"
             >
-              {running ? "Running..." : "Configure"}
+              {running ? t("plugins.running") : t("plugins.configure")}
             </button>
             <button
               onClick={() => onRun(entry.name)}
@@ -340,7 +343,7 @@ function PluginCard({
               className="text-xs font-bold text-accent-light hover:underline px-2 disabled:opacity-40"
             >
               <Icon name="play_arrow" size={16} className="inline-block mr-1" />
-              Run
+              {t("plugins.run")}
             </button>
           </>
         )}
@@ -358,6 +361,7 @@ function SkillCard({
   onRun: (name: string) => void;
   running: boolean;
 }) {
+  const { t } = useTranslation();
   const SKILL_ICONS: Record<string, { icon: string; color: string }> = {
     process: { icon: "auto_graph", color: "text-accent-light" },
     input: { icon: "memory", color: "text-secondary" },
@@ -381,13 +385,13 @@ function SkillCard({
         </div>
       </div>
       <div className="flex items-center gap-3">
-        <span className="px-3 py-1 rounded-full text-xs font-bold bg-accent/10 text-accent-light">Always Safe</span>
+        <span className="px-3 py-1 rounded-full text-xs font-bold bg-accent/10 text-accent-light">{t("plugins.alwaysSafe")}</span>
         <button
           onClick={() => onRun(entry.name)}
           disabled={running || !entry.enabled}
           className="text-xs font-bold text-accent-light hover:underline disabled:opacity-40"
         >
-          {running ? "Running..." : "Run"}
+          {running ? t("plugins.running") : t("plugins.run")}
         </button>
       </div>
     </div>

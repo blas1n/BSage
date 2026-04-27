@@ -1,5 +1,6 @@
 import { FileText, Search, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
 import type { VaultSearchResult } from "../../api/types";
 
@@ -8,6 +9,7 @@ interface SearchPanelProps {
 }
 
 export function SearchPanel({ onSelectFile }: SearchPanelProps) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<VaultSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -49,7 +51,7 @@ export function SearchPanel({ onSelectFile }: SearchPanelProps) {
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search vault..."
+          placeholder={t("vault.searchPlaceholder")}
           style={{ paddingLeft: "1.2rem" }}
           className="w-full pr-8 py-1.5 text-xs bg-gray-900 border border-gray-800 rounded-md focus:outline-none focus:ring-1 focus:ring-accent text-gray-300 placeholder-gray-600"
         />
@@ -66,10 +68,10 @@ export function SearchPanel({ onSelectFile }: SearchPanelProps) {
       {isActive && (
         <div className="mt-1 max-h-64 overflow-y-auto scrollbar-thin">
           {searching && (
-            <p className="text-xs text-gray-600 py-2 text-center">Searching...</p>
+            <p className="text-xs text-gray-600 py-2 text-center">{t("vault.searching")}</p>
           )}
           {!searching && results.length === 0 && (
-            <p className="text-xs text-gray-600 py-2 text-center">No results</p>
+            <p className="text-xs text-gray-600 py-2 text-center">{t("vault.noResults")}</p>
           )}
           {!searching &&
             results.map((r) => (
@@ -99,4 +101,3 @@ export function SearchPanel({ onSelectFile }: SearchPanelProps) {
     </div>
   );
 }
-
