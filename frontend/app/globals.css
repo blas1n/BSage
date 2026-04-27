@@ -184,3 +184,26 @@
 /* ── No-scrollbar utility ── */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ----------------------------------------------------------------------
+ * Phase B (Batch 2) — mobile-friendly responsive utilities.
+ *
+ * BSage already has a md:translate-x-0 / -translate-x-full sidebar
+ * pattern + md:hidden hamburger button. This block adds:
+ *   - 44px minimum touch targets on mobile drawer items
+ *   - Tighter main padding under 640px so vault/graph have breathing room
+ *   - Card-stack helper for products to opt into where tables don't fit
+ * ---------------------------------------------------------------------- */
+@media (max-width: 767px) {
+  /* Sidebar nav links (in `<aside>`) — 44px tap target. */
+  aside nav a {
+    min-height: 44px;
+  }
+  /* Hamburger trigger — 44px tap target with explicit padding so it matches
+   * iOS HIG / Material 3 guidance. */
+  button[aria-label="Open navigation"],
+  .md\:hidden.fixed.top-3.left-4 {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

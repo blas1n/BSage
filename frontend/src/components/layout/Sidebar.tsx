@@ -25,8 +25,10 @@ export function Sidebar({ currentHash, isOpen, onClose }: SidebarProps) {
       {/* Backdrop - mobile only */}
       {isOpen && (
         <div
+          data-testid="bsage-sidebar-backdrop"
           className="fixed inset-0 bg-black/50 z-40 md:hidden"
           onClick={onClose}
+          role="presentation"
         />
       )}
       <aside className={`fixed left-0 top-0 flex flex-col h-screen w-64 bg-surface-dim border-r border-white/5 z-50 transform transition-transform duration-200 ${isOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 md:static md:z-auto md:shrink-0`}>

@@ -23,6 +23,23 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
     },
+    // Phase B Batch 2: mobile viewport coverage. Pixel 5 (Mobile Chrome) +
+    // iPhone 13 (Mobile Chromium engine — Playwright bundled WebKit
+    // page-launch hangs on macOS 26 with DEPENDENCIES_VALIDATED stuck;
+    // the viewport / userAgent / isMobile flag still match iPhone 13).
+    // See Shared Library Roadmap §B3.
+    {
+      name: "pixel-5",
+      use: { ...devices["Pixel 5"] },
+    },
+    {
+      name: "iphone-13",
+      use: {
+        browserName: "chromium",
+        ...devices["iPhone 13"],
+        defaultBrowserType: "chromium",
+      },
+    },
   ],
 
   webServer: {

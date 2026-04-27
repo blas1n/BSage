@@ -138,7 +138,26 @@ const E2E_JWT_PAYLOAD = btoa(
 );
 const E2E_FAKE_JWT = `${E2E_JWT_HEADER}.${E2E_JWT_PAYLOAD}.fake`;
 
+// Phase B: full SessionEnvelope shape — `@bsvibe/auth`'s useAuth requires
+// a `user` field. The legacy 3-field shape was rejected and triggered a
+// redirect to /login, breaking protected-page e2e.
 const MOCK_SESSION_RESPONSE = {
+  user: {
+    id: "user-123",
+    email: "test@example.com",
+    name: "Test User",
+  },
+  tenants: [
+    {
+      id: "tenant-1",
+      name: "Test Tenant",
+      slug: "test",
+      plan: "team",
+      type: "company",
+      role: "member",
+    },
+  ],
+  active_tenant_id: "tenant-1",
   access_token: E2E_FAKE_JWT,
   refresh_token: "fake-refresh",
   expires_in: 3600,

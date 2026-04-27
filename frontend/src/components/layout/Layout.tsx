@@ -23,7 +23,10 @@ export function Layout({ children, currentHash, connectionState, pendingApproval
         <main className="flex-1 overflow-hidden bg-gray-900 relative">
           {/* Hamburger - mobile only */}
           <button
-            className="md:hidden fixed top-3 left-4 z-30 p-2 rounded-lg bg-surface-dim text-gray-400"
+            type="button"
+            aria-label="Open navigation"
+            aria-expanded={sidebarOpen}
+            className="md:hidden fixed top-3 left-4 z-30 p-2 rounded-lg bg-surface-dim text-gray-400 inline-flex items-center justify-center min-w-11 min-h-11"
             onClick={() => setSidebarOpen(true)}
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
