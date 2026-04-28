@@ -81,7 +81,7 @@ async def refine_seed(
         if isinstance(parsed, dict) and "title" in parsed and "content" in parsed:
             logger.info("seed_refined", plugin_name=plugin_name)
             return parsed
-    except (json.JSONDecodeError, ValueError, TypeError, RuntimeError, OSError):
+    except Exception:
         logger.debug(
             "seed_refine_failed_using_raw",
             plugin_name=plugin_name,

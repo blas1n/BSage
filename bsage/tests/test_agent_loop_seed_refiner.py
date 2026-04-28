@@ -128,6 +128,22 @@ class TestRefineSeed:
         assert result == raw
 
     @pytest.mark.asyncio
+    async def test_swallows_provider_specific_exception(self) -> None:
+        class ProviderAuthError(Exception):
+            pass
+
+        llm = MagicMock()
+        llm.chat = AsyncMock(side_effect=ProviderAuthError("missing api key"))
+        raw = {"some": "data", "with": "enough", "characters": "to refine"}
+        result = await refine_seed(
+            plugin_name="x",
+            raw_data=raw,
+            llm_client=llm,
+            prompt_registry=None,
+        )
+        assert result == raw
+
+    @pytest.mark.asyncio
     async def test_uses_resolved_prompt(self) -> None:
         registry = MagicMock()
         registry.get = MagicMock(return_value="custom seed prompt")

@@ -18,8 +18,14 @@ import type {
   LlmTestResult,
 } from "./types";
 
-const BASE =
-  process.env.NEXT_PUBLIC_API_URL || process.env.VITE_API_URL || "/api";
+const BASE = (() => {
+  const raw = (
+    process.env.NEXT_PUBLIC_API_URL ||
+    process.env.VITE_API_URL ||
+    "/api"
+  ).replace(/\/+$/, "");
+  return raw.endsWith("/api") ? raw : `${raw}/api`;
+})();
 
 // Phase A Batch 5: replace the bespoke ~30 LoC fetch wrapper with the shared
 // `@bsvibe/api` `createApiFetch`. The shared client gives us:
