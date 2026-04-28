@@ -14,6 +14,8 @@
     "test:e2e:debug": "playwright test --debug"
   },
   "dependencies": {
+    "@bsvibe/api": "0.1.0",
+    "@bsvibe/types": "0.1.0",
     "@thecae/remark-obsidian": "^1.1.1",
     "i18next": "^26.0.3",
     "lucide-react": "^0.575.0",
