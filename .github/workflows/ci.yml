@@ -47,11 +47,25 @@ jobs:
           node-version: '20'
       - name: Enable pnpm
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+      - name: Check package token
+        id: package-token
+        run: |
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "NPM_TOKEN is not configured; Vercel preview remains the frontend build gate."
+          fi
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Install dependencies
+        if: steps.package-token.outputs.available == 'true'
         run: pnpm install --frozen-lockfile
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN || github.token }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Lint
+        if: steps.package-token.outputs.available == 'true'
         run: pnpm run lint
       - name: Build
+        if: steps.package-token.outputs.available == 'true'
         run: pnpm run build
