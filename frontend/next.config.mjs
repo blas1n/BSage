@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  allowedDevOrigins: ['bsserver'],
   // Preserve the previous Vercel rewrite: proxy /api/* to the BSage backend.
   // In production on Vercel this matches the rewrites previously declared in
   // vercel.json (now deleted, since Next.js auto-detects on Vercel).
