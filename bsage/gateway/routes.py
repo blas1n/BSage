@@ -135,6 +135,18 @@ def _principal_tenant(principal: Any) -> str | None:
     return None
 
 
+def _frontmatter_tenant(content: str) -> str | None:
+    fm = extract_frontmatter(content) if content.startswith("---\n") else {}
+    tid = fm.get("tenant_id") if isinstance(fm, dict) else None
+    return tid if isinstance(tid, str) and tid else None
+
+
+def _tenant_can_read(content: str, tenant_id: str | None) -> bool:
+    if tenant_id is None:
+        return True
+    return _frontmatter_tenant(content) == tenant_id
+
+
 def _audit_actor_from_principal(principal: Any) -> Any:
     """Build an :class:`AuditActor` from a principal, falling back to system.
 
@@ -236,6 +248,31 @@ def create_routes(state: AppState) -> APIRouter:
     plugins_read = require_bsage_permission("bsage.plugins.read", principal_dep=_principal)
     plugins_execute = require_bsage_permission("bsage.plugins.execute", principal_dep=_principal)
     chat_write = require_bsage_permission("bsage.chat.write", principal_dep=_principal)
+
+    async def _tenant_graph_snapshot(tenant_id: str | None) -> Any:
+        graph = await state.graph_store.to_networkx_snapshot()
+        if tenant_id is None:
+            return graph
+
+        visible_paths = {
+            rel
+            for rel, _ in await _scan_vault_md_files(
+                max_files=0,
+                tenant_id=tenant_id,
+            )
+        }
+        filtered = graph.copy()
+        for node, data in list(filtered.nodes(data=True)):
+            source_path = data.get("source_path")
+            if isinstance(source_path, str) and source_path not in visible_paths:
+                filtered.remove_node(node)
+
+        for node, data in list(filtered.nodes(data=True)):
+            source_path = data.get("source_path")
+            if not isinstance(source_path, str) and filtered.degree(node) == 0:
+                filtered.remove_node(node)
+
+        return filtered
 
     @public.get("/health")
     async def health() -> dict[str, str]:
@@ -425,14 +462,28 @@ def create_routes(state: AppState) -> APIRouter:
     # -- Vault browser -------------------------------------------------------
 
     @protected.get("/vault/actions")
-    async def list_actions(_perm: None = Depends(vault_read)) -> list[str]:
+    async def list_actions(
+        principal: Any = Depends(_principal),
+        _perm: None = Depends(vault_read),
+    ) -> list[str]:
         notes = await state.vault.read_notes("actions")
-        return [str(p.name) for p in notes]
+        tenant_id = _principal_tenant(principal)
+        visible: list[str] = []
+        for path in notes:
+            with contextlib.suppress(OSError):
+                content = await state.vault.read_note_content(path)
+                if _tenant_can_read(content, tenant_id):
+                    visible.append(str(path.name))
+        return visible
 
     @protected.get("/vault/tree")
-    async def vault_tree(_perm: None = Depends(vault_read)) -> list[dict[str, Any]]:
+    async def vault_tree(
+        principal: Any = Depends(_principal),
+        _perm: None = Depends(vault_read),
+    ) -> list[dict[str, Any]]:
         """Return the vault directory tree structure."""
         vault_root = state.vault.root
+        tenant_id = _principal_tenant(principal)
 
         def _walk() -> list[dict[str, Any]]:
             result: list[dict[str, Any]] = []
@@ -442,11 +493,22 @@ def create_routes(state: AppState) -> APIRouter:
                 rel = os.path.relpath(dirpath, vault_root)
                 if rel == ".":
                     rel = ""
+                visible_files: list[str] = []
+                for filename in sorted(filenames):
+                    if not filename.endswith(".md"):
+                        continue
+                    full = Path(dirpath) / filename
+                    try:
+                        content = full.read_text(encoding="utf-8")
+                    except OSError:
+                        continue
+                    if _tenant_can_read(content, tenant_id):
+                        visible_files.append(filename)
                 result.append(
                     {
                         "path": rel,
                         "dirs": list(dirnames),
-                        "files": sorted(filenames),
+                        "files": visible_files,
                     }
                 )
             return result
@@ -456,6 +518,7 @@ def create_routes(state: AppState) -> APIRouter:
     @protected.get("/vault/file")
     async def vault_file(
         path: str = Query(..., description="Relative path within the vault"),
+        principal: Any = Depends(_principal),
         _perm: None = Depends(vault_read),
     ) -> dict[str, Any]:
         """Return the content of a vault file."""
@@ -477,11 +540,16 @@ def create_routes(state: AppState) -> APIRouter:
         except OSError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+        if not _tenant_can_read(content, _principal_tenant(principal)):
+            raise HTTPException(status_code=404, detail=f"File not found: {path}")
+
         return {"path": path, "content": content}
 
     # -- Vault search / backlinks / graph / tags -----------------------------
 
-    async def _scan_vault_md_files(max_files: int = 0) -> list[tuple[str, str]]:
+    async def _scan_vault_md_files(
+        max_files: int = 0, tenant_id: str | None = None
+    ) -> list[tuple[str, str]]:
         """Walk vault and return (relative_path, content) for all .md files.
 
         Args:
@@ -499,10 +567,12 @@ def create_routes(state: AppState) -> APIRouter:
                     if max_files and len(results) >= max_files:
                         return results
                     full = Path(dirpath) / f
-                    rel = str(full.relative_to(vault_root))
+                    rel = full.relative_to(vault_root).as_posix()
                     try:
                         content = full.read_text(encoding="utf-8")
                     except OSError:
+                        continue
+                    if not _tenant_can_read(content, tenant_id):
                         continue
                     results.append((rel, content))
             return results
@@ -554,10 +624,14 @@ def create_routes(state: AppState) -> APIRouter:
     async def vault_search(
         q: str = Query(..., min_length=1, description="Search query"),
         max_files: int = Query(default=500, ge=1, le=2000, description="Max files to scan"),
+        principal: Any = Depends(_principal),
         _perm: None = Depends(vault_read),
     ) -> list[dict[str, Any]]:
         """Full-text search across vault .md files (case-insensitive, max 50 results)."""
-        files = await _scan_vault_md_files(max_files=max_files)
+        files = await _scan_vault_md_files(
+            max_files=max_files,
+            tenant_id=_principal_tenant(principal),
+        )
         query_lower = q.lower()
         results: list[dict[str, Any]] = []
 
@@ -576,10 +650,11 @@ def create_routes(state: AppState) -> APIRouter:
     @protected.get("/vault/backlinks")
     async def vault_backlinks(
         path: str = Query(..., description="Relative path of the target note"),
+        principal: Any = Depends(_principal),
         _perm: None = Depends(vault_read),
     ) -> list[dict[str, Any]]:
         """Find notes containing [[wikilink]] references to the given path."""
-        files = await _scan_vault_md_files()
+        files = await _scan_vault_md_files(tenant_id=_principal_tenant(principal))
         target_stem = Path(path).stem.lower()
         target_path_no_ext = path.removesuffix(".md").lower()
         results: list[dict[str, Any]] = []
@@ -601,10 +676,14 @@ def create_routes(state: AppState) -> APIRouter:
     @protected.get("/vault/graph")
     async def vault_graph(
         max_files: int = Query(default=500, ge=1, le=2000, description="Max files to scan"),
+        principal: Any = Depends(_principal),
         _perm: None = Depends(vault_read),
     ) -> dict[str, Any]:
         """Return all notes as nodes and wikilink connections as edges."""
-        files = await _scan_vault_md_files(max_files=max_files)
+        files = await _scan_vault_md_files(
+            max_files=max_files,
+            tenant_id=_principal_tenant(principal),
+        )
         truncated = len(files) >= max_files
         stem_lookup = _build_stem_lookup(files)
         alias_lookup = _build_alias_lookup(files)
@@ -644,6 +723,7 @@ def create_routes(state: AppState) -> APIRouter:
     async def vault_communities(
         algorithm: str = Query(default="louvain", description="louvain or label_propagation"),
         min_size: int = Query(default=2, ge=2, le=100, description="Minimum community size"),
+        principal: Any = Depends(_principal),
         _perm: None = Depends(vault_read),
     ) -> dict[str, Any]:
         """Detect communities in the knowledge graph and return them."""
@@ -652,7 +732,7 @@ def create_routes(state: AppState) -> APIRouter:
             detect_communities,
         )
 
-        graph = await state.graph_store.to_networkx_snapshot()
+        graph = await _tenant_graph_snapshot(_principal_tenant(principal))
         communities = detect_communities(graph, algorithm=algorithm, min_size=min_size)
         # Remap entity UUIDs → vault file paths so members match /vault/graph node IDs
         data = communities_to_graph_data(communities)
@@ -675,6 +755,7 @@ def create_routes(state: AppState) -> APIRouter:
     async def vault_analytics(
         top_k: int = Query(default=20, ge=1, le=100),
         include_betweenness: bool = Query(default=False),
+        principal: Any = Depends(_principal),
         _perm: None = Depends(vault_read),
     ) -> dict[str, Any]:
         """Return graph analytics: centrality, stats, god nodes, gaps."""
@@ -687,7 +768,7 @@ def create_routes(state: AppState) -> APIRouter:
             find_knowledge_gaps,
         )
 
-        graph = await state.graph_store.to_networkx_snapshot()
+        graph = await _tenant_graph_snapshot(_principal_tenant(principal))
 
         stats = compute_graph_stats(graph)
         top_nodes = compute_centrality(graph, top_k=top_k, include_betweenness=include_betweenness)
@@ -704,10 +785,14 @@ def create_routes(state: AppState) -> APIRouter:
     @protected.get("/vault/tags")
     async def vault_tags(
         max_files: int = Query(default=500, ge=1, le=2000, description="Max files to scan"),
+        principal: Any = Depends(_principal),
         _perm: None = Depends(vault_read),
     ) -> dict[str, Any]:
         """Extract all #tag occurrences from vault files."""
-        files = await _scan_vault_md_files(max_files=max_files)
+        files = await _scan_vault_md_files(
+            max_files=max_files,
+            tenant_id=_principal_tenant(principal),
+        )
         truncated = len(files) >= max_files
         tag_map: dict[str, list[str]] = {}
 
@@ -733,6 +818,7 @@ def create_routes(state: AppState) -> APIRouter:
     async def knowledge_search(
         q: str = Query(..., min_length=1, description="Search query"),
         limit: int = Query(default=5, ge=1, le=50, description="Max results"),
+        principal: Any = Depends(_principal),
         _perm: None = Depends(knowledge_read),
     ) -> SearchResponse:
         """Semantic search over vault knowledge notes with full-text fallback."""
@@ -743,7 +829,8 @@ def create_routes(state: AppState) -> APIRouter:
             try:
                 query_embedding = await state.embedder.embed(q)
                 vector_results = await state.vector_store.search(query_embedding, top_k=limit)
-                all_notes = await _scan_vault_md_files()
+                tenant_id = _principal_tenant(principal)
+                all_notes = await _scan_vault_md_files(tenant_id=tenant_id)
                 note_map = {rel: content for rel, content in all_notes}
 
                 for path, score in vector_results:
@@ -776,7 +863,7 @@ def create_routes(state: AppState) -> APIRouter:
                 results = []
 
         # Full-text fallback
-        all_notes = await _scan_vault_md_files()
+        all_notes = await _scan_vault_md_files(tenant_id=_principal_tenant(principal))
         query_lower = q.lower()
 
         scored: list[tuple[float, str, str]] = []
@@ -820,6 +907,7 @@ def create_routes(state: AppState) -> APIRouter:
     @protected.post("/vault/lint")
     async def run_vault_lint(
         stale_days: int = Query(default=90, ge=1, description="Days threshold for stale check"),
+        principal: Any = Depends(_principal),
         _perm: None = Depends(vault_read),
     ) -> dict[str, Any]:
         """Run a comprehensive vault health check."""
@@ -833,9 +921,21 @@ def create_routes(state: AppState) -> APIRouter:
             stale_days=stale_days,
         )
         report = await linter.lint()
+        tenant_id = _principal_tenant(principal)
+        issues = []
+        for issue in report.issues:
+            if tenant_id is None:
+                issues.append(issue)
+                continue
+            try:
+                content = await state.vault.read_note_content(state.vault.resolve_path(issue.path))
+            except Exception:
+                continue
+            if _tenant_can_read(content, tenant_id):
+                issues.append(issue)
         return {
             "total_notes_scanned": report.total_notes_scanned,
-            "issues_count": len(report.issues),
+            "issues_count": len(issues),
             "issues": [
                 {
                     "check": i.check,
@@ -843,7 +943,7 @@ def create_routes(state: AppState) -> APIRouter:
                     "path": i.path,
                     "description": i.description,
                 }
-                for i in report.issues
+                for i in issues
             ],
             "timestamp": report.timestamp,
         }
@@ -851,11 +951,22 @@ def create_routes(state: AppState) -> APIRouter:
     # -- Knowledge catalog ---------------------------------------------------
 
     @protected.get("/knowledge/catalog")
-    async def knowledge_catalog(_perm: None = Depends(knowledge_read)) -> dict[str, Any]:
+    async def knowledge_catalog(
+        principal: Any = Depends(_principal),
+        _perm: None = Depends(knowledge_read),
+    ) -> dict[str, Any]:
         """Return the auto-generated vault catalog grouped by note type."""
         summaries = await state.index_reader.get_all_summaries()
+        tenant_id = _principal_tenant(principal)
         by_type: dict[str, list[dict[str, Any]]] = {}
         for s in summaries:
+            if tenant_id is not None:
+                visible = False
+                with contextlib.suppress(Exception):
+                    content = await state.vault.read_note_content(state.vault.resolve_path(s.path))
+                    visible = _tenant_can_read(content, tenant_id)
+                if not visible:
+                    continue
             key = s.note_type or "uncategorized"
             by_type.setdefault(key, []).append(
                 {

@@ -306,7 +306,10 @@ class TestUserJwtAccess:
     def test_vault_file_with_user_jwt_returns_200(self, real_state, vault_root: Path) -> None:
         # Seed a vault file
         (vault_root / "ideas").mkdir(exist_ok=True)
-        (vault_root / "ideas" / "test.md").write_text("# Test\n", encoding="utf-8")
+        (vault_root / "ideas" / "test.md").write_text(
+            "---\ntenant_id: tenant-default\n---\n# Test\n",
+            encoding="utf-8",
+        )
 
         app = _build_app(real_state, user=_user_principal())
         client = TestClient(app)
@@ -453,6 +456,45 @@ class TestTenantIsolation:
         rel_path = resp.json()["path"]
         text = (vault_root / rel_path).read_text(encoding="utf-8")
         assert "tenant_id: tenant-bob" in text
+
+    def test_vault_search_hides_other_tenant_notes(self, real_state, vault_root: Path) -> None:
+        (vault_root / "ideas").mkdir(exist_ok=True)
+        (vault_root / "ideas" / "mine.md").write_text(
+            "---\ntenant_id: tenant-alice\n---\nalpha visible marker\n",
+            encoding="utf-8",
+        )
+        (vault_root / "ideas" / "theirs.md").write_text(
+            "---\ntenant_id: tenant-bob\n---\nalpha secret marker\n",
+            encoding="utf-8",
+        )
+
+        app = _build_app(real_state, user=_user_principal(tenant_id="tenant-alice"))
+        client = TestClient(app)
+        resp = client.get(
+            "/api/vault/search",
+            params={"q": "alpha"},
+            headers={"Authorization": "Bearer fake-user-token"},
+        )
+        assert resp.status_code == 200, resp.text
+        paths = {item["path"] for item in resp.json()}
+        assert "ideas/mine.md" in paths
+        assert "ideas/theirs.md" not in paths
+
+    def test_vault_file_hides_other_tenant_notes(self, real_state, vault_root: Path) -> None:
+        (vault_root / "ideas").mkdir(exist_ok=True)
+        (vault_root / "ideas" / "theirs.md").write_text(
+            "---\ntenant_id: tenant-bob\n---\nsecret body\n",
+            encoding="utf-8",
+        )
+
+        app = _build_app(real_state, user=_user_principal(tenant_id="tenant-alice"))
+        client = TestClient(app)
+        resp = client.get(
+            "/api/vault/file",
+            params={"path": "ideas/theirs.md"},
+            headers={"Authorization": "Bearer fake-user-token"},
+        )
+        assert resp.status_code == 404
 
 
 class TestServicePrincipalShape:
