@@ -5,11 +5,13 @@ import { getAccessToken } from "./useAuth";
 
 const MAX_EVENTS = 100;
 
-export function useWebSocket() {
+export function useWebSocket({ enabled = true }: { enabled?: boolean } = {}) {
   const [connectionState, setConnectionState] = useState<ConnectionState>(wsManager.state);
   const [events, setEvents] = useState<WSEvent[]>([]);
 
   useEffect(() => {
+    if (!enabled) return;
+
     (async () => {
       const envWsUrl =
         process.env.NEXT_PUBLIC_WS_URL || process.env.VITE_WS_URL;
@@ -31,7 +33,7 @@ export function useWebSocket() {
       unsubState();
       unsubMsg();
     };
-  }, []);
+  }, [enabled]);
 
   const clearEvents = useCallback(() => setEvents([]), []);
 

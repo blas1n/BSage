@@ -56,8 +56,8 @@ export default function App() {
   }, []);
 
   const hash = useHashRoute();
-  const { user, loading } = useAuth();
-  const { connectionState, events, clearEvents } = useWebSocket();
+  const { user, loading } = useAuth({ probeRemoteSession: false });
+  const { connectionState, events, clearEvents } = useWebSocket({ enabled: Boolean(user) });
   const { current: approvalRequest, respond: respondApproval, pendingCount } = useApproval();
   const { t } = useTranslation();
 

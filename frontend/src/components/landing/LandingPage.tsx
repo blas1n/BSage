@@ -4,7 +4,7 @@ import { useAuth } from "../../hooks/useAuth";
 
 export function LandingPage() {
   const { t } = useTranslation();
-  const { login, signup } = useAuth();
+  const { login, signup } = useAuth({ probeRemoteSession: false });
 
   const features = [
     {
@@ -88,7 +88,7 @@ export function LandingPage() {
             {t("landing.noAccount")}{" "}
             <button
               onClick={signup}
-              className="text-accent hover:text-accent-light font-medium transition-colors"
+              className="inline-flex min-h-11 items-center text-accent hover:text-accent-light font-medium transition-colors"
             >
               {t("landing.signUp")}
             </button>

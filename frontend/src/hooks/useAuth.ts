@@ -31,6 +31,9 @@ interface SessionResponse {
 }
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
+interface AccessTokenOptions {
+  probeRemoteSession?: boolean;
+}
 // Dedupe concurrent getAccessToken callers onto a single in-flight cookie-
 // SSO fetch. Without this, App.tsx's useAuth, Sidebar's useAuth,
 // useWebSocket, and api.client each fire their own /api/session request
@@ -67,7 +70,9 @@ function clearLocalStorageTokens(): void {
   localStorage.removeItem(LS_EXPIRES_AT);
 }
 
-export async function getAccessToken(): Promise<string | null> {
+export async function getAccessToken({
+  probeRemoteSession = true,
+}: AccessTokenOptions = {}): Promise<string | null> {
   if (cachedToken && Date.now() < cachedToken.expiresAt - 30_000) {
     return cachedToken.value;
   }
@@ -77,6 +82,10 @@ export async function getAccessToken(): Promise<string | null> {
   if (stored && Date.now() < stored.expiresAt - 30_000) {
     cachedToken = stored;
     return stored.value;
+  }
+
+  if (!probeRemoteSession) {
+    return null;
   }
 
   // Production path: cross-subdomain cookie SSO via auth.bsvibe.dev.
@@ -149,13 +158,15 @@ function decodeJwt(token: string): Record<string, unknown> {
   return JSON.parse(atob(base64));
 }
 
-export function useAuth() {
+export function useAuth({
+  probeRemoteSession = true,
+}: AccessTokenOptions = {}) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
-      const token = await getAccessToken();
+      const token = await getAccessToken({ probeRemoteSession });
       if (!token) {
         setLoading(false);
         return;
@@ -170,7 +181,7 @@ export function useAuth() {
       });
       setLoading(false);
     })();
-  }, []);
+  }, [probeRemoteSession]);
 
   function callbackUrl(): string {
     // Hash-route callback so SPA can parse fragment tokens.
