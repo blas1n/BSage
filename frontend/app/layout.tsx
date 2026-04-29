@@ -4,6 +4,9 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'BSage',
   description: 'Your AI-powered second brain.',
+  icons: {
+    icon: '/favicon.svg',
+  },
 };
 
 export default function RootLayout({
