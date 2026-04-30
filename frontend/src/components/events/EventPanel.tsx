@@ -16,12 +16,12 @@ export function EventPanel({ events, onClear }: EventPanelProps) {
   return (
     <div
       className={`border-t border-white/5 bg-surface transition-all ${
-        expanded ? "h-64" : "h-9"
+        expanded ? "h-64" : "h-11"
       }`}
     >
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center justify-between w-full px-3 py-1.5 text-xs font-medium text-gray-500 hover:bg-white/5"
+        className="flex min-h-11 w-full items-center justify-between px-3 py-1.5 text-xs font-medium text-gray-500 hover:bg-white/5"
       >
         <div className="flex items-center gap-1.5">
           <Icon name="monitor_heart" size={14} />

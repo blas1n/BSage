@@ -57,7 +57,7 @@ export function ChatInput({ onSend, disabled, mode, onModeChange }: ChatInputPro
             <button
               onClick={() => onModeChange("chat")}
               aria-pressed={mode === "chat"}
-              className={`px-3 py-1 text-[10px] font-bold tracking-tighter rounded ${
+              className={`min-h-10 px-3 py-1 text-[10px] font-bold tracking-tighter rounded ${
                 mode === "chat"
                   ? "bg-accent text-gray-950"
                   : "text-gray-400 hover:text-on-surface"
@@ -68,7 +68,7 @@ export function ChatInput({ onSend, disabled, mode, onModeChange }: ChatInputPro
             <button
               onClick={() => onModeChange("search")}
               aria-pressed={mode === "search"}
-              className={`px-3 py-1 text-[10px] font-bold tracking-tighter rounded ${
+              className={`min-h-10 px-3 py-1 text-[10px] font-bold tracking-tighter rounded ${
                 mode === "search"
                   ? "bg-accent text-gray-950"
                   : "text-gray-400 hover:text-on-surface"
@@ -79,7 +79,7 @@ export function ChatInput({ onSend, disabled, mode, onModeChange }: ChatInputPro
           </div>
           <div className="h-4 w-px bg-white/10 mx-1" />
           <div className="flex gap-2">
-            <button className="text-gray-400 hover:text-accent-light transition-colors">
+            <button className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg text-gray-400 hover:bg-white/5 hover:text-accent-light transition-colors">
               <Icon name="attach_file" size={20} />
             </button>
           </div>
@@ -98,13 +98,13 @@ export function ChatInput({ onSend, disabled, mode, onModeChange }: ChatInputPro
             placeholder={placeholder}
             disabled={disabled}
             rows={1}
-            className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-2 resize-none placeholder:text-gray-400 font-sans leading-relaxed text-on-surface disabled:opacity-50"
+            className="min-h-10 flex-1 bg-transparent border-none focus:ring-0 text-sm py-2 resize-none placeholder:text-gray-400 font-sans leading-relaxed text-on-surface disabled:opacity-50"
           />
           <button
             onClick={handleSend}
             disabled={disabled || !value.trim()}
             aria-label={t("chat.send")}
-            className="mb-1 w-9 h-9 flex items-center justify-center bg-accent-light text-gray-950 rounded-lg transition-all hover:scale-105 active:scale-95 shadow-lg shadow-accent-light/20 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="mb-1 flex min-h-10 min-w-10 items-center justify-center bg-accent-light text-gray-950 rounded-lg transition-all hover:scale-105 active:scale-95 shadow-lg shadow-accent-light/20 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Icon name={mode === "search" ? "search" : "arrow_forward"} size={20} />
           </button>

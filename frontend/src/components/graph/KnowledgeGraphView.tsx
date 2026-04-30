@@ -315,12 +315,12 @@ export function KnowledgeGraphView() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={t("graph.searchPlaceholder")}
-              className="w-full pl-10 pr-8 py-1.5 rounded-lg border-b-2 border-transparent bg-surface-container-low text-sm text-on-surface outline-none focus:border-accent-light placeholder:text-gray-500 font-sans"
+              className="min-h-10 w-full pl-10 pr-8 py-1.5 rounded-lg border-b-2 border-transparent bg-surface-container-low text-sm text-on-surface outline-none focus:border-accent-light placeholder:text-gray-500 font-sans"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+                className="absolute right-1 top-1/2 inline-flex min-h-10 min-w-10 -translate-y-1/2 items-center justify-center rounded-lg text-gray-500 hover:bg-white/5 hover:text-gray-300"
               >
                 <Icon name="close" size={16} />
               </button>
@@ -330,7 +330,7 @@ export function KnowledgeGraphView() {
           {activeFilters && (
             <button
               onClick={() => setActiveFilters(null)}
-              className="text-[10px] font-mono uppercase tracking-widest text-gray-500 hover:text-accent-light transition-colors"
+              className="min-h-10 text-[10px] font-mono uppercase tracking-widest text-gray-500 hover:text-accent-light transition-colors"
             >
               {t("graph.showAll")}
             </button>
@@ -388,7 +388,7 @@ export function KnowledgeGraphView() {
               <div className="flex gap-1 mb-1">
                 <button
                   onClick={() => setColorMode("group")}
-                  className={`px-2 py-0.5 rounded text-[9px] font-mono uppercase tracking-widest transition-all ${
+                  className={`min-h-10 px-2 py-0.5 rounded text-[9px] font-mono uppercase tracking-widest transition-all ${
                     colorMode === "group"
                       ? "bg-accent-light/20 text-accent-light"
                       : "text-gray-500 hover:text-gray-400"
@@ -398,7 +398,7 @@ export function KnowledgeGraphView() {
                 </button>
                 <button
                   onClick={() => setColorMode("community")}
-                  className={`px-2 py-0.5 rounded text-[9px] font-mono uppercase tracking-widest transition-all ${
+                  className={`min-h-10 px-2 py-0.5 rounded text-[9px] font-mono uppercase tracking-widest transition-all ${
                     colorMode === "community"
                       ? "bg-accent-light/20 text-accent-light"
                       : "text-gray-500 hover:text-gray-400"
@@ -416,7 +416,7 @@ export function KnowledgeGraphView() {
                     <button
                       key={group}
                       onClick={() => toggleFilter(group)}
-                      className={`flex items-center gap-3 text-left transition-opacity ${
+                      className={`flex min-h-10 items-center gap-3 text-left transition-opacity ${
                         active ? "opacity-100" : "opacity-40 hover:opacity-70"
                       }`}
                     >
@@ -539,7 +539,7 @@ export function KnowledgeGraphView() {
                         <button
                           key={bl.path}
                           onClick={() => handleNodeClick({ id: bl.path })}
-                          className="flex items-center gap-3 p-2 rounded hover:bg-white/5 transition-all cursor-pointer group w-full text-left"
+                          className="flex min-h-10 items-center gap-3 p-2 rounded hover:bg-white/5 transition-all cursor-pointer group w-full text-left"
                         >
                           <div className="w-2 h-2 rounded-full bg-accent-light" />
                           <span className="text-xs font-medium text-gray-300 group-hover:text-accent-light transition-colors flex-1 truncate">

@@ -138,7 +138,7 @@ function DirNode({
     <div>
       <button
         onClick={toggle}
-        className="flex items-center w-full py-0.5 text-left text-gray-300 hover:bg-gray-800/50 rounded transition-colors"
+        className="flex min-h-10 w-full items-center text-left text-gray-300 hover:bg-gray-800/50 rounded transition-colors"
       >
         <TreeIndent depth={depth} isLast={isLast} />
         {open ? (
@@ -202,7 +202,7 @@ function FileNode({
   return (
     <button
       onClick={() => onSelect(path)}
-      className={`flex items-center w-full py-0.5 text-left rounded transition-colors text-xs ${
+      className={`flex min-h-10 w-full items-center text-left rounded transition-colors text-xs ${
         selected
           ? "bg-accent/15 text-accent-light"
           : "text-gray-400 hover:bg-gray-800/50"

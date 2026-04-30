@@ -565,6 +565,46 @@ class TestCreateApp:
         assert cors_mw is not None
         assert "http://localhost:5173" in cors_mw.kwargs["allow_origins"]
 
+    def test_settings_accepts_shared_cors_allowed_origins_env(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv(
+            "CORS_ALLOWED_ORIGINS",
+            "http://bsserver:23400,http://localhost:23400",
+        )
+        monkeypatch.delenv("CORS_ORIGINS", raising=False)
+
+        settings = Settings(
+            vault_path=tmp_path / "vault",
+            skills_dir=tmp_path / "skills",
+            tmp_dir=tmp_path / "tmp",
+            credentials_dir=tmp_path / "creds",
+            prompts_dir=tmp_path / "prompts",
+        )
+
+        assert settings.cors_origins == [
+            "http://bsserver:23400",
+            "http://localhost:23400",
+        ]
+
+    def test_settings_accepts_json_cors_allowed_origins_env(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv(
+            "CORS_ALLOWED_ORIGINS",
+            '["http://bsserver:23400","http://localhost:23400"]',
+        )
+        monkeypatch.delenv("CORS_ORIGINS", raising=False)
+
+        settings = Settings(
+            vault_path=tmp_path / "vault",
+            skills_dir=tmp_path / "skills",
+            tmp_dir=tmp_path / "tmp",
+            credentials_dir=tmp_path / "creds",
+            prompts_dir=tmp_path / "prompts",
+        )
+
+        assert settings.cors_origins == [
+            "http://bsserver:23400",
+            "http://localhost:23400",
+        ]
+
 
 class TestChatEndpoint:
     """Test POST /api/chat."""

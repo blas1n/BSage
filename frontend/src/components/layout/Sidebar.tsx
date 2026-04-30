@@ -87,7 +87,7 @@ export function Sidebar({ currentHash, isOpen, onClose }: SidebarProps) {
           )}
           <button
             onClick={() => logout()}
-            className="flex items-center gap-3 px-3 py-2 text-gray-500 hover:bg-white/5 hover:text-red-400 rounded-md transition-all w-full text-xs font-medium"
+            className="flex min-h-10 w-full items-center gap-3 rounded-md px-3 py-2 text-xs font-medium text-gray-500 transition-all hover:bg-white/5 hover:text-red-400"
           >
             <Icon name="logout" size={20} />
             <span className="font-sans">{t("nav.signOut")}</span>

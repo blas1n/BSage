@@ -51,7 +51,7 @@ export function Header({ connectionState, pendingApprovals }: HeaderProps) {
                   onClick={() => setLanguage(lng)}
                   aria-pressed={isActive}
                   data-testid={`lang-switcher-${lng}`}
-                  className={`px-2 py-1 transition-colors ${
+                  className={`min-h-10 min-w-10 px-2 py-1 transition-colors ${
                     isActive
                       ? "bg-accent text-gray-950 font-bold"
                       : "text-gray-400 hover:text-on-surface"
@@ -66,7 +66,7 @@ export function Header({ connectionState, pendingApprovals }: HeaderProps) {
           <button
             onClick={() => setHelpOpen(true)}
             aria-label={t("header.help")}
-            className="text-gray-400 hover:bg-white/5 p-2 rounded-lg transition-colors active:scale-95"
+            className="inline-flex min-h-10 min-w-10 items-center justify-center text-gray-400 hover:bg-white/5 p-2 rounded-lg transition-colors active:scale-95"
           >
             <Icon name="help" size={20} />
           </button>

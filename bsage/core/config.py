@@ -9,11 +9,12 @@ legacy JSON form (``["http://a"]``) or the simpler CSV form
 (``http://a,http://b``) without crashes.
 """
 
+import json
 from pathlib import Path
 from typing import Annotated
 
-from bsvibe_core import BsvibeSettings, csv_list_field, parse_csv_list
-from pydantic import Field, field_validator
+from bsvibe_core import BsvibeSettings, parse_csv_list
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import NoDecode, SettingsConfigDict
 
 _DEFAULT_CORS_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
@@ -105,9 +106,9 @@ class Settings(BsvibeSettings):
     # BSVibe four-product contract (bsvibe_core.csv_list_field). Accepts
     # either the legacy JSON shape (``["http://a"]``) or the operator-
     # friendly CSV shape (``http://a,http://b``).
-    cors_origins: Annotated[list[str], NoDecode] = csv_list_field(
-        default=_DEFAULT_CORS_ORIGINS,
-        alias="cors_origins",
+    cors_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: list(_DEFAULT_CORS_ORIGINS),
+        validation_alias=AliasChoices("cors_origins", "cors_allowed_origins"),
         description="Allowed CORS origins for the BSage gateway",
     )
 
@@ -115,7 +116,15 @@ class Settings(BsvibeSettings):
     @classmethod
     def _parse_cors_origins(cls, v: object) -> list[str]:
         if isinstance(v, str):
-            return parse_csv_list(v) or list(_DEFAULT_CORS_ORIGINS)
+            stripped = v.strip()
+            if stripped.startswith("["):
+                try:
+                    decoded = json.loads(stripped)
+                except json.JSONDecodeError:
+                    decoded = None
+                if isinstance(decoded, list):
+                    return parse_csv_list(decoded) or list(_DEFAULT_CORS_ORIGINS)
+            return parse_csv_list(stripped) or list(_DEFAULT_CORS_ORIGINS)
         if isinstance(v, list):
             return [str(x) for x in v]
         return list(_DEFAULT_CORS_ORIGINS)

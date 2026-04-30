@@ -52,7 +52,7 @@ export function SearchPanel({ onSelectFile }: SearchPanelProps) {
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t("vault.searchPlaceholder")}
           style={{ paddingLeft: "1.2rem" }}
-          className="w-full pr-8 py-1.5 text-xs bg-gray-900 border border-gray-800 rounded-md focus:outline-none focus:ring-1 focus:ring-accent text-gray-300 placeholder-gray-600"
+          className="min-h-10 w-full pr-8 py-1.5 text-xs bg-gray-900 border border-gray-800 rounded-md focus:outline-none focus:ring-1 focus:ring-accent text-gray-300 placeholder-gray-600"
         />
         {isActive && (
           <button
@@ -60,7 +60,7 @@ export function SearchPanel({ onSelectFile }: SearchPanelProps) {
               setQuery("");
               setResults([]);
             }}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300"
+            className="absolute right-1 top-1/2 inline-flex min-h-10 min-w-10 -translate-y-1/2 items-center justify-center rounded text-gray-600 hover:bg-gray-800/50 hover:text-gray-300"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -83,7 +83,7 @@ export function SearchPanel({ onSelectFile }: SearchPanelProps) {
                   onSelectFile(r.path);
                   setQuery("");
                 }}
-                className="w-full text-left px-2 py-1.5 text-xs hover:bg-gray-800/50 rounded transition-colors"
+                className="min-h-10 w-full text-left px-2 py-1.5 text-xs hover:bg-gray-800/50 rounded transition-colors"
               >
                 <div className="flex items-center gap-1.5">
                   <FileText className="w-3 h-3 text-gray-600 shrink-0" />

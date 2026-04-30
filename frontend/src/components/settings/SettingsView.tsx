@@ -120,7 +120,7 @@ export function SettingsView() {
         )}
         <button
           onClick={() => void refreshConfig()}
-          className="px-3 py-1.5 text-xs rounded-lg border border-gray-700 bg-gray-850 text-gray-200 hover:bg-gray-800 transition-colors"
+          className="min-h-10 px-3 py-1.5 text-xs rounded-lg border border-gray-700 bg-gray-850 text-gray-200 hover:bg-gray-800 transition-colors"
         >
           {t("common.retry")}
         </button>
@@ -150,12 +150,12 @@ export function SettingsView() {
               type="text"
               value={llmModel}
               onChange={(e) => setLlmModel(e.target.value)}
-              className="flex-1 rounded-lg border border-gray-700 bg-gray-850 px-3 py-2 text-sm text-gray-100 outline-none focus:border-accent"
+              className="min-h-10 flex-1 rounded-lg border border-gray-700 bg-gray-850 px-3 py-2 text-sm text-gray-100 outline-none focus:border-accent"
             />
             <button
               onClick={handleModelSave}
               disabled={saving || llmModel === config.llm_model}
-              className="px-4 py-2 text-sm rounded-lg bg-accent text-white hover:bg-accent-dark disabled:opacity-40 transition-colors"
+              className="min-h-10 px-4 py-2 text-sm rounded-lg bg-accent text-white hover:bg-accent-dark disabled:opacity-40 transition-colors"
             >
               {t("common.save")}
             </button>
@@ -175,12 +175,12 @@ export function SettingsView() {
               value={llmApiBase}
               onChange={(e) => setLlmApiBase(e.target.value)}
               placeholder={t("settings.llmApiBasePlaceholder")}
-              className="flex-1 rounded-lg border border-gray-700 bg-gray-850 px-3 py-2 text-sm text-gray-100 outline-none focus:border-accent placeholder:text-gray-600"
+              className="min-h-10 flex-1 rounded-lg border border-gray-700 bg-gray-850 px-3 py-2 text-sm text-gray-100 outline-none focus:border-accent placeholder:text-gray-600"
             />
             <button
               onClick={handleApiBaseSave}
               disabled={saving || !apiBaseChanged}
-              className="px-4 py-2 text-sm rounded-lg bg-accent text-white hover:bg-accent-dark disabled:opacity-40 transition-colors"
+              className="min-h-10 px-4 py-2 text-sm rounded-lg bg-accent text-white hover:bg-accent-dark disabled:opacity-40 transition-colors"
             >
               {t("common.save")}
             </button>
@@ -201,12 +201,12 @@ export function SettingsView() {
                 value={llmApiKey}
                 onChange={(e) => setLlmApiKey(e.target.value)}
                 placeholder={t("settings.llmApiKeyPlaceholder")}
-                className="w-full rounded-lg border border-gray-700 bg-gray-850 px-3 py-2 pr-10 text-sm text-gray-100 outline-none focus:border-accent placeholder:text-gray-600"
+                className="min-h-10 w-full rounded-lg border border-gray-700 bg-gray-850 px-3 py-2 pr-10 text-sm text-gray-100 outline-none focus:border-accent placeholder:text-gray-600"
               />
               <button
                 type="button"
                 onClick={() => setShowApiKey(!showApiKey)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300"
+                className="absolute right-1 top-1/2 inline-flex min-h-10 min-w-10 -translate-y-1/2 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-800/50 hover:text-gray-300"
               >
                 {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -214,7 +214,7 @@ export function SettingsView() {
             <button
               onClick={handleApiKeySave}
               disabled={saving || !llmApiKey.trim()}
-              className="px-4 py-2 text-sm rounded-lg bg-accent text-white hover:bg-accent-dark disabled:opacity-40 transition-colors"
+              className="min-h-10 px-4 py-2 text-sm rounded-lg bg-accent text-white hover:bg-accent-dark disabled:opacity-40 transition-colors"
             >
               {t("common.save")}
             </button>
@@ -239,7 +239,7 @@ export function SettingsView() {
             <button
               onClick={handleTestLlm}
               disabled={testing || !config.has_llm_api_key}
-              className="px-3 py-1.5 text-xs rounded-lg border border-gray-700 bg-gray-850 text-gray-200 hover:bg-gray-800 disabled:opacity-40 transition-colors"
+              className="min-h-10 px-3 py-1.5 text-xs rounded-lg border border-gray-700 bg-gray-850 text-gray-200 hover:bg-gray-800 disabled:opacity-40 transition-colors"
             >
               {testing ? t("settings.testing") : t("settings.testConnection")}
             </button>
@@ -268,7 +268,7 @@ export function SettingsView() {
           <h3 className="text-sm font-medium text-gray-300 mb-3">{t("settings.account")}</h3>
           <button
             onClick={() => logout()}
-            className="flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+            className="flex min-h-10 items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
           >
             <Icon name="logout" size={18} />
             <span>{t("nav.signOut")}</span>

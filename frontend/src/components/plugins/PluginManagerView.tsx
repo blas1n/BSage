@@ -124,7 +124,7 @@ export function PluginManagerView() {
             <p className="text-on-surface-variant font-medium">{t("plugins.subtitle")}</p>
           </div>
           <div className="flex items-center gap-4">
-            <button className="bg-accent text-gray-950 px-6 py-2.5 rounded-lg font-bold flex items-center gap-2 hover:brightness-110 transition-all shadow-lg shadow-accent/20 text-sm">
+            <button className="flex min-h-10 items-center gap-2 rounded-lg bg-accent px-6 py-2.5 text-sm font-bold text-gray-950 shadow-lg shadow-accent/20 transition-all hover:brightness-110">
               <Icon name="extension" size={18} />
               {t("plugins.install")}
             </button>
@@ -137,7 +137,7 @@ export function PluginManagerView() {
             <button
               key={cat}
               onClick={() => setCategoryFilter(cat)}
-              className={`px-5 py-2 rounded-full font-medium text-sm transition-colors ${
+              className={`min-h-10 px-5 py-2 rounded-full font-medium text-sm transition-colors ${
                 categoryFilter === cat
                   ? "bg-accent text-gray-950 font-bold"
                   : "bg-surface-container-high text-on-surface-variant hover:text-on-surface"
@@ -153,7 +153,7 @@ export function PluginManagerView() {
             <button
               key={tf}
               onClick={() => setTypeFilter(tf)}
-              className={`px-4 py-2 rounded-full text-sm transition-colors ${
+              className={`min-h-10 px-4 py-2 rounded-full text-sm transition-colors ${
                 typeFilter === tf
                   ? "bg-surface-container-high text-on-surface font-bold"
                   : "text-on-surface-variant hover:text-on-surface"
@@ -173,7 +173,7 @@ export function PluginManagerView() {
               placeholder={t("plugins.searchPlaceholder")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm bg-surface-container-low border-none rounded-lg text-on-surface placeholder:text-gray-500 outline-none focus:ring-1 focus:ring-accent-light/30 font-sans"
+              className="min-h-10 w-full pl-9 pr-3 py-2 text-sm bg-surface-container-low border-none rounded-lg text-on-surface placeholder:text-gray-500 outline-none focus:ring-1 focus:ring-accent-light/30 font-sans"
             />
           </div>
         </div>
@@ -327,7 +327,7 @@ function PluginCard({
         {needsSetup ? (
           <button
             onClick={() => onSetup(entry.name)}
-            className="flex-1 py-2 rounded-md bg-tertiary/10 text-tertiary text-xs font-bold hover:bg-tertiary/20 border border-tertiary/20 transition-colors"
+            className="min-h-10 flex-1 py-2 rounded-md bg-tertiary/10 text-tertiary text-xs font-bold hover:bg-tertiary/20 border border-tertiary/20 transition-colors"
           >
             {t("plugins.configure")}
           </button>
@@ -336,14 +336,14 @@ function PluginCard({
             <button
               onClick={() => onRun(entry.name)}
               disabled={running || !entry.enabled}
-              className="flex-1 py-2 rounded-md border border-outline-variant text-xs font-bold hover:bg-surface-container-high transition-colors disabled:opacity-40"
+              className="min-h-10 flex-1 py-2 rounded-md border border-outline-variant text-xs font-bold hover:bg-surface-container-high transition-colors disabled:opacity-40"
             >
               {running ? t("plugins.running") : t("plugins.configure")}
             </button>
             <button
               onClick={() => onRun(entry.name)}
               disabled={running || !entry.enabled}
-              className="text-xs font-bold text-accent-light hover:underline px-2 disabled:opacity-40"
+              className="inline-flex min-h-10 items-center px-2 text-xs font-bold text-accent-light hover:underline disabled:opacity-40"
             >
               <Icon name="play_arrow" size={16} className="inline-block mr-1" />
               {t("plugins.run")}
@@ -392,7 +392,7 @@ function SkillCard({
         <button
           onClick={() => onRun(entry.name)}
           disabled={running || !entry.enabled}
-          className="text-xs font-bold text-accent-light hover:underline disabled:opacity-40"
+          className="inline-flex min-h-10 items-center text-xs font-bold text-accent-light hover:underline disabled:opacity-40"
         >
           {running ? t("plugins.running") : t("plugins.run")}
         </button>

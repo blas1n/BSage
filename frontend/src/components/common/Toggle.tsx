@@ -6,7 +6,7 @@ interface ToggleProps {
 
 export function Toggle({ checked, onChange, label }: ToggleProps) {
   return (
-    <label className="relative inline-flex items-center cursor-pointer">
+    <label className="relative inline-flex min-h-10 min-w-11 items-center justify-center cursor-pointer">
       <input
         type="checkbox"
         className="sr-only peer"

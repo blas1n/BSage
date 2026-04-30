@@ -262,7 +262,7 @@ export function VaultView() {
               <div className="relative group">
                 <Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400/50 group-focus-within:text-accent-light transition-colors" size={18} />
                 <input
-                  className="w-full bg-surface-dim border-none border-b-2 border-transparent focus:ring-0 focus:border-accent-light text-sm pl-10 pr-4 py-2 text-on-surface placeholder:text-gray-400/40 transition-all font-sans"
+                  className="min-h-10 w-full bg-surface-dim border-none border-b-2 border-transparent focus:ring-0 focus:border-accent-light text-sm pl-10 pr-4 py-2 text-on-surface placeholder:text-gray-400/40 transition-all font-sans"
                   placeholder={t("vault.searchPlaceholder")}
                   type="text"
                 />
@@ -319,7 +319,7 @@ export function VaultView() {
 
             {/* New Note button */}
             <div className="p-4">
-              <button className="w-full py-2 bg-accent text-gray-950 font-bold text-xs uppercase tracking-widest rounded hover:bg-accent-light transition-colors">
+              <button className="min-h-11 w-full py-2 bg-accent text-gray-950 font-bold text-xs uppercase tracking-widest rounded hover:bg-accent-light transition-colors">
                 {t("vault.newNote")}
               </button>
             </div>
