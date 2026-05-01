@@ -32,6 +32,7 @@ from functools import lru_cache
 import structlog
 from bsvibe_authz import (
     AuthError,
+    OpenFGAError,
     PermissionCache,
     ServiceTokenPayload,
     User,
@@ -44,6 +45,13 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 logger = structlog.get_logger(__name__)
+
+
+_TENANT_PERMISSION_RELATIONS = {
+    "read": "read",
+    "write": "write",
+    "execute": "write",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -236,6 +244,7 @@ def require_bsage_permission(
             "(expected '<product>.<resource>.<action>')",
         )
     action = parts[2]
+    relation = _TENANT_PERMISSION_RELATIONS.get(action, action)
 
     if principal_dep is None:
         principal_dep = combined_principal
@@ -291,18 +300,31 @@ def require_bsage_permission(
                 )
             object_ = f"tenant:{tenant_id}"
 
-        cached = await cache.get(principal, action, object_)
+        cached = await cache.get(principal, relation, object_)
         if cached is not None:
             allowed = cached
         else:
-            allowed = await fga.check(principal, action, object_)
-            await cache.set(principal, action, object_, allowed)
+            try:
+                allowed = await fga.check(principal, relation, object_)
+            except OpenFGAError as exc:
+                logger.warning(
+                    "permission_check_failed",
+                    principal=principal,
+                    relation=relation,
+                    object=object_,
+                    status_code=exc.status_code,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"permission denied: {permission}",
+                ) from exc
+            await cache.set(principal, relation, object_, allowed)
 
         if not allowed:
             logger.info(
                 "permission_denied",
                 principal=principal,
-                action=action,
+                relation=relation,
                 object=object_,
             )
             raise HTTPException(

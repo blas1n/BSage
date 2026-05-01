@@ -327,6 +327,20 @@ class TestIngestCompilerCompile:
         assert result.notes_updated == 0
 
     @pytest.mark.asyncio
+    async def test_compile_handles_llm_errors_without_breaking_ingestion(
+        self, compiler: Any, mock_llm: AsyncMock
+    ) -> None:
+        """Ingest compilation is best-effort; LLM/auth outages must not turn
+        input ingestion into an HTTP 500."""
+        mock_llm.chat = AsyncMock(side_effect=RuntimeError("Missing API key"))
+
+        result = await compiler.compile("some data", "bsnexus-input")
+
+        assert result.notes_created == 0
+        assert result.notes_updated == 0
+        assert result.actions_taken == []
+
+    @pytest.mark.asyncio
     async def test_compile_updates_cross_references(
         self,
         vault_and_writer: tuple[Vault, GardenWriter],

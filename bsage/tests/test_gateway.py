@@ -293,6 +293,7 @@ class TestActionsEndpoint:
         mock_state.vault.read_notes = AsyncMock(
             return_value=[Path("2026-02-22.md"), Path("2026-02-21.md")]
         )
+        mock_state.vault.read_note_content = AsyncMock(return_value="# Action\n")
         response = client.get("/api/vault/actions")
         assert response.status_code == 200
         assert "2026-02-22.md" in response.json()

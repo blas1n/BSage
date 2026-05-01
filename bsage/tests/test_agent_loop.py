@@ -117,6 +117,21 @@ class TestAgentLoopOnInput:
         run_names = [call.args[0].name for call in run_calls]
         assert "dangerous-plugin" not in run_names
 
+    async def test_on_input_does_not_fail_when_on_demand_llm_is_unavailable(
+        self, mock_deps
+    ) -> None:
+        """Input ingestion must persist the seed even when optional on-demand
+        routing cannot call the configured LLM."""
+        mock_deps["llm_client"].chat = AsyncMock(side_effect=RuntimeError("Missing API key"))
+        loop = _make_loop(mock_deps)
+
+        results = await loop.on_input("calendar-input", {"events": [1]})
+
+        assert results == [{"status": "ok"}, {"status": "ok"}, {"status": "ok"}]
+        mock_deps["garden_writer"].write_seed.assert_called_once_with(
+            "calendar-input", {"events": [1]}
+        )
+
 
 class TestAgentLoopFindTriggered:
     """Test _find_triggered logic."""

@@ -32,6 +32,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from bsvibe_authz import (
     FGAClientProtocol,
+    OpenFGAError,
     PermissionCache,
     ServiceTokenPayload,
     User,
@@ -75,6 +76,26 @@ class _DenyFGA:
 
     async def check(self, user: str, relation: str, object_: str) -> bool:
         return False
+
+    async def list_objects(self, user: str, relation: str, type_: str) -> list[str]:
+        return []
+
+
+class _RecordingFGA:
+    def __init__(self) -> None:
+        self.checks: list[tuple[str, str, str]] = []
+
+    async def check(self, user: str, relation: str, object_: str) -> bool:
+        self.checks.append((user, relation, object_))
+        return True
+
+    async def list_objects(self, user: str, relation: str, type_: str) -> list[str]:
+        return []
+
+
+class _ErrorFGA:
+    async def check(self, user: str, relation: str, object_: str) -> bool:
+        raise OpenFGAError(400, {"code": "validation_error", "message": "bad relation"})
 
     async def list_objects(self, user: str, relation: str, type_: str) -> list[str]:
         return []
@@ -409,6 +430,31 @@ class TestPermissionDenied:
             headers={"Authorization": "Bearer fake-user-token"},
         )
         assert resp.status_code == 403
+
+    def test_openfga_errors_do_not_escape_as_500(self, real_state) -> None:
+        app = _build_app(real_state, user=_user_principal(), fga=_ErrorFGA())
+        client = TestClient(app)
+        resp = client.get(
+            "/api/knowledge/search",
+            params={"q": "x"},
+            headers={"Authorization": "Bearer fake-user-token"},
+        )
+        assert resp.status_code == 403
+
+    def test_plugin_execute_permission_checks_tenant_write_relation(self, real_state) -> None:
+        fga = _RecordingFGA()
+        real_state.agent_loop.get_entry = MagicMock(return_value=object())
+        real_state.agent_loop.on_input = AsyncMock(return_value=[])
+
+        app = _build_app(real_state, user=_user_principal(), fga=fga)
+        client = TestClient(app)
+        resp = client.post(
+            "/api/run/garden-writer",
+            headers={"Authorization": "Bearer fake-user-token"},
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert fga.checks == [("user:user-1", "write", "tenant:tenant-default")]
 
 
 class TestTenantIsolation:

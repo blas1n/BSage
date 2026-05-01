@@ -336,36 +336,43 @@ class AgentLoop:
         # Collect results from tool calls
         results: list[dict] = []
 
-        if tools:
-            # Tool use path: LLM decides and executes via tool calls
-            async def _collecting_handler(
-                tool_call_id: str, name: str, args: dict[str, Any]
-            ) -> str:
-                result_str = await self._handle_tool_call(tool_call_id, name, args)
-                try:
-                    results.append(json.loads(result_str))
-                except json.JSONDecodeError:
-                    results.append({"raw": result_str})
-                return result_str
+        try:
+            if tools:
+                # Tool use path: LLM decides and executes via tool calls
+                async def _collecting_handler(
+                    tool_call_id: str, name: str, args: dict[str, Any]
+                ) -> str:
+                    result_str = await self._handle_tool_call(tool_call_id, name, args)
+                    try:
+                        results.append(json.loads(result_str))
+                    except json.JSONDecodeError:
+                        results.append({"raw": result_str})
+                    return result_str
 
-            await self._llm_client.chat(
-                system=system,
-                messages=messages,
-                tools=tools,
-                tool_handler=_collecting_handler,
+                await self._llm_client.chat(
+                    system=system,
+                    messages=messages,
+                    tools=tools,
+                    tool_handler=_collecting_handler,
+                )
+            else:
+                # Fallback: text-based routing for entries without input_schema
+                selected = await self._route_by_text(on_demand, system, messages)
+                for meta in selected:
+                    approved = await self._safe_mode_guard.check(meta)
+                    if not approved:
+                        continue
+                    context = self.build_context(input_data=raw_data, reply_via=source_name)
+                    result = await self._runner.run(meta, context)
+                    results.append(result)
+                    summary = json.dumps(result, default=str)
+                    await self._garden_writer.write_action(meta.name, summary)
+        except Exception:
+            logger.warning(
+                "on_demand_routing_failed_using_noop",
+                source=source_name,
+                exc_info=True,
             )
-        else:
-            # Fallback: text-based routing for entries without input_schema
-            selected = await self._route_by_text(on_demand, system, messages)
-            for meta in selected:
-                approved = await self._safe_mode_guard.check(meta)
-                if not approved:
-                    continue
-                context = self.build_context(input_data=raw_data, reply_via=source_name)
-                result = await self._runner.run(meta, context)
-                results.append(result)
-                summary = json.dumps(result, default=str)
-                await self._garden_writer.write_action(meta.name, summary)
 
         return results
 
