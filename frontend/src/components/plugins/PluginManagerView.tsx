@@ -261,12 +261,15 @@ function PluginCard({
   return (
     <div
       data-testid="plugin-card"
-      className={`bg-gray-900 rounded-xl p-6 border flex flex-col gap-5 transition-all group ${
+      className={`bg-gray-900 rounded-xl border overflow-hidden flex flex-col transition-all group ${
         entry.is_dangerous
           ? "border-white/5 hover:border-error/30"
           : "border-white/5 hover:border-accent-light/30"
       }`}
     >
+    {/* Inner content padded; the action row below this stack is flush so
+        Configure/Run sit edge-to-edge of the card. */}
+    <div className="p-6 flex flex-col gap-5">
       {/* Top row */}
       <div className="flex justify-between items-start">
         <div>
@@ -322,12 +325,16 @@ function PluginCard({
         )}
       </div>
 
-      {/* Actions */}
-      <div className="flex items-center gap-3 pt-4 mt-auto border-t border-white/5">
+    </div>
+
+      {/* Actions — flush footer, no horizontal padding so the buttons
+          touch the card edges. Configure (50%) | Run (50%), divider
+          between them mirrors the supervisor rules row pattern. */}
+      <div className="mt-auto flex items-stretch border-t border-white/5">
         {needsSetup ? (
           <button
             onClick={() => onSetup(entry.name)}
-            className="min-h-10 flex-1 py-2 rounded-md bg-tertiary/10 text-tertiary text-xs font-bold hover:bg-tertiary/20 border border-tertiary/20 transition-colors"
+            className="min-h-12 flex-1 py-3 bg-tertiary/10 text-tertiary text-xs font-bold hover:bg-tertiary/20 transition-colors"
           >
             {t("plugins.configure")}
           </button>
@@ -336,14 +343,14 @@ function PluginCard({
             <button
               onClick={() => onRun(entry.name)}
               disabled={running || !entry.enabled}
-              className="min-h-10 flex-1 py-2 rounded-md border border-outline-variant text-xs font-bold hover:bg-surface-container-high transition-colors disabled:opacity-40"
+              className="min-h-12 flex-1 py-3 text-xs font-bold hover:bg-surface-container-high transition-colors disabled:opacity-40 border-r border-white/5"
             >
               {running ? t("plugins.running") : t("plugins.configure")}
             </button>
             <button
               onClick={() => onRun(entry.name)}
               disabled={running || !entry.enabled}
-              className="inline-flex min-h-10 items-center px-2 text-xs font-bold text-accent-light hover:underline disabled:opacity-40"
+              className="min-h-12 flex-1 inline-flex items-center justify-center py-3 text-xs font-bold text-accent-light hover:bg-surface-container-high transition-colors disabled:opacity-40"
             >
               <Icon name="play_arrow" size={16} className="inline-block mr-1" />
               {t("plugins.run")}

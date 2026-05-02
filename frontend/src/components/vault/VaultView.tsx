@@ -466,14 +466,9 @@ export function VaultView() {
           </div>
         </div>
 
-      {/* FAB — sits above the global HelpButton (fixed bottom-6 right-6) so
-          the two don't overlap on mobile. */}
-      <button className="fixed bottom-24 right-6 w-14 h-14 bg-accent-light text-gray-950 rounded-full shadow-[0_8px_24px_rgba(0,0,0,0.5)] flex items-center justify-center hover:scale-110 active:scale-95 transition-transform z-50 group">
-        <Icon name="add" size={24} filled weight={600} />
-        <div className="absolute right-full mr-4 bg-surface-container-highest text-on-surface text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none border border-outline-variant/20">
-          {t("vault.createSeed")}
-        </div>
-      </button>
+      {/* The "Create Seed" FAB was removed — the in-rail "NEW NOTE" button
+          already covers the create action and the floating + button only
+          duplicated it (and overlapped the global HelpButton). */}
     </div>
   );
 }
