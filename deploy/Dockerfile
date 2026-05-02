@@ -31,6 +31,6 @@ USER appuser
 EXPOSE 8000
 
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 --start-period=15s \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"
 
 CMD ["python", "-m", "uvicorn", "bsage.gateway.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
