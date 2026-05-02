@@ -183,26 +183,22 @@ export function useAuth({
       const payload = decodeJwt(token);
       const appMeta = payload.app_metadata as Record<string, string> | undefined;
       const tenantId = appMeta?.tenant_id ?? "";
-      // Tenant name comes from the auth-app session response — pull it
-      // once post-auth so the sidebar tagline can show the active
-      // workspace. The endpoint accepts ONLY the cookie, so we skip
-      // the call in localStorage-token mode (e2e) to avoid generating
-      // spurious 401s. tenantName stays null and the tagline collapses.
+      // Tenant name comes from /api/session.tenants — the endpoint accepts
+      // either the cookie (SSO) or a bearer header (token-mode/e2e), so
+      // send both. Best-effort fetch; tenantName stays null on failure.
       let tenantName: string | null = null;
-      const hasSessionCookie =
-        typeof document !== "undefined" &&
-        /(?:^|;\s*)bsvibe_session=/.test(document.cookie);
-      if (hasSessionCookie) {
-        try {
-          const res = await fetch(`${AUTH_URL}/api/session`, { credentials: "include" });
-          if (res.ok) {
-            const data: SessionResponse = await res.json();
-            const activeId = data.active_tenant_id ?? tenantId;
-            tenantName = data.tenants?.find((t) => t.id === activeId)?.name ?? null;
-          }
-        } catch {
-          // ignore; tenantName stays null
+      try {
+        const res = await fetch(`${AUTH_URL}/api/session`, {
+          credentials: "include",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data: SessionResponse = await res.json();
+          const activeId = data.active_tenant_id ?? tenantId;
+          tenantName = data.tenants?.find((t) => t.id === activeId)?.name ?? null;
         }
+      } catch {
+        // ignore; tenantName stays null
       }
       setUser({
         id: payload.sub as string,
