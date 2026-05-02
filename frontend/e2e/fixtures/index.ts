@@ -138,7 +138,26 @@ const E2E_JWT_PAYLOAD = btoa(
 );
 const E2E_FAKE_JWT = `${E2E_JWT_HEADER}.${E2E_JWT_PAYLOAD}.fake`;
 
+// Phase B: full SessionEnvelope shape — `@bsvibe/auth`'s useAuth requires
+// a `user` field. The legacy 3-field shape was rejected and triggered a
+// redirect to /login, breaking protected-page e2e.
 const MOCK_SESSION_RESPONSE = {
+  user: {
+    id: "user-123",
+    email: "test@example.com",
+    name: "Test User",
+  },
+  tenants: [
+    {
+      id: "tenant-1",
+      name: "Test Tenant",
+      slug: "test",
+      plan: "team",
+      type: "company",
+      role: "member",
+    },
+  ],
+  active_tenant_id: "tenant-1",
   access_token: E2E_FAKE_JWT,
   refresh_token: "fake-refresh",
   expires_in: 3600,
@@ -148,11 +167,20 @@ export const test = base.extend<CustomFixtures>({
   // Auto-use fixture: routes are set up for every test automatically
   mockApiResponses: [
     async ({ page }, use) => {
-      // Clear chat session data for test isolation
-      await page.addInitScript(() => {
-        localStorage.removeItem("bsage_chat_sessions");
-        localStorage.removeItem("bsage_active_session");
-      });
+      // Inject a fake JWT into localStorage so the BSage SPA's `useAuth`
+      // (called with `probeRemoteSession: false`) treats the test session
+      // as authenticated. The cookie-SSO route mock below is still kept
+      // for tests that exercise re-probe paths.
+      await page.addInitScript(
+        ({ token, expiresAt }: { token: string; expiresAt: number }) => {
+          localStorage.removeItem("bsage_chat_sessions");
+          localStorage.removeItem("bsage_active_session");
+          localStorage.setItem("bsage_access_token", token);
+          localStorage.setItem("bsage_refresh_token", "fake-refresh");
+          localStorage.setItem("bsage_expires_at", String(expiresAt));
+        },
+        { token: E2E_FAKE_JWT, expiresAt: 4102444800_000 },
+      );
 
       // Intercept auth.bsvibe.dev/api/session → return a valid session (authenticated)
       await page.route("**/auth.bsvibe.dev/api/session", (route) => {

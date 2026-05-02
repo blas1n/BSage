@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { ConnectionState } from "../../api/websocket";
 import { HelpModal } from "../common/HelpModal";
 import { Icon } from "../common/Icon";
@@ -10,6 +11,7 @@ interface HeaderProps {
 }
 
 export function Header({ connectionState, pendingApprovals }: HeaderProps) {
+  const { t } = useTranslation();
   const [helpOpen, setHelpOpen] = useState(false);
 
   return (
@@ -20,13 +22,16 @@ export function Header({ connectionState, pendingApprovals }: HeaderProps) {
           {pendingApprovals > 0 && (
             <div className="flex items-center gap-1.5 text-tertiary">
               <Icon name="shield" size={18} />
-              <span className="text-xs font-medium font-mono">{pendingApprovals} pending</span>
+              <span className="text-xs font-medium font-mono">
+                {t("header.pendingApprovals", { count: pendingApprovals })}
+              </span>
             </div>
           )}
+
           <button
             onClick={() => setHelpOpen(true)}
-            aria-label="Help"
-            className="text-gray-400 hover:bg-white/5 p-2 rounded-lg transition-colors active:scale-95"
+            aria-label={t("header.help")}
+            className="inline-flex min-h-10 min-w-10 items-center justify-center text-gray-400 hover:bg-white/5 p-2 rounded-lg transition-colors active:scale-95"
           >
             <Icon name="help" size={20} />
           </button>

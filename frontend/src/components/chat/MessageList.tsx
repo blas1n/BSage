@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import type { ChatMessage } from "../../api/types";
 import { Icon } from "../common/Icon";
 import { MessageBubble } from "./MessageBubble";
@@ -10,6 +11,7 @@ interface MessageListProps {
 }
 
 export function MessageList({ messages, isLoading }: MessageListProps) {
+  const { t } = useTranslation();
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -23,8 +25,8 @@ export function MessageList({ messages, isLoading }: MessageListProps) {
           <div className="w-12 h-12 rounded-xl bg-accent-light/10 flex items-center justify-center mx-auto mb-4">
             <Icon name="hub" className="text-accent-light" size={24} filled />
           </div>
-          <p className="text-lg font-headline font-bold text-on-surface mb-1">Start a conversation</p>
-          <p className="text-sm text-on-surface-variant">Ask anything about your 2nd Brain</p>
+          <p className="text-lg font-headline font-bold text-on-surface mb-1">{t("chat.emptyTitle")}</p>
+          <p className="text-sm text-on-surface-variant">{t("chat.emptySubtitle")}</p>
         </div>
       </div>
     );

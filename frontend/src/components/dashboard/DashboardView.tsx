@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
 import type { EntryMeta, VaultTreeEntry } from "../../api/types";
 import { type ConnectionState, wsManager } from "../../api/websocket";
@@ -33,6 +34,7 @@ function computePluginStatus(plugins: EntryMeta[]): PluginStatusSummary {
 }
 
 export function DashboardView() {
+  const { t } = useTranslation();
   const [stats, setStats] = useState<DashboardStats>({
     totalNotes: 0,
     activePlugins: 0,
@@ -78,7 +80,10 @@ export function DashboardView() {
   }, []);
 
   useEffect(() => {
-    void loadData();
+    const id = window.setTimeout(() => {
+      void loadData();
+    }, 0);
+    return () => window.clearTimeout(id);
   }, [loadData]);
 
   useEffect(() => {
@@ -89,7 +94,7 @@ export function DashboardView() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full text-gray-500">
-        Loading...
+        {t("common.loading")}
       </div>
     );
   }
@@ -106,32 +111,32 @@ export function DashboardView() {
     <div className="h-full overflow-y-auto scrollbar-thin">
       <div className="max-w-5xl mx-auto p-8">
         <h1 className="text-4xl font-extrabold tracking-tight mb-8 text-on-surface font-headline">
-          Dashboard
+          {t("dashboard.title")}
         </h1>
 
         {/* Quick Stats */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
           <StatCard
             icon="description"
-            label="Total Notes"
+            label={t("dashboard.totalNotes")}
             value={stats.totalNotes}
             testId="stat-total-notes"
           />
           <StatCard
             icon="extension"
-            label="Active Plugins"
+            label={t("dashboard.activePlugins")}
             value={stats.activePlugins}
             testId="stat-active-plugins"
           />
           <StatCard
             icon="auto_awesome"
-            label="Active Skills"
+            label={t("dashboard.activeSkills")}
             value={stats.activeSkills}
             testId="stat-active-skills"
           />
           <StatCard
             icon="neurology"
-            label="Knowledge Entries"
+            label={t("dashboard.knowledgeEntries")}
             value={stats.knowledgeEntries}
             testId="stat-knowledge"
           />
@@ -140,24 +145,24 @@ export function DashboardView() {
         {/* Quick Actions */}
         <section className="mb-10">
           <h2 className="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold mb-4">
-            Quick Actions
+            {t("dashboard.quickActions")}
           </h2>
           <div className="flex flex-wrap gap-3">
-            <ActionLink href="#/" icon="chat" label="New Chat Session" />
-            <ActionLink href="#/vault" icon="folder_open" label="Browse Vault" />
-            <ActionLink href="#/graph" icon="hub" label="View Graph" />
+            <ActionLink href="#/" icon="chat" label={t("dashboard.newChatSession")} />
+            <ActionLink href="#/vault" icon="folder_open" label={t("dashboard.browseVault")} />
+            <ActionLink href="#/graph" icon="hub" label={t("dashboard.viewGraph")} />
           </div>
         </section>
 
         {/* Recent Activity */}
         <section className="mb-10">
           <h2 className="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold mb-4">
-            Recent Activity
+            {t("dashboard.recentActivity")}
           </h2>
           <div className="bg-surface-container-low rounded-xl border border-white/5 p-5">
             {recentFiles.length === 0 ? (
               <p className="text-sm text-on-surface-variant text-center py-4">
-                No recent vault files
+                {t("dashboard.noRecentFiles")}
               </p>
             ) : (
               <ul className="space-y-2">
@@ -175,12 +180,12 @@ export function DashboardView() {
         {/* System Status */}
         <section>
           <h2 className="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold mb-4">
-            System Status
+            {t("dashboard.systemStatus")}
           </h2>
           <div className="bg-surface-container-low rounded-xl border border-white/5 p-5 space-y-4">
             {/* WebSocket */}
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-on-surface">WebSocket</span>
+              <span className="text-sm font-medium text-on-surface">{t("dashboard.websocket")}</span>
               <div className="flex items-center gap-2">
                 <span className={`w-2 h-2 rounded-full ${wsStyle.dot}`} />
                 <span className="text-xs font-mono text-on-surface-variant uppercase">
@@ -191,20 +196,20 @@ export function DashboardView() {
 
             {/* Plugin Status */}
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-on-surface">Plugin Status</span>
+              <span className="text-sm font-medium text-on-surface">{t("dashboard.pluginStatus")}</span>
               <div className="flex items-center gap-3 text-xs font-mono text-on-surface-variant">
                 <span className="flex items-center gap-1">
                   <span className="w-2 h-2 rounded-full bg-green-400" />
-                  {pluginStatus.running} running
+                  {t("dashboard.running", { count: pluginStatus.running })}
                 </span>
                 <span className="flex items-center gap-1">
                   <span className="w-2 h-2 rounded-full bg-gray-500" />
-                  {pluginStatus.stopped} stopped
+                  {t("dashboard.stopped", { count: pluginStatus.stopped })}
                 </span>
                 {pluginStatus.errors > 0 && (
                   <span className="flex items-center gap-1">
                     <span className="w-2 h-2 rounded-full bg-red-500" />
-                    {pluginStatus.errors} errors
+                    {t("dashboard.errors", { count: pluginStatus.errors })}
                   </span>
                 )}
               </div>

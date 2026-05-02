@@ -73,6 +73,10 @@ class CompileResult:
 _REQUIRED_ACTION_FIELDS = {"action", "title", "content", "note_type", "reason"}
 
 
+def _empty_compile_result() -> CompileResult:
+    return CompileResult(actions_taken=[], notes_updated=0, notes_created=0)
+
+
 class IngestCompiler:
     """Compile seed content into garden notes at ingestion time."""
 
@@ -106,14 +110,22 @@ class IngestCompiler:
             {"source": seed_source},
         )
 
-        # 1. Search for related existing notes
-        related_context = await self._find_related(seed_content)
+        try:
+            # 1. Search for related existing notes
+            related_context = await self._find_related(seed_content)
 
-        # 2. Ask LLM to plan updates
-        plan = await self._plan_updates(seed_content, seed_source, related_context)
+            # 2. Ask LLM to plan updates
+            plan = await self._plan_updates(seed_content, seed_source, related_context)
 
-        # 3. Execute the plan
-        result = await self._execute_plan(plan)
+            # 3. Execute the plan
+            result = await self._execute_plan(plan)
+        except Exception:
+            logger.warning(
+                "ingest_compile_failed_using_noop",
+                source=seed_source,
+                exc_info=True,
+            )
+            result = _empty_compile_result()
 
         await emit_event(
             self._event_bus,

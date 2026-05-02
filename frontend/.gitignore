@@ -11,8 +11,13 @@ node_modules
 .pnpm-store/
 dist
 dist-ssr
+.next/
 *.local
 .env
+.env.local
+.env*.local
+next-env.d.ts
+*.tsbuildinfo
 
 # Playwright test artifacts
 playwright-report/

@@ -1,5 +1,6 @@
 import { Eye, EyeOff } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
 import type { LlmTestResult, RuntimeConfig } from "../../api/types";
 import { useAuth } from "../../hooks/useAuth";
@@ -7,6 +8,7 @@ import { Icon } from "../common/Icon";
 import { Toggle } from "../common/Toggle";
 
 export function SettingsView() {
+  const { t } = useTranslation();
   const { logout } = useAuth();
   const [config, setConfig] = useState<RuntimeConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -35,7 +37,10 @@ export function SettingsView() {
   }, []);
 
   useEffect(() => {
-    void refreshConfig();
+    const id = window.setTimeout(() => {
+      void refreshConfig();
+    }, 0);
+    return () => window.clearTimeout(id);
   }, [refreshConfig]);
 
   const handleSafeMode = useCallback(async (checked: boolean) => {
@@ -100,14 +105,14 @@ export function SettingsView() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-600">Loading...</div>
+      <div className="flex items-center justify-center h-full text-gray-600">{t("common.loading")}</div>
     );
   }
 
   if (loadError || !config) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-400">
-        <p className="text-sm">Failed to load settings.</p>
+        <p className="text-sm">{t("settings.loadFailed")}</p>
         {loadError && (
           <p className="text-xs text-gray-600 font-mono max-w-md text-center break-all">
             {loadError}
@@ -115,9 +120,9 @@ export function SettingsView() {
         )}
         <button
           onClick={() => void refreshConfig()}
-          className="px-3 py-1.5 text-xs rounded-lg border border-gray-700 bg-gray-850 text-gray-200 hover:bg-gray-800 transition-colors"
+          className="min-h-10 px-3 py-1.5 text-xs rounded-lg border border-gray-700 bg-gray-850 text-gray-200 hover:bg-gray-800 transition-colors"
         >
-          Retry
+          {t("common.retry")}
         </button>
       </div>
     );
@@ -127,67 +132,67 @@ export function SettingsView() {
 
   return (
     <div className="h-full overflow-y-auto p-6 scrollbar-thin">
-      <h2 className="text-lg font-semibold mb-6 text-gray-100">Settings</h2>
+      <h2 className="text-lg font-semibold mb-6 text-gray-100">{t("settings.title")}</h2>
 
       <div className="max-w-lg space-y-6">
         <section>
-          <h3 className="text-sm font-medium text-gray-300 mb-3">Safety</h3>
-          <Toggle checked={config.safe_mode} onChange={handleSafeMode} label="Safe Mode" />
+          <h3 className="text-sm font-medium text-gray-300 mb-3">{t("settings.safetyHeading")}</h3>
+          <Toggle checked={config.safe_mode} onChange={handleSafeMode} label={t("settings.safeMode")} />
           <p className="text-xs text-gray-600 mt-1">
-            When enabled, dangerous plugins require approval before execution.
+            {t("settings.safeModeHint")}
           </p>
         </section>
 
         <section>
-          <h3 className="text-sm font-medium text-gray-300 mb-3">LLM Model</h3>
+          <h3 className="text-sm font-medium text-gray-300 mb-3">{t("settings.llmModelHeading")}</h3>
           <div className="flex gap-2">
             <input
               type="text"
               value={llmModel}
               onChange={(e) => setLlmModel(e.target.value)}
-              className="flex-1 rounded-lg border border-gray-700 bg-gray-850 px-3 py-2 text-sm text-gray-100 outline-none focus:border-accent"
+              className="min-h-10 flex-1 rounded-lg border border-gray-700 bg-gray-850 px-3 py-2 text-sm text-gray-100 outline-none focus:border-accent"
             />
             <button
               onClick={handleModelSave}
               disabled={saving || llmModel === config.llm_model}
-              className="px-4 py-2 text-sm rounded-lg bg-accent text-white hover:bg-accent-dark disabled:opacity-40 transition-colors"
+              className="min-h-10 px-4 py-2 text-sm rounded-lg bg-accent text-white hover:bg-accent-dark disabled:opacity-40 transition-colors"
             >
-              Save
+              {t("common.save")}
             </button>
           </div>
           <p className="text-xs text-gray-600 mt-1">
-            Format: provider/model (e.g. anthropic/claude-sonnet-4-20250514)
+            {t("settings.llmModelHint")}
           </p>
         </section>
 
         <section>
           <h3 className="text-sm font-medium text-gray-300 mb-3">
-            LLM API Base
+            {t("settings.llmApiBaseHeading")}
           </h3>
           <div className="flex gap-2">
             <input
               type="text"
               value={llmApiBase}
               onChange={(e) => setLlmApiBase(e.target.value)}
-              placeholder="https://api.openai.com/v1"
-              className="flex-1 rounded-lg border border-gray-700 bg-gray-850 px-3 py-2 text-sm text-gray-100 outline-none focus:border-accent placeholder:text-gray-600"
+              placeholder={t("settings.llmApiBasePlaceholder")}
+              className="min-h-10 flex-1 rounded-lg border border-gray-700 bg-gray-850 px-3 py-2 text-sm text-gray-100 outline-none focus:border-accent placeholder:text-gray-600"
             />
             <button
               onClick={handleApiBaseSave}
               disabled={saving || !apiBaseChanged}
-              className="px-4 py-2 text-sm rounded-lg bg-accent text-white hover:bg-accent-dark disabled:opacity-40 transition-colors"
+              className="min-h-10 px-4 py-2 text-sm rounded-lg bg-accent text-white hover:bg-accent-dark disabled:opacity-40 transition-colors"
             >
-              Save
+              {t("common.save")}
             </button>
           </div>
           <p className="text-xs text-gray-600 mt-1">
-            Optional. Override for self-hosted models (e.g. http://localhost:11434)
+            {t("settings.llmApiBaseHint")}
           </p>
         </section>
 
         <section>
           <h3 className="text-sm font-medium text-gray-300 mb-3">
-            LLM API Key
+            {t("settings.llmApiKeyHeading")}
           </h3>
           <div className="flex gap-2">
             <div className="relative flex-1">
@@ -195,13 +200,13 @@ export function SettingsView() {
                 type={showApiKey ? "text" : "password"}
                 value={llmApiKey}
                 onChange={(e) => setLlmApiKey(e.target.value)}
-                placeholder="Enter new API key"
-                className="w-full rounded-lg border border-gray-700 bg-gray-850 px-3 py-2 pr-10 text-sm text-gray-100 outline-none focus:border-accent placeholder:text-gray-600"
+                placeholder={t("settings.llmApiKeyPlaceholder")}
+                className="min-h-10 w-full rounded-lg border border-gray-700 bg-gray-850 px-3 py-2 pr-10 text-sm text-gray-100 outline-none focus:border-accent placeholder:text-gray-600"
               />
               <button
                 type="button"
                 onClick={() => setShowApiKey(!showApiKey)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300"
+                className="absolute right-1 top-1/2 inline-flex min-h-10 min-w-10 -translate-y-1/2 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-800/50 hover:text-gray-300"
               >
                 {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -209,9 +214,9 @@ export function SettingsView() {
             <button
               onClick={handleApiKeySave}
               disabled={saving || !llmApiKey.trim()}
-              className="px-4 py-2 text-sm rounded-lg bg-accent text-white hover:bg-accent-dark disabled:opacity-40 transition-colors"
+              className="min-h-10 px-4 py-2 text-sm rounded-lg bg-accent text-white hover:bg-accent-dark disabled:opacity-40 transition-colors"
             >
-              Save
+              {t("common.save")}
             </button>
           </div>
           <div className="flex items-center gap-1.5 mt-2">
@@ -223,20 +228,20 @@ export function SettingsView() {
               }`}
             />
             <span className="text-xs text-gray-500">
-              {config.has_llm_api_key ? "API key configured" : "No API key set"}
+              {config.has_llm_api_key ? t("settings.llmApiKeyConfigured") : t("settings.llmApiKeyMissing")}
             </span>
           </div>
           <p className="text-xs text-gray-600 mt-1">
-            The key is stored securely and never displayed after saving.
+            {t("settings.llmApiKeyHint")}
           </p>
 
           <div className="mt-3 flex items-center gap-3">
             <button
               onClick={handleTestLlm}
               disabled={testing || !config.has_llm_api_key}
-              className="px-3 py-1.5 text-xs rounded-lg border border-gray-700 bg-gray-850 text-gray-200 hover:bg-gray-800 disabled:opacity-40 transition-colors"
+              className="min-h-10 px-3 py-1.5 text-xs rounded-lg border border-gray-700 bg-gray-850 text-gray-200 hover:bg-gray-800 disabled:opacity-40 transition-colors"
             >
-              {testing ? "Testing..." : "Test connection"}
+              {testing ? t("settings.testing") : t("settings.testConnection")}
             </button>
             {testResult && (
               <span
@@ -254,19 +259,19 @@ export function SettingsView() {
 
         {config.embedding_model && (
           <section>
-            <h3 className="text-sm font-medium text-gray-300 mb-2">Embedding Model</h3>
+            <h3 className="text-sm font-medium text-gray-300 mb-2">{t("settings.embeddingModel")}</h3>
             <p className="text-sm text-gray-500 font-mono">{config.embedding_model}</p>
           </section>
         )}
 
         <section className="border-t border-white/5 pt-6">
-          <h3 className="text-sm font-medium text-gray-300 mb-3">Account</h3>
+          <h3 className="text-sm font-medium text-gray-300 mb-3">{t("settings.account")}</h3>
           <button
             onClick={() => logout()}
-            className="flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+            className="flex min-h-10 items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
           >
             <Icon name="logout" size={18} />
-            <span>Sign out</span>
+            <span>{t("nav.signOut")}</span>
           </button>
         </section>
       </div>

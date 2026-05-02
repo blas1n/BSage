@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Tailwind 4 source scan — pull in @bsvibe/layout's compiled JS so that
+ * inline utility classes from the shared sidebar (border-l-4, min-h-[44px],
+ * bg-gray-950, etc.) are present in the generated CSS. */
+@source "../node_modules/@bsvibe/layout/dist/**/*.js";
+
 /* ── BSage Stitch Design System tokens ── */
 @theme {
   --color-gray-950: #0a0b0f;
@@ -50,6 +55,14 @@
 }
 
 :root {
+  /* BSage signature emerald — overrides @bsvibe/design-tokens default accent.
+   * Consumed by @bsvibe/layout (ResponsiveSidebar active border, SidebarBrand
+   * name color, SidebarUserCard avatar). The @theme block above already sets
+   * --color-accent for Tailwind utilities; this :root declaration makes the
+   * variable available to inline styles and arbitrary-value classes. */
+  --color-accent: #10b981;
+  --color-accent-hover: color-mix(in srgb, var(--color-accent) 80%, white);
+  --color-accent-bg-soft: color-mix(in srgb, var(--color-accent) 10%, transparent);
   --color-accent-rgb: 16 185 129;
 }
 
@@ -184,3 +197,52 @@
 /* ── No-scrollbar utility ── */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ----------------------------------------------------------------------
+ * BSage sidebar active state — overlay for hash-routed nav items.
+ *
+ * `@bsvibe/layout` `ResponsiveSidebar` derives active state from
+ * `usePathname()`. BSage runs as a single Next.js page (the SPA renders
+ * everything at `/`) with hash routing, so `usePathname()` always returns
+ * "/" and the shared component cannot distinguish between hash routes.
+ *
+ * The Sidebar wrapper marks the active item's label span with
+ * `data-bsage-active="true"`. We promote that signal up to the parent
+ * `<a class="bsvibe-sidebar__item ...">` so the active item gets the
+ * unified `border-l-4 border-[var(--color-accent)]` highlight that the
+ * rest of the BSVibe ecosystem uses.
+ * ---------------------------------------------------------------------- */
+.bsvibe-sidebar__item:has([data-bsage-active="true"]) {
+  border-left-width: 4px;
+  border-left-color: var(--color-accent);
+  background-color: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  color: var(--color-gray-50);
+  font-weight: 600;
+}
+
+/* Hamburger positioning now ships from @bsvibe/layout v0.5.0
+ * (`fixed top-3 left-3 z-50` baked into the lib's Tailwind classes).
+ * Per-product override removed — lib is the SoT. */
+
+/* ----------------------------------------------------------------------
+ * Phase B (Batch 2) — mobile-friendly responsive utilities.
+ *
+ * BSage already has a md:translate-x-0 / -translate-x-full sidebar
+ * pattern + md:hidden hamburger button. This block adds:
+ *   - 44px minimum touch targets on mobile drawer items
+ *   - Tighter main padding under 640px so vault/graph have breathing room
+ *   - Card-stack helper for products to opt into where tables don't fit
+ * ---------------------------------------------------------------------- */
+@media (max-width: 767px) {
+  /* Sidebar nav links (in `<aside>`) — 44px tap target. */
+  aside nav a {
+    min-height: 44px;
+  }
+  /* Hamburger trigger — 44px tap target with explicit padding so it matches
+   * iOS HIG / Material 3 guidance. */
+  button[aria-label="Open navigation"],
+  .md\:hidden.fixed.top-3.left-4 {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

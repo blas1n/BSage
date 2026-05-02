@@ -315,6 +315,8 @@ class TestSetupCLIWithSetupFn:
             s.plugins_dir = tmp_path / "plugins"
             s.skills_dir = tmp_path / "skills"
             s.credentials_dir = tmp_path / ".credentials"
+            s.credential_encryption_key = ""
+            s.credential_encryption_retired_keys = []
             mock_settings.return_value = s
             mock_skill_loader.return_value.load_all = AsyncMock(return_value={})
             mock_plugin_loader.return_value.load_all = AsyncMock(return_value={"my-plugin": meta})
@@ -347,6 +349,8 @@ class TestSetupCLIWithSetupFn:
             s.plugins_dir = tmp_path / "plugins"
             s.skills_dir = tmp_path / "skills"
             s.credentials_dir = tmp_path / ".credentials"
+            s.credential_encryption_key = ""
+            s.credential_encryption_retired_keys = []
             mock_settings.return_value = s
             mock_skill_loader.return_value.load_all = AsyncMock(return_value={})
             mock_plugin_loader.return_value.load_all = AsyncMock(return_value={"my-plugin": meta})

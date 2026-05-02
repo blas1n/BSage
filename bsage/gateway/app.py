@@ -7,12 +7,15 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import structlog
+from bsvibe_authz import get_settings_dep as _authz_get_settings_dep
+from bsvibe_fastapi import RequestIdMiddleware, add_cors_middleware
+from bsvibe_fastapi.settings import FastApiSettings
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from bsage.core.config import Settings
+from bsage.gateway.authz import get_authz_settings
 from bsage.gateway.dependencies import AppState
 from bsage.gateway.mcp import create_mcp_routes
 from bsage.gateway.rate_limit import RateLimiter, RateLimitMiddleware
@@ -53,17 +56,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.bsage = state
 
+    # Phase 0 P0.5 — point bsvibe_authz at our tolerant settings adapter so
+    # require_bsage_permission() can resolve when the deployment hasn't yet
+    # bootstrapped OpenFGA (empty OPENFGA_API_URL → permissive mode).
+    app.dependency_overrides[_authz_get_settings_dep] = get_authz_settings
+
     # Rate limiting — per-IP sliding window
     rate_limiter = RateLimiter(requests_per_minute=settings.rate_limit_per_minute)
     app.add_middleware(RateLimitMiddleware, rate_limiter=rate_limiter)
 
-    # CORS — configurable origins (defaults to Vite dev server)
-    app.add_middleware(
-        CORSMiddleware,
+    # Phase A — request id correlation + structlog contextvars binding via
+    # bsvibe-fastapi shared middleware.
+    app.add_middleware(RequestIdMiddleware)
+
+    # Phase A — CORS via bsvibe-fastapi shared helper. BSage keeps its
+    # historical permissive policy (``allow_methods=["*"]`` / ``allow_headers=["*"]``)
+    # by passing explicit overrides; the helper otherwise enforces the
+    # BSVibe baseline ``Authorization`` / ``Content-Type`` allowlist.
+    add_cors_middleware(
+        app,
+        FastApiSettings(),
         allow_origins=settings.cors_origins,
-        allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        allow_credentials=True,
     )
 
     # Register API + MCP + WebSocket routes

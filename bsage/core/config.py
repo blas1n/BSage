@@ -1,17 +1,37 @@
-"""BSage configuration via pydantic-settings."""
+"""BSage configuration via pydantic-settings.
 
+Phase A migration (2026-04-26): :class:`Settings` now extends
+:class:`bsvibe_core.BsvibeSettings` so the four-product
+``Annotated[list[str], NoDecode]`` CSV-env contract (BSupervisor §M18)
+is shared rather than re-derived. ``cors_origins`` adopts
+:func:`bsvibe_core.csv_list_field` so deployers can use either the
+legacy JSON form (``["http://a"]``) or the simpler CSV form
+(``http://a,http://b``) without crashes.
+"""
+
+import json
 from pathlib import Path
+from typing import Annotated
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from bsvibe_core import BsvibeSettings, parse_csv_list
+from pydantic import AliasChoices, Field, field_validator
+from pydantic_settings import NoDecode, SettingsConfigDict
+
+_DEFAULT_CORS_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 
-class Settings(BaseSettings):
-    """Application settings loaded from environment variables and .env file."""
+class Settings(BsvibeSettings):
+    """Application settings loaded from environment variables and .env file.
+
+    Inherits the BSVibe baseline (case-insensitive env, ``extra="ignore"``)
+    from :class:`BsvibeSettings` and re-pins ``env_file=".env"`` so BSage
+    keeps loading its existing dotfiles.
+    """
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
+        case_sensitive=False,
         extra="ignore",
     )
 
@@ -52,14 +72,62 @@ class Settings(BaseSettings):
     # Embedding text limit
     max_embed_chars: int = Field(default=8000, gt=0)
 
+    # Credential encryption (Fernet symmetric encryption)
+    # Primary key — used for encrypting new writes. If empty, encryption is
+    # disabled and credentials remain plaintext (legacy mode for local-only
+    # development). Production deployments MUST set this.
+    credential_encryption_key: str = ""
+    # Retired keys (comma-separated, oldest first) — accepted for decryption
+    # of older ciphertexts during key rotation. After rotation completes,
+    # remove old keys here once all stored credentials are re-encrypted.
+    credential_encryption_retired_keys: list[str] = []
+
     # Authentication (BSVibe)
     bsvibe_auth_url: str = "https://auth.bsvibe.dev"
 
     # Service-to-service API keys (JSON: {"service-name": "key"})
+    # DEPRECATED Phase 0 P0.5+: use service JWTs (audience=bsage) instead.
+    # Kept so existing deployments don't 401 mid-rollout.
     service_api_keys: dict[str, str] = {}
 
-    # CORS
-    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    # bsvibe-authz / OpenFGA (Phase 0 P0.5)
+    # Empty openfga_api_url disables OpenFGA enforcement (local dev mode).
+    openfga_api_url: str = ""
+    openfga_store_id: str = ""
+    openfga_auth_model_id: str = ""
+    openfga_auth_token: str = ""
+    service_token_signing_secret: str = ""
+
+    # Default tenant id used when a write happens without an authenticated
+    # principal (cron, local dev, or migration). Personal-tenant only.
+    default_tenant_id: str = "tenant-default"
+
+    # CORS — Annotated[list[str], NoDecode] + parse_csv_list per the
+    # BSVibe four-product contract (bsvibe_core.csv_list_field). Accepts
+    # either the legacy JSON shape (``["http://a"]``) or the operator-
+    # friendly CSV shape (``http://a,http://b``).
+    cors_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: list(_DEFAULT_CORS_ORIGINS),
+        validation_alias=AliasChoices("cors_origins", "cors_allowed_origins"),
+        description="Allowed CORS origins for the BSage gateway",
+    )
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _parse_cors_origins(cls, v: object) -> list[str]:
+        if isinstance(v, str):
+            stripped = v.strip()
+            if stripped.startswith("["):
+                try:
+                    decoded = json.loads(stripped)
+                except json.JSONDecodeError:
+                    decoded = None
+                if isinstance(decoded, list):
+                    return parse_csv_list(decoded) or list(_DEFAULT_CORS_ORIGINS)
+            return parse_csv_list(stripped) or list(_DEFAULT_CORS_ORIGINS)
+        if isinstance(v, list):
+            return [str(x) for x in v]
+        return list(_DEFAULT_CORS_ORIGINS)
 
     # Rate limiting
     rate_limit_per_minute: int = Field(default=60, gt=0)

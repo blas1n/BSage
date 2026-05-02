@@ -13,25 +13,23 @@ interface LayoutProps {
 }
 
 export function Layout({ children, currentHash, connectionState, pendingApprovals }: LayoutProps) {
+  // Drawer state lives on the Layout because the Sidebar is rendered as a
+  // sibling of `<main>` and the (mobile) hamburger trigger ships with the
+  // shared `ResponsiveSidebar` component itself — no separate trigger
+  // button is needed in Layout anymore.
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <div className="flex h-screen bg-surface-dim text-on-surface font-sans selection:bg-accent-light/30 selection:text-accent-light">
-      <Sidebar currentHash={currentHash} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar
+        currentHash={currentHash}
+        isOpen={sidebarOpen}
+        onOpenChange={setSidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
       <div className="flex flex-col flex-1 min-w-0">
         <Header connectionState={connectionState} pendingApprovals={pendingApprovals} />
-        <main className="flex-1 overflow-hidden bg-gray-900 relative">
-          {/* Hamburger - mobile only */}
-          <button
-            className="md:hidden fixed top-3 left-4 z-30 p-2 rounded-lg bg-surface-dim text-gray-400"
-            onClick={() => setSidebarOpen(true)}
-          >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
-          {children}
-        </main>
+        <main className="flex-1 overflow-hidden bg-gray-900 relative">{children}</main>
       </div>
       <HelpButton />
     </div>

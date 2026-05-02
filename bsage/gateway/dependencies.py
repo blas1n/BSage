@@ -23,6 +23,8 @@ from bsage.core.safe_mode import SafeModeGuard
 from bsage.core.scheduler import Scheduler
 from bsage.core.skill_loader import SkillLoader
 from bsage.core.skill_runner import SkillRunner
+from bsage.core.tasks import spawn_task
+from bsage.garden.audit_outbox import AiosqliteAuditOutbox, AiosqliteOutboxRelay
 from bsage.garden.embedder import Embedder
 from bsage.garden.file_index_reader import FileIndexReader
 from bsage.garden.graph_extractor import GraphExtractor
@@ -36,7 +38,8 @@ from bsage.garden.sync import SyncManager
 from bsage.garden.vault import Vault
 from bsage.garden.vector_store import VectorStore
 from bsage.garden.writer import GardenWriter
-from bsage.gateway.auth import create_auth_provider, create_get_current_user
+from bsage.gateway.auth import create_auth_provider
+from bsage.gateway.authz import combined_principal
 from bsage.gateway.event_broadcaster import WebSocketEventBroadcaster
 from bsage.gateway.ws import manager as ws_manager
 from bsage.interface.ws_interface import WebSocketApprovalInterface
@@ -65,12 +68,32 @@ class AppState:
 
         # Garden layer
         self.vault = Vault(settings.vault_path)
+
+        # Phase Audit Batch 2 — raw aiosqlite audit outbox lives in its own
+        # SQLite file under the vault (.bsage/audit_outbox.db) so emit calls
+        # never contend with the knowledge-graph write queue. The relay reads
+        # AuditSettings from env separately; tests/dev with no audit URL
+        # configured leave the relay disabled (no-op).
+        audit_outbox_path = settings.vault_path / ".bsage" / "audit_outbox.db"
+        self.audit_outbox: AiosqliteAuditOutbox | None = AiosqliteAuditOutbox(audit_outbox_path)
+        self.audit_relay: AiosqliteOutboxRelay | None = None
+
+        # Phase 0 P0.5 — pass default tenant id so cron / migration writes
+        # still satisfy the tenant column when no principal is available.
         self.garden_writer = GardenWriter(
-            self.vault, sync_manager=self.sync_manager, event_bus=self.event_bus
+            self.vault,
+            sync_manager=self.sync_manager,
+            event_bus=self.event_bus,
+            default_tenant_id=settings.default_tenant_id or None,
+            audit_outbox=self.audit_outbox,
         )
 
-        # Credentials
-        self.credential_store = CredentialStore(settings.credentials_dir)
+        # Credentials — Fernet-at-rest when an encryption key is configured.
+        self.credential_store = CredentialStore(
+            settings.credentials_dir,
+            primary_key=settings.credential_encryption_key or None,
+            retired_keys=settings.credential_encryption_retired_keys,
+        )
 
         # LLM (reads from RuntimeConfig per-call)
         self.llm_client = LiteLLMClient(runtime_config=self.runtime_config)
@@ -79,11 +102,12 @@ class AppState:
         self._danger_map: dict[str, bool] = {}
 
         # Authentication
+        # Legacy provider kept for back-compat (used by WS auth route + the
+        # /auth/callback redirect helper). Phase 0 P0.5 routes the HTTP
+        # principal through ``bsvibe_authz.combined_principal`` instead, which
+        # accepts both user JWTs and audience-scoped service JWTs.
         self.auth_provider = create_auth_provider(settings)
-        self.get_current_user = create_get_current_user(
-            self.auth_provider,
-            service_api_keys=settings.service_api_keys,
-        )
+        self.get_current_user = combined_principal
 
         # WebSocket approval interface for SafeMode in Gateway context
         self.ws_approval_interface = WebSocketApprovalInterface(manager=ws_manager)
@@ -184,6 +208,19 @@ class AppState:
 
     async def initialize(self) -> None:
         """Load plugins and skills, create AgentLoop, register triggers, start scheduler."""
+        # Phase Audit Batch 2 — bring the outbox up before any route can fire
+        # an emit. The relay is then started so background delivery races
+        # with the request loop instead of stalling startup.
+        if self.audit_outbox is not None:
+            await self.audit_outbox.initialize()
+            from bsvibe_audit import AuditSettings
+
+            audit_settings = AuditSettings()
+            self.audit_relay = AiosqliteOutboxRelay.from_settings(
+                audit_settings, outbox=self.audit_outbox
+            )
+            await self.audit_relay.start()
+
         # Subscribe index subscriber to EventBus for write-time indexing
         from bsage.garden.graph_subscriber import GraphSubscriber
         from bsage.garden.index_subscriber import IndexSubscriber
@@ -211,9 +248,13 @@ class AppState:
         graph_sub = GraphSubscriber(self.graph_store, self.vault, self.graph_extractor)
         self.event_bus.subscribe(graph_sub)
 
-        # Background reindex to pick up manual vault edits (Obsidian, etc.)
-        self._reindex_task = asyncio.create_task(self._background_reindex())
-        self._graph_rebuild_task = asyncio.create_task(self._background_graph_rebuild())
+        # Background reindex to pick up manual vault edits (Obsidian, etc.).
+        # ``spawn_task`` keeps a strong reference and routes failures through
+        # structlog instead of asyncio's silent unawaited-task warning.
+        self._reindex_task = spawn_task(self._background_reindex(), name="bsage.startup.reindex")
+        self._graph_rebuild_task = spawn_task(
+            self._background_graph_rebuild(), name="bsage.startup.graph_rebuild"
+        )
 
         plugin_registry = await self.plugin_loader.load_all()
         skill_registry = await self.skill_loader.load_all()
@@ -391,4 +432,10 @@ class AppState:
         await self.graph_store.close()
         if self.embedder.enabled:
             await self.vector_store.close()
+        # Phase Audit Batch 2 — drain & stop the relay before closing the
+        # outbox so we don't leave a polling task pointing at a closed DB.
+        if self.audit_relay is not None:
+            await self.audit_relay.stop()
+        if self.audit_outbox is not None:
+            await self.audit_outbox.close()
         logger.info("gateway_shutdown")

@@ -258,7 +258,11 @@ def setup(name: str) -> None:
         )
         raise SystemExit(1)
 
-    cred_store = CredentialStore(settings.credentials_dir)
+    cred_store = CredentialStore(
+        settings.credentials_dir,
+        primary_key=settings.credential_encryption_key or None,
+        retired_keys=settings.credential_encryption_retired_keys,
+    )
 
     # Plugin with @execute.setup decorator — run the custom setup function
     if isinstance(meta, PluginMeta) and meta._setup_fn is not None:
@@ -375,6 +379,30 @@ def install(name: str) -> None:
     else:
         click.echo(f"Error installing dependencies:\n{result.stderr}", err=True)
         raise SystemExit(1)
+
+
+@main.command("rotate-credentials")
+def rotate_credentials() -> None:
+    """Re-encrypt all stored credentials with the current primary key.
+
+    Run after rotating CREDENTIAL_ENCRYPTION_KEY. The previous key must
+    still be present in CREDENTIAL_ENCRYPTION_RETIRED_KEYS so existing
+    ciphertexts can be read; once rotation completes you may remove it.
+    """
+    settings = get_settings()
+    if not settings.credential_encryption_key:
+        click.echo(
+            "Error: CREDENTIAL_ENCRYPTION_KEY is not set; nothing to rotate.",
+            err=True,
+        )
+        raise SystemExit(1)
+    store = CredentialStore(
+        settings.credentials_dir,
+        primary_key=settings.credential_encryption_key,
+        retired_keys=settings.credential_encryption_retired_keys,
+    )
+    count = asyncio.run(store.rotate_keys())
+    click.echo(f"[BSage] Re-encrypted {count} credential(s) with the current primary key.")
 
 
 @main.command()

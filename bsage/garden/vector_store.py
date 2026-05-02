@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import asyncio
 import math
 import struct
 from pathlib import Path
 
 import aiosqlite
 import structlog
+
+from bsage.garden.write_queue import SQLiteWriteQueue
 
 logger = structlog.get_logger(__name__)
 
@@ -52,22 +53,32 @@ class VectorStore:
     vaults with up to ~10K notes.
     """
 
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, *, write_queue_maxsize: int = 256) -> None:
         self._db_path = db_path
         self._db: aiosqlite.Connection | None = None
-        self._write_lock: asyncio.Lock = asyncio.Lock()
+        self._write_queue: SQLiteWriteQueue | None = None
+        self._write_queue_maxsize = write_queue_maxsize
 
     async def initialize(self) -> None:
-        """Open connection and create tables."""
+        """Open connection, create tables, start the write queue."""
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._db = await aiosqlite.connect(str(self._db_path))
         await self._db.execute("PRAGMA journal_mode=WAL")
         await self._db.executescript(_SCHEMA_SQL)
         await self._db.commit()
+        self._write_queue = SQLiteWriteQueue(
+            self._db,
+            name="vector",
+            maxsize=self._write_queue_maxsize,
+        )
+        await self._write_queue.start()
         logger.info("vector_store_initialized", path=str(self._db_path))
 
     async def close(self) -> None:
-        """Close the database connection."""
+        """Drain the write queue and close the database connection."""
+        if self._write_queue is not None:
+            await self._write_queue.stop()
+            self._write_queue = None
         if self._db:
             await self._db.close()
             self._db = None
@@ -79,6 +90,12 @@ class VectorStore:
             raise RuntimeError(msg)
         return self._db
 
+    async def _submit_write(self, op):
+        if self._write_queue is None:
+            msg = "VectorStore not initialized — call initialize() first"
+            raise RuntimeError(msg)
+        return await self._write_queue.submit(op)
+
     async def store(self, note_path: str, embedding: list[float]) -> None:
         """Store or update an embedding for a note.
 
@@ -87,7 +104,8 @@ class VectorStore:
             embedding: Dense vector embedding.
         """
         blob = _pack_embedding(embedding)
-        async with self._write_lock:
+
+        async def _op() -> None:
             await self._conn.execute(
                 """INSERT OR REPLACE INTO embeddings (note_path, embedding, dimension, updated_at)
                    VALUES (?, ?, ?, datetime('now'))""",
@@ -95,11 +113,16 @@ class VectorStore:
             )
             await self._conn.commit()
 
+        await self._submit_write(_op)
+
     async def remove(self, note_path: str) -> None:
         """Remove an embedding for a note."""
-        async with self._write_lock:
+
+        async def _op() -> None:
             await self._conn.execute("DELETE FROM embeddings WHERE note_path = ?", (note_path,))
             await self._conn.commit()
+
+        await self._submit_write(_op)
 
     async def search(
         self, query_embedding: list[float], top_k: int = 10

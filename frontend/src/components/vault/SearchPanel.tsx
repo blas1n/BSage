@@ -1,5 +1,6 @@
 import { FileText, Search, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
 import type { VaultSearchResult } from "../../api/types";
 
@@ -8,6 +9,7 @@ interface SearchPanelProps {
 }
 
 export function SearchPanel({ onSelectFile }: SearchPanelProps) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<VaultSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -32,7 +34,6 @@ export function SearchPanel({ onSelectFile }: SearchPanelProps) {
   useEffect(() => {
     clearTimeout(timerRef.current);
     if (!query.trim()) {
-      setResults([]);
       return;
     }
     timerRef.current = setTimeout(() => doSearch(query), 300);
@@ -49,14 +50,17 @@ export function SearchPanel({ onSelectFile }: SearchPanelProps) {
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search vault..."
+          placeholder={t("vault.searchPlaceholder")}
           style={{ paddingLeft: "1.2rem" }}
-          className="w-full pr-8 py-1.5 text-xs bg-gray-900 border border-gray-800 rounded-md focus:outline-none focus:ring-1 focus:ring-accent text-gray-300 placeholder-gray-600"
+          className="min-h-10 w-full pr-8 py-1.5 text-xs bg-gray-900 border border-gray-800 rounded-md focus:outline-none focus:ring-1 focus:ring-accent text-gray-300 placeholder-gray-600"
         />
         {isActive && (
           <button
-            onClick={() => setQuery("")}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300"
+            onClick={() => {
+              setQuery("");
+              setResults([]);
+            }}
+            className="absolute right-1 top-1/2 inline-flex min-h-10 min-w-10 -translate-y-1/2 items-center justify-center rounded text-gray-600 hover:bg-gray-800/50 hover:text-gray-300"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -66,10 +70,10 @@ export function SearchPanel({ onSelectFile }: SearchPanelProps) {
       {isActive && (
         <div className="mt-1 max-h-64 overflow-y-auto scrollbar-thin">
           {searching && (
-            <p className="text-xs text-gray-600 py-2 text-center">Searching...</p>
+            <p className="text-xs text-gray-600 py-2 text-center">{t("vault.searching")}</p>
           )}
           {!searching && results.length === 0 && (
-            <p className="text-xs text-gray-600 py-2 text-center">No results</p>
+            <p className="text-xs text-gray-600 py-2 text-center">{t("vault.noResults")}</p>
           )}
           {!searching &&
             results.map((r) => (
@@ -79,7 +83,7 @@ export function SearchPanel({ onSelectFile }: SearchPanelProps) {
                   onSelectFile(r.path);
                   setQuery("");
                 }}
-                className="w-full text-left px-2 py-1.5 text-xs hover:bg-gray-800/50 rounded transition-colors"
+                className="min-h-10 w-full text-left px-2 py-1.5 text-xs hover:bg-gray-800/50 rounded transition-colors"
               >
                 <div className="flex items-center gap-1.5">
                   <FileText className="w-3 h-3 text-gray-600 shrink-0" />
@@ -99,4 +103,3 @@ export function SearchPanel({ onSelectFile }: SearchPanelProps) {
     </div>
   );
 }
-

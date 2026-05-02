@@ -15,6 +15,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from bsage.core.events import emit_event
 from bsage.core.plugin_runner import MissingCredentialError
+from bsage.core.tasks import spawn_task
 
 if TYPE_CHECKING:
     from bsage.core.events import EventBus
@@ -177,10 +178,14 @@ class Scheduler:
             logger.info("maintenance_task_registered", name=name, schedule=schedule)
 
     def _register_polling(self, name: str, meta: Any) -> None:
-        """Register a polling trigger as a background asyncio task."""
+        """Register a polling trigger as a background asyncio task.
+
+        Uses ``spawn_task`` so unhandled exceptions surface via structlog
+        instead of vanishing into asyncio's unawaited-task warning.
+        """
         if name in self._polling_tasks:
             return
-        task = asyncio.create_task(self._polling_loop(name, meta))
+        task = spawn_task(self._polling_loop(name, meta), name=f"bsage.polling:{name}")
         self._polling_tasks[name] = task
         logger.info("polling_trigger_registered", name=name)
 

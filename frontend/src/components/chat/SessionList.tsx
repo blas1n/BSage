@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { ChatSession } from "../../hooks/useChat";
 import { Icon } from "../common/Icon";
 
@@ -25,14 +26,15 @@ function formatDate(ts: number): string {
 }
 
 export function SessionList({ sessions, activeSessionId, onSelect, onDelete, onNewSession }: SessionListProps) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col h-full" data-testid="session-list">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
-        <span className="text-xs font-mono uppercase tracking-wider text-gray-400">Sessions</span>
+        <span className="text-xs font-mono uppercase tracking-wider text-gray-400">{t("chat.sessions")}</span>
         <button
           onClick={onNewSession}
-          aria-label="New session"
+          aria-label={t("chat.newSession")}
           className="p-1 text-gray-400 hover:text-accent-light transition-colors rounded"
         >
           <Icon name="add" size={18} />
@@ -43,8 +45,8 @@ export function SessionList({ sessions, activeSessionId, onSelect, onDelete, onN
       <div className="flex-1 overflow-y-auto scrollbar-thin py-1">
         {sessions.length === 0 && (
           <div className="px-4 py-8 text-center">
-            <p className="text-xs text-gray-500">No sessions yet</p>
-            <p className="text-[10px] text-gray-600 mt-1">Start a conversation to create one</p>
+            <p className="text-xs text-gray-500">{t("chat.noSessions")}</p>
+            <p className="text-[10px] text-gray-600 mt-1">{t("chat.noSessionsHint")}</p>
           </div>
         )}
         {sessions.map((session) => {
@@ -69,7 +71,7 @@ export function SessionList({ sessions, activeSessionId, onSelect, onDelete, onN
                   {session.title}
                 </p>
                 <p className="text-[10px] text-gray-500 mt-0.5">
-                  {session.messages.length} message{session.messages.length !== 1 ? "s" : ""} &middot; {formatDate(session.updatedAt)}
+                  {t("chat.messageCount", { count: session.messages.length })} &middot; {formatDate(session.updatedAt)}
                 </p>
               </div>
               <button

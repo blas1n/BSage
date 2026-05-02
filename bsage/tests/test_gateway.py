@@ -293,6 +293,7 @@ class TestActionsEndpoint:
         mock_state.vault.read_notes = AsyncMock(
             return_value=[Path("2026-02-22.md"), Path("2026-02-21.md")]
         )
+        mock_state.vault.read_note_content = AsyncMock(return_value="# Action\n")
         response = client.get("/api/vault/actions")
         assert response.status_code == 200
         assert "2026-02-22.md" in response.json()
@@ -377,8 +378,13 @@ class TestAppState:
         )
         state = AppState(settings)
         await state.initialize()
-        assert state.agent_loop is not None
-        assert state.scheduler is not None
+        try:
+            assert state.agent_loop is not None
+            assert state.scheduler is not None
+        finally:
+            # Shutdown drains the SQLite write queue so the writer task
+            # doesn't outlive the test loop.
+            await state.shutdown()
 
     async def test_event_bus_created_with_broadcaster(self, tmp_path) -> None:
         from bsage.core.events import EventBus
@@ -559,6 +565,46 @@ class TestCreateApp:
                 break
         assert cors_mw is not None
         assert "http://localhost:5173" in cors_mw.kwargs["allow_origins"]
+
+    def test_settings_accepts_shared_cors_allowed_origins_env(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv(
+            "CORS_ALLOWED_ORIGINS",
+            "http://bsserver:23400,http://localhost:23400",
+        )
+        monkeypatch.delenv("CORS_ORIGINS", raising=False)
+
+        settings = Settings(
+            vault_path=tmp_path / "vault",
+            skills_dir=tmp_path / "skills",
+            tmp_dir=tmp_path / "tmp",
+            credentials_dir=tmp_path / "creds",
+            prompts_dir=tmp_path / "prompts",
+        )
+
+        assert settings.cors_origins == [
+            "http://bsserver:23400",
+            "http://localhost:23400",
+        ]
+
+    def test_settings_accepts_json_cors_allowed_origins_env(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv(
+            "CORS_ALLOWED_ORIGINS",
+            '["http://bsserver:23400","http://localhost:23400"]',
+        )
+        monkeypatch.delenv("CORS_ORIGINS", raising=False)
+
+        settings = Settings(
+            vault_path=tmp_path / "vault",
+            skills_dir=tmp_path / "skills",
+            tmp_dir=tmp_path / "tmp",
+            credentials_dir=tmp_path / "creds",
+            prompts_dir=tmp_path / "prompts",
+        )
+
+        assert settings.cors_origins == [
+            "http://bsserver:23400",
+            "http://localhost:23400",
+        ]
 
 
 class TestChatEndpoint:

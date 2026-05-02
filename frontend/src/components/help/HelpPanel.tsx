@@ -1,37 +1,39 @@
+import { useTranslation } from "react-i18next";
+
 interface HelpSection {
-  title: string;
-  description: string;
+  titleKey: string;
+  descriptionKey: string;
   docLink?: string;
 }
 
 const HELP_CONTENT: Record<string, HelpSection> = {
   "#chat": {
-    title: "Chat",
-    description: "AI 비서와 대화하며 지식을 수집합니다",
+    titleKey: "nav.currentChat",
+    descriptionKey: "help.section.chat",
     docLink: "https://bsvibe.dev/bsage/getting-started",
   },
   "#graph": {
-    title: "Knowledge Graph",
-    description: "Knowledge Graph에서 지식 관계를 탐색합니다",
+    titleKey: "nav.knowledgeBase",
+    descriptionKey: "help.section.graph",
   },
   "#plugins": {
-    title: "Plugins",
-    description: "플러그인을 활성화하고 설정합니다",
+    titleKey: "plugins.title",
+    descriptionKey: "help.section.plugins",
     docLink: "https://bsvibe.dev/bsage/features/plugins",
   },
   "#vault": {
-    title: "Vault",
-    description: "Vault 파일을 탐색합니다",
+    titleKey: "nav.vaultBrowser",
+    descriptionKey: "help.section.vault",
   },
   "#dashboard": {
-    title: "Dashboard",
-    description: "BSage 전체 상태를 확인합니다",
+    titleKey: "dashboard.title",
+    descriptionKey: "help.section.dashboard",
   },
 };
 
 const DEFAULT_HELP: HelpSection = {
-  title: "BSage",
-  description: "BSage는 온톨로지 기반 지식 관리 AI 비서입니다",
+  titleKey: "help.title",
+  descriptionKey: "help.section.default",
 };
 
 interface HelpPanelProps {
@@ -40,7 +42,8 @@ interface HelpPanelProps {
 }
 
 export function HelpPanel({ isOpen, onClose }: HelpPanelProps) {
-  const hash = window.location.hash || "";
+  const { t } = useTranslation();
+  const hash = typeof window !== "undefined" ? window.location.hash || "" : "";
   const section = HELP_CONTENT[hash] ?? DEFAULT_HELP;
 
   return (
@@ -57,11 +60,11 @@ export function HelpPanel({ isOpen, onClose }: HelpPanelProps) {
         }`}
       >
         <div className="flex items-center justify-between p-4 border-b border-gray-700">
-          <h2 className="text-lg font-semibold text-emerald-400">도움말</h2>
+          <h2 className="text-lg font-semibold text-emerald-400">{t("help.panelTitle")}</h2>
           <button
             onClick={onClose}
             className="p-1 rounded hover:bg-gray-800 text-gray-400 hover:text-gray-50 transition-colors"
-            aria-label="Close help panel"
+            aria-label={t("help.closePanelAria")}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -81,10 +84,10 @@ export function HelpPanel({ isOpen, onClose }: HelpPanelProps) {
         <div className="p-4 space-y-4">
           <div>
             <h3 className="text-base font-medium text-emerald-400 mb-1">
-              {section.title}
+              {t(section.titleKey)}
             </h3>
             <p className="text-sm text-gray-300 leading-relaxed">
-              {section.description}
+              {t(section.descriptionKey)}
             </p>
           </div>
 
@@ -95,7 +98,7 @@ export function HelpPanel({ isOpen, onClose }: HelpPanelProps) {
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 text-sm text-emerald-400 hover:text-emerald-300 transition-colors"
             >
-              <span>문서 보기</span>
+              <span>{t("help.viewDocs")}</span>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 className="h-4 w-4"

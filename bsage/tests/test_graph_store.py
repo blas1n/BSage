@@ -23,6 +23,40 @@ async def store(tmp_path):
 
 
 # ------------------------------------------------------------------
+# Sprint 3 — concurrent write regression (S3-4 / G4)
+# ------------------------------------------------------------------
+
+
+async def test_concurrent_upsert_no_lock_errors(store: GraphStore):
+    """100 concurrent upserts must all succeed, with no SQLite lock errors.
+
+    This is the headline regression for the SQLite write queue: prior
+    to S3-4 the global write lock would surface as
+    ``sqlite3.OperationalError: database is locked`` under load.
+    """
+    n = 100
+
+    async def write_one(i: int) -> str:
+        ent = GraphEntity(
+            name=f"node-{i:04d}",
+            entity_type="concept",
+            source_path=f"garden/idea/n{i}.md",
+        )
+        return await store.upsert_entity(ent)
+
+    results = await asyncio.gather(
+        *(write_one(i) for i in range(n)),
+        return_exceptions=True,
+    )
+
+    # No exceptions leaked.
+    failures = [r for r in results if isinstance(r, BaseException)]
+    assert failures == []
+    # All 100 distinct entities landed.
+    assert await store.count_entities() == n
+
+
+# ------------------------------------------------------------------
 # Entity CRUD
 # ------------------------------------------------------------------
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
 import ReactMarkdown from "react-markdown";
+import { useTranslation } from "react-i18next";
 import remarkGfm from "remark-gfm";
 import remarkObsidian from "@thecae/remark-obsidian";
 import rehypeRaw from "rehype-raw";
@@ -74,6 +75,7 @@ function splitFrontmatter(text: string): {
 }
 
 export function KnowledgeGraphView() {
+  const { t } = useTranslation();
   const [graphData, setGraphData] = useState<VaultGraph | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -312,13 +314,13 @@ export function KnowledgeGraphView() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Explore network..."
-              className="w-full pl-10 pr-8 py-1.5 rounded-lg border-b-2 border-transparent bg-surface-container-low text-sm text-on-surface outline-none focus:border-accent-light placeholder:text-gray-500 font-sans"
+              placeholder={t("graph.searchPlaceholder")}
+              className="min-h-10 w-full pl-10 pr-8 py-1.5 rounded-lg border-b-2 border-transparent bg-surface-container-low text-sm text-on-surface outline-none focus:border-accent-light placeholder:text-gray-500 font-sans"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+                className="absolute right-1 top-1/2 inline-flex min-h-10 min-w-10 -translate-y-1/2 items-center justify-center rounded-lg text-gray-500 hover:bg-white/5 hover:text-gray-300"
               >
                 <Icon name="close" size={16} />
               </button>
@@ -328,9 +330,9 @@ export function KnowledgeGraphView() {
           {activeFilters && (
             <button
               onClick={() => setActiveFilters(null)}
-              className="text-[10px] font-mono uppercase tracking-widest text-gray-500 hover:text-accent-light transition-colors"
+              className="min-h-10 text-[10px] font-mono uppercase tracking-widest text-gray-500 hover:text-accent-light transition-colors"
             >
-              Show all
+              {t("graph.showAll")}
             </button>
           )}
         </div>
@@ -339,7 +341,7 @@ export function KnowledgeGraphView() {
         <div ref={containerRef} className="flex-1 min-h-0 relative bg-surface-dim">
           {loading && (
             <div className="flex items-center justify-center h-full text-gray-500">
-              Loading graph...
+              {t("graph.loading")}
             </div>
           )}
           {!loading &&
@@ -349,8 +351,8 @@ export function KnowledgeGraphView() {
                   <Icon name="folder_open" className="mx-auto mb-2 opacity-50" size={32} />
                   <p className="text-sm">
                     {searchQuery || activeFilters
-                      ? "No nodes match your filters"
-                      : "No notes to graph"}
+                      ? t("graph.noMatch")
+                      : t("graph.noNotes")}
                   </p>
                 </div>
               </div>
@@ -386,23 +388,23 @@ export function KnowledgeGraphView() {
               <div className="flex gap-1 mb-1">
                 <button
                   onClick={() => setColorMode("group")}
-                  className={`px-2 py-0.5 rounded text-[9px] font-mono uppercase tracking-widest transition-all ${
+                  className={`min-h-10 px-2 py-0.5 rounded text-[9px] font-mono uppercase tracking-widest transition-all ${
                     colorMode === "group"
                       ? "bg-accent-light/20 text-accent-light"
                       : "text-gray-500 hover:text-gray-400"
                   }`}
                 >
-                  Type
+                  {t("graph.colorType")}
                 </button>
                 <button
                   onClick={() => setColorMode("community")}
-                  className={`px-2 py-0.5 rounded text-[9px] font-mono uppercase tracking-widest transition-all ${
+                  className={`min-h-10 px-2 py-0.5 rounded text-[9px] font-mono uppercase tracking-widest transition-all ${
                     colorMode === "community"
                       ? "bg-accent-light/20 text-accent-light"
                       : "text-gray-500 hover:text-gray-400"
                   }`}
                 >
-                  Community
+                  {t("graph.colorCommunity")}
                 </button>
               </div>
             )}
@@ -414,7 +416,7 @@ export function KnowledgeGraphView() {
                     <button
                       key={group}
                       onClick={() => toggleFilter(group)}
-                      className={`flex items-center gap-3 text-left transition-opacity ${
+                      className={`flex min-h-10 items-center gap-3 text-left transition-opacity ${
                         active ? "opacity-100" : "opacity-40 hover:opacity-70"
                       }`}
                     >
@@ -455,7 +457,7 @@ export function KnowledgeGraphView() {
                 <Icon name="hub" className="text-accent-light" filled />
               </div>
               <div>
-                <h2 className="font-headline font-bold text-accent-light leading-none">Node Inspector</h2>
+                <h2 className="font-headline font-bold text-accent-light leading-none">{t("graph.nodeInspector")}</h2>
                 <span className="font-mono text-[10px] uppercase tracking-widest text-gray-500">v2.4.0</span>
               </div>
             </div>
@@ -488,17 +490,17 @@ export function KnowledgeGraphView() {
           {/* Content */}
           <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin">
             {noteLoading && (
-              <p className="text-xs text-gray-500">Loading...</p>
+              <p className="text-xs text-gray-500">{t("common.loading")}</p>
             )}
             {!noteLoading && !noteContent && (
-              <p className="text-xs text-gray-500">Unable to load note content.</p>
+              <p className="text-xs text-gray-500">{t("graph.loadFailed")}</p>
             )}
             {!noteLoading && noteContent && parsed && (
               <>
                 {/* Frontmatter */}
                 {parsed.meta.length > 0 && (
                   <section>
-                    <h3 className="font-mono text-[10px] uppercase tracking-widest text-gray-500 mb-3">System Metadata</h3>
+                    <h3 className="font-mono text-[10px] uppercase tracking-widest text-gray-500 mb-3">{t("graph.systemMetadata")}</h3>
                     <div className="grid grid-cols-2 gap-3">
                       {parsed.meta.map(({ key, value }, i) => (
                         <div key={i} className="bg-surface-container-low p-3 rounded">
@@ -512,7 +514,7 @@ export function KnowledgeGraphView() {
 
                 {/* Body */}
                 <section>
-                  <h3 className="font-mono text-[10px] uppercase tracking-widest text-gray-500 mb-3">Preview Content</h3>
+                  <h3 className="font-mono text-[10px] uppercase tracking-widest text-gray-500 mb-3">{t("graph.previewContent")}</h3>
                   <div className="prose prose-sm prose-invert max-w-none prose-p:text-xs prose-headings:text-sm text-on-surface-variant">
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm, remarkObsidian, remarkWikiLink]}
@@ -530,14 +532,14 @@ export function KnowledgeGraphView() {
                 {backlinks.length > 0 && (
                   <section>
                     <h3 className="font-mono text-[10px] uppercase tracking-widest text-gray-500 mb-3">
-                      Related Nodes
+                      {t("graph.relatedNodes")}
                     </h3>
                     <div className="space-y-2">
                       {backlinks.map((bl) => (
                         <button
                           key={bl.path}
                           onClick={() => handleNodeClick({ id: bl.path })}
-                          className="flex items-center gap-3 p-2 rounded hover:bg-white/5 transition-all cursor-pointer group w-full text-left"
+                          className="flex min-h-10 items-center gap-3 p-2 rounded hover:bg-white/5 transition-all cursor-pointer group w-full text-left"
                         >
                           <div className="w-2 h-2 rounded-full bg-accent-light" />
                           <span className="text-xs font-medium text-gray-300 group-hover:text-accent-light transition-colors flex-1 truncate">
@@ -562,7 +564,7 @@ export function KnowledgeGraphView() {
               }}
               className="w-full py-3 bg-gradient-to-r from-accent-light to-accent text-gray-950 font-headline font-bold text-xs uppercase tracking-widest rounded-lg hover:shadow-[0_0_20px_rgba(78,222,163,0.3)] transition-all active:scale-[0.98]"
             >
-              Close Inspector
+              {t("graph.closeInspector")}
             </button>
           </div>
         </aside>

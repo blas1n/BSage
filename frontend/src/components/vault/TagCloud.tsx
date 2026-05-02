@@ -1,5 +1,6 @@
 import { Hash } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
 
 interface TagCloudProps {
@@ -8,6 +9,7 @@ interface TagCloudProps {
 }
 
 export function TagCloud({ activeTag, onSelectTag }: TagCloudProps) {
+  const { t } = useTranslation();
   const [tags, setTags] = useState<string[]>([]);
 
   useEffect(() => {
@@ -26,7 +28,7 @@ export function TagCloud({ activeTag, onSelectTag }: TagCloudProps) {
     <div className="mb-2 pb-2 border-b border-gray-800">
       <div className="flex items-center gap-1 mb-1.5">
         <Hash className="w-3 h-3 text-gray-600" />
-        <span className="text-[10px] font-medium text-gray-600 uppercase tracking-wide">Tags</span>
+        <span className="text-[10px] font-medium text-gray-600 uppercase tracking-wide">{t("vault.tags")}</span>
       </div>
       <div className="flex flex-wrap gap-1">
         {tags.map((tag) => (

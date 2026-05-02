@@ -1,4 +1,8 @@
+'use client';
+
+import './i18n';
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useApproval } from "./hooks/useApproval";
 import { consumeAuthCallback, useAuth } from "./hooks/useAuth";
 import { useWebSocket } from "./hooks/useWebSocket";
@@ -14,11 +18,39 @@ import { SettingsView } from "./components/settings/SettingsView";
 import { VaultView } from "./components/vault/VaultView";
 
 function useHashRoute() {
-  const [hash, setHash] = useState(window.location.hash || "#/");
+  // SSR-safe initial value — hash is only available on the client.
+  const [hash, setHash] = useState(() =>
+    typeof window === "undefined" ? "#/" : window.location.hash || "#/",
+  );
   useEffect(() => {
     const handler = () => setHash(window.location.hash || "#/");
+    // `hashchange` covers user-driven anchor clicks and back/forward.
+    // `popstate` covers programmatic history navigation.
     window.addEventListener("hashchange", handler);
-    return () => window.removeEventListener("hashchange", handler);
+    window.addEventListener("popstate", handler);
+    // Next.js `<Link>` clicked with a hash-only href updates the URL
+    // via `history.pushState` and does NOT fire `hashchange` (the
+    // SPA stays on the single Next.js route). Patch `pushState` /
+    // `replaceState` to broadcast a `hashchange`-equivalent so the
+    // sidebar's active state stays in sync after sidebar nav clicks.
+    const origPush = window.history.pushState;
+    const origReplace = window.history.replaceState;
+    window.history.pushState = function (...args) {
+      const ret = origPush.apply(this, args);
+      handler();
+      return ret;
+    };
+    window.history.replaceState = function (...args) {
+      const ret = origReplace.apply(this, args);
+      handler();
+      return ret;
+    };
+    return () => {
+      window.removeEventListener("hashchange", handler);
+      window.removeEventListener("popstate", handler);
+      window.history.pushState = origPush;
+      window.history.replaceState = origReplace;
+    };
   }, []);
   return hash;
 }
@@ -49,14 +81,15 @@ export default function App() {
   }, []);
 
   const hash = useHashRoute();
-  const { user, loading } = useAuth();
-  const { connectionState, events, clearEvents } = useWebSocket();
+  const { user, loading } = useAuth({ probeRemoteSession: false });
+  const { connectionState, events, clearEvents } = useWebSocket({ enabled: Boolean(user) });
   const { current: approvalRequest, respond: respondApproval, pendingCount } = useApproval();
+  const { t } = useTranslation();
 
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-950">
-        <div className="text-gray-500">Loading...</div>
+        <div className="text-gray-500">{t("common.loading")}</div>
       </div>
     );
   }

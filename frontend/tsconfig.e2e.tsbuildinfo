@@ -1,1 +1,0 @@
-{"root":["./e2e/auth.spec.ts","./e2e/chat.spec.ts","./e2e/dashboard.spec.ts","./e2e/graph.spec.ts","./e2e/karpathy-wiki-api.spec.ts","./e2e/navigation.spec.ts","./e2e/phase0-live.spec.ts","./e2e/plugins.spec.ts","./e2e/vault.spec.ts","./e2e/fixtures/index.ts","./playwright.config.ts"],"version":"5.9.3"}

@@ -1,0 +1,206 @@
+{
+  "nav": {
+    "currentChat": "현재 대화",
+    "knowledgeBase": "지식 베이스",
+    "vaultBrowser": "볼트 탐색기",
+    "plugins": "플러그인",
+    "settings": "설정",
+    "newSession": "새 세션",
+    "signOut": "로그아웃"
+  },
+  "common": {
+    "loading": "로딩 중...",
+    "save": "저장",
+    "cancel": "취소",
+    "close": "닫기",
+    "retry": "다시 시도",
+    "search": "검색"
+  },
+  "header": {
+    "pendingApprovals": "{{count}}건 대기 중",
+    "help": "도움말",
+    "language": "언어"
+  },
+  "landing": {
+    "tagline": "AI 기반 두 번째 두뇌입니다.",
+    "subtitle": "지식을 정리하고 인사이트를 발견하며 아이디어를 키우세요.",
+    "signIn": "BSVibe로 로그인",
+    "noAccount": "아직 계정이 없으신가요?",
+    "signUp": "회원가입",
+    "poweredBy": "Powered by",
+    "features": {
+      "graph": {
+        "title": "지식 그래프",
+        "description": "온톨로지 기반 인터랙티브 그래프로 아이디어 간 연결을 시각화합니다."
+      },
+      "search": {
+        "title": "스마트 검색",
+        "description": "맥락을 이해하는 AI 검색으로 관련 인사이트를 즉시 찾아냅니다."
+      },
+      "plugins": {
+        "title": "플러그인 생태계",
+        "description": "플러그인으로 두뇌를 확장하세요 — 데이터를 수집하고, 워크플로를 자동화하고, 어디에나 동기화합니다."
+      }
+    }
+  },
+  "chat": {
+    "emptyTitle": "대화를 시작하세요",
+    "emptySubtitle": "두 번째 두뇌에 무엇이든 물어보세요",
+    "modeChat": "대화",
+    "modeSearch": "검색",
+    "placeholderChat": "메시지를 입력하거나 [[노드]]를 참조하세요...",
+    "placeholderSearch": "볼트를 검색하세요...",
+    "send": "보내기",
+    "clear": "지우기",
+    "encryptionNotice": "엔드투엔드 암호화 지식 그래프 연결 활성화",
+    "sessions": "세션",
+    "newSession": "새 세션",
+    "noSessions": "아직 세션이 없습니다",
+    "noSessionsHint": "대화를 시작해 세션을 만드세요",
+    "messageCount_one": "{{count}}개 메시지",
+    "messageCount_other": "{{count}}개 메시지"
+  },
+  "dashboard": {
+    "title": "대시보드",
+    "totalNotes": "전체 노트",
+    "activePlugins": "활성 플러그인",
+    "activeSkills": "활성 스킬",
+    "knowledgeEntries": "지식 항목",
+    "quickActions": "빠른 실행",
+    "newChatSession": "새 대화 세션",
+    "browseVault": "볼트 탐색",
+    "viewGraph": "그래프 보기",
+    "recentActivity": "최근 활동",
+    "noRecentFiles": "최근 볼트 파일이 없습니다",
+    "systemStatus": "시스템 상태",
+    "websocket": "WebSocket",
+    "pluginStatus": "플러그인 상태",
+    "running": "{{count}}개 실행 중",
+    "stopped": "{{count}}개 중지됨",
+    "errors": "{{count}}개 오류"
+  },
+  "plugins": {
+    "title": "플러그인",
+    "subtitle": "동적 지식 그래프 기능을 확장하세요.",
+    "install": "플러그인 설치",
+    "filterAll": "전체",
+    "filterAllTypes": "모든 유형",
+    "filterPlugins": "플러그인",
+    "filterSkills": "스킬",
+    "searchPlaceholder": "플러그인 검색...",
+    "noMatch": "필터에 맞는 항목이 없습니다",
+    "skillsHeading": "스킬",
+    "alwaysSafe": "항상 안전",
+    "isDangerous": "위험",
+    "configure": "설정",
+    "run": "실행",
+    "running": "실행 중...",
+    "triggerType": "트리거 유형",
+    "schedule": "스케줄",
+    "toggleAria": "{{name}} 토글"
+  },
+  "vault": {
+    "title": "볼트 탐색기",
+    "searchPlaceholder": "볼트 검색...",
+    "categoryKnowledge": "지식",
+    "categoryInbox": "수신함",
+    "categoryLog": "로그",
+    "empty": "볼트가 비어 있습니다",
+    "newNote": "새 노트",
+    "viewRendered": "렌더링",
+    "viewRaw": "원본",
+    "synced": "동기화됨",
+    "selectFile": "파일을 선택해 내용을 보세요",
+    "createSeed": "씨앗 생성",
+    "metadataYaml": "메타데이터 (YAML)",
+    "fields": "{{count}}개 필드",
+    "relatedNodes": "{{count}}개 노드",
+    "related": "관련",
+    "tags": "태그",
+    "searching": "검색 중...",
+    "noResults": "결과가 없습니다",
+    "backlinks": "역참조 ({{count}})"
+  },
+  "graph": {
+    "searchPlaceholder": "네트워크 탐색...",
+    "showAll": "모두 표시",
+    "loading": "그래프 로딩 중...",
+    "noMatch": "필터에 맞는 노드가 없습니다",
+    "noNotes": "그래프로 표시할 노트가 없습니다",
+    "colorType": "유형",
+    "colorCommunity": "커뮤니티",
+    "nodeInspector": "노드 인스펙터",
+    "loadFailed": "노트 내용을 불러올 수 없습니다.",
+    "systemMetadata": "시스템 메타데이터",
+    "previewContent": "미리보기 내용",
+    "relatedNodes": "관련 노드",
+    "closeInspector": "인스펙터 닫기"
+  },
+  "settings": {
+    "title": "설정",
+    "loadFailed": "설정을 불러오지 못했습니다.",
+    "safetyHeading": "안전",
+    "safeMode": "안전 모드",
+    "safeModeHint": "활성화하면 위험한 플러그인 실행 시 승인이 필요합니다.",
+    "llmModelHeading": "LLM 모델",
+    "llmModelHint": "형식: provider/model (예: anthropic/claude-sonnet-4-20250514)",
+    "llmApiBaseHeading": "LLM API Base",
+    "llmApiBasePlaceholder": "https://api.openai.com/v1",
+    "llmApiBaseHint": "선택사항. 자체 호스팅 모델용 오버라이드 (예: http://localhost:11434)",
+    "llmApiKeyHeading": "LLM API 키",
+    "llmApiKeyPlaceholder": "새 API 키 입력",
+    "llmApiKeyConfigured": "API 키 설정됨",
+    "llmApiKeyMissing": "API 키 미설정",
+    "llmApiKeyHint": "키는 안전하게 저장되며 저장 후 다시 표시되지 않습니다.",
+    "testConnection": "연결 테스트",
+    "testing": "테스트 중...",
+    "embeddingModel": "임베딩 모델",
+    "account": "계정",
+    "saving": "저장 중..."
+  },
+  "approval": {
+    "title": "승인 필요",
+    "deny": "거부",
+    "approve": "승인"
+  },
+  "setup": {
+    "credentials": "자격 증명 설정",
+    "noFields": "이 항목에는 설정할 자격 증명 필드가 없습니다."
+  },
+  "events": {
+    "title": "이벤트",
+    "empty": "아직 이벤트가 없습니다"
+  },
+  "actions": {
+    "title": "액션 로그",
+    "empty": "아직 기록된 액션이 없습니다"
+  },
+  "help": {
+    "title": "도움말",
+    "viewDocs": "문서 보기",
+    "panelTitle": "도움말",
+    "togglePanelAria": "도움말 패널 토글",
+    "closePanelAria": "도움말 패널 닫기",
+    "features": "기능",
+    "keyboardShortcuts": "키보드 단축키",
+    "shortcutSendMessage": "메시지 보내기",
+    "shortcutNewLine": "줄바꿈",
+    "about": "소개",
+    "aboutBody": "BSage는 두 번째 두뇌(Obsidian Vault)를 관리하는 개인 AI 에이전트입니다. input 플러그인을 통해 데이터를 수집하고, process 플러그인/스킬로 도구 기능을 제공하며, output 플러그인으로 외부 저장소에 동기화합니다.",
+    "feature": {
+      "chat": "AI 비서와 대화하며 지식 그래프에 대해 무엇이든 물어보세요.",
+      "search": "검색 모드로 전환해 볼트의 노트를 찾으세요.",
+      "graph": "노트 간의 연결을 시각적으로 탐색하세요.",
+      "plugins": "input, process, output 플러그인을 관리합니다.",
+      "vault": "볼트의 파일을 탐색하고 읽습니다."
+    },
+    "section": {
+      "chat": "AI 비서와 대화하며 지식을 수집합니다.",
+      "graph": "지식 그래프에서 지식 관계를 탐색합니다.",
+      "plugins": "플러그인을 활성화하고 설정합니다.",
+      "vault": "볼트 파일을 탐색합니다.",
+      "dashboard": "BSage 전체 상태를 확인합니다.",
+      "default": "BSage는 온톨로지 기반 지식 관리 AI 비서입니다."
+    }
+  }
+}

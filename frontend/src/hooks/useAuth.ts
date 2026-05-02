@@ -1,26 +1,48 @@
 import { useEffect, useState } from "react";
+import type { User as SharedUser } from "@bsvibe/types";
 
-interface User {
-  id: string;
-  email: string;
+// BSage's local "session user" carries tenant + role denormalised out of
+// the JWT `app_metadata` claim, while the canonical `@bsvibe/types.User`
+// only models identity (id/email/name/avatar). Phase A Batch 5: we
+// extend the shared type so the BSage UI keeps the tenantId/role fields
+// it already renders, while the shared identity shape stays the source
+// of truth — once BSage migrates to the cookie-SSO `useAuth()` provider
+// (deferred, see `src/lib/bsvibe/README.md`), tenant/role will move into
+// `Tenant` from `@bsvibe/types` and this local extension goes away.
+interface User extends SharedUser {
   tenantId: string;
+  tenantName: string | null;
   role: string;
 }
 
-const AUTH_URL = import.meta.env.VITE_AUTH_URL || "https://auth.bsvibe.dev";
+const AUTH_URL =
+  process.env.NEXT_PUBLIC_AUTH_URL ||
+  process.env.VITE_AUTH_URL ||
+  "https://auth.bsvibe.dev";
 
 // LocalStorage keys for non-cookie-SSO environments (local dev, Tailscale, etc.)
 const LS_ACCESS_TOKEN = "bsage_access_token";
 const LS_REFRESH_TOKEN = "bsage_refresh_token";
 const LS_EXPIRES_AT = "bsage_expires_at";
 
+interface SessionTenant {
+  id: string;
+  name: string;
+  role?: string;
+}
+
 interface SessionResponse {
   access_token: string;
   refresh_token: string;
   expires_in: number;
+  tenants?: SessionTenant[];
+  active_tenant_id?: string;
 }
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
+interface AccessTokenOptions {
+  probeRemoteSession?: boolean;
+}
 // Dedupe concurrent getAccessToken callers onto a single in-flight cookie-
 // SSO fetch. Without this, App.tsx's useAuth, Sidebar's useAuth,
 // useWebSocket, and api.client each fire their own /api/session request
@@ -57,7 +79,9 @@ function clearLocalStorageTokens(): void {
   localStorage.removeItem(LS_EXPIRES_AT);
 }
 
-export async function getAccessToken(): Promise<string | null> {
+export async function getAccessToken({
+  probeRemoteSession = true,
+}: AccessTokenOptions = {}): Promise<string | null> {
   if (cachedToken && Date.now() < cachedToken.expiresAt - 30_000) {
     return cachedToken.value;
   }
@@ -67,6 +91,10 @@ export async function getAccessToken(): Promise<string | null> {
   if (stored && Date.now() < stored.expiresAt - 30_000) {
     cachedToken = stored;
     return stored.value;
+  }
+
+  if (!probeRemoteSession) {
+    return null;
   }
 
   // Production path: cross-subdomain cookie SSO via auth.bsvibe.dev.
@@ -139,28 +167,81 @@ function decodeJwt(token: string): Record<string, unknown> {
   return JSON.parse(atob(base64));
 }
 
-export function useAuth() {
+export function useAuth({
+  probeRemoteSession = true,
+}: AccessTokenOptions = {}) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tenants, setTenants] = useState<SessionTenant[]>([]);
 
   useEffect(() => {
     (async () => {
-      const token = await getAccessToken();
+      const token = await getAccessToken({ probeRemoteSession });
       if (!token) {
         setLoading(false);
         return;
       }
       const payload = decodeJwt(token);
       const appMeta = payload.app_metadata as Record<string, string> | undefined;
+      const tenantId = appMeta?.tenant_id ?? "";
+      // Tenant name + full tenants list come from /api/session.tenants.
+      // The endpoint accepts cookie (SSO) or bearer (token-mode/e2e),
+      // so send both. Best-effort fetch.
+      let tenantName: string | null = null;
+      let tenantList: SessionTenant[] = [];
+      let activeTenantId: string = tenantId;
+      try {
+        const res = await fetch(`${AUTH_URL}/api/session`, {
+          credentials: "include",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data: SessionResponse = await res.json();
+          tenantList = data.tenants ?? [];
+          activeTenantId = data.active_tenant_id ?? tenantId;
+          tenantName =
+            tenantList.find((t) => t.id === activeTenantId)?.name ?? null;
+        }
+      } catch {
+        // ignore
+      }
       setUser({
         id: payload.sub as string,
         email: payload.email as string,
-        tenantId: appMeta?.tenant_id ?? "",
+        tenantId: activeTenantId,
+        tenantName,
         role: appMeta?.role ?? "member",
       });
+      setTenants(tenantList);
       setLoading(false);
     })();
-  }, []);
+  }, [probeRemoteSession]);
+
+  // Switch active workspace via /api/session/switch_tenant. The endpoint
+  // sets a server-side cookie + writes the new active_tenant_id; reload
+  // so every consumer (frontend + backend) picks up the new context.
+  async function switchTenant(nextTenantId: string): Promise<void> {
+    if (nextTenantId === user?.tenantId) return;
+    const token = await getAccessToken({ probeRemoteSession });
+    if (!token) return;
+    try {
+      const res = await fetch(`${AUTH_URL}/api/session/switch_tenant`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ tenant_id: nextTenantId }),
+      });
+      if (res.ok) {
+        clearTokenCache();
+        window.location.reload();
+      }
+    } catch {
+      // ignore — caller can surface a toast if needed
+    }
+  }
 
   function callbackUrl(): string {
     // Hash-route callback so SPA can parse fragment tokens.
@@ -188,5 +269,5 @@ export function useAuth() {
     window.location.href = "https://bsvibe.dev/";
   }
 
-  return { user, loading, login, signup, logout };
+  return { user, loading, login, signup, logout, tenants, switchTenant };
 }

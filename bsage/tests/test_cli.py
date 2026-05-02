@@ -421,3 +421,94 @@ class TestHealthCommand:
         result = runner.invoke(main, ["health"])
         assert result.exit_code == 1
         assert "Cannot connect" in result.output
+
+
+class TestRotateCredentialsCommand:
+    """`bsage rotate-credentials` re-encrypts every stored credential under
+    the current primary key. This protects against stale ciphertext after
+    Audit §5 / Sprint 1 / H11 key rotation."""
+
+    @staticmethod
+    def _isolate_event_loop():
+        """Yield, restoring the asyncio default loop policy on exit.
+
+        Click's invoke triggers ``asyncio.run`` inside the CLI, which closes
+        the running loop. Some sibling tests in this repo rely on the
+        deprecated ``asyncio.get_event_loop()`` autocreating a loop, and the
+        residual policy state from ``asyncio.run`` makes that fail. We
+        explicitly reset to a fresh loop after the CLI call.
+        """
+        import asyncio
+        import contextlib
+
+        @contextlib.contextmanager
+        def _ctx():
+            try:
+                yield
+            finally:
+                asyncio.set_event_loop(asyncio.new_event_loop())
+
+        return _ctx()
+
+    @patch("bsage.cli.get_settings")
+    def test_rotate_credentials_re_encrypts_all(self, mock_settings, runner, tmp_path) -> None:
+        import asyncio
+        import json
+
+        from cryptography.fernet import Fernet
+
+        from bsage.core.credential_store import CredentialStore
+
+        old_key = Fernet.generate_key().decode("ascii")
+        new_key = Fernet.generate_key().decode("ascii")
+        creds_dir = tmp_path / ".credentials"
+
+        def _run_async(coro):
+            loop = asyncio.new_event_loop()
+            try:
+                return loop.run_until_complete(coro)
+            finally:
+                loop.close()
+
+        async def _seed() -> None:
+            seed = CredentialStore(creds_dir, primary_key=old_key)
+            await seed.store("svc-a", {"k": "1"})
+            await seed.store("svc-b", {"k": "2"})
+
+        _run_async(_seed())
+
+        # Sanity: stored ciphertext should not contain plaintext "k":"1".
+        raw_a = (creds_dir / "svc-a.json").read_text()
+        assert json.loads(raw_a)["v"] == 1
+
+        s = MagicMock()
+        s.credentials_dir = creds_dir
+        s.credential_encryption_key = new_key
+        s.credential_encryption_retired_keys = [old_key]
+        mock_settings.return_value = s
+
+        with self._isolate_event_loop():
+            result = runner.invoke(main, ["rotate-credentials"])
+        assert result.exit_code == 0, result.output
+        assert "Re-encrypted 2" in result.output
+
+        # New key alone should now decrypt both files.
+        async def _verify() -> None:
+            new_only = CredentialStore(creds_dir, primary_key=new_key)
+            assert await new_only.get("svc-a") == {"k": "1"}
+            assert await new_only.get("svc-b") == {"k": "2"}
+
+        _run_async(_verify())
+
+    @patch("bsage.cli.get_settings")
+    def test_rotate_credentials_without_key_errors(self, mock_settings, runner, tmp_path) -> None:
+        s = MagicMock()
+        s.credentials_dir = tmp_path / ".credentials"
+        s.credential_encryption_key = ""
+        s.credential_encryption_retired_keys = []
+        mock_settings.return_value = s
+
+        with self._isolate_event_loop():
+            result = runner.invoke(main, ["rotate-credentials"])
+        assert result.exit_code == 1
+        assert "not set" in result.output

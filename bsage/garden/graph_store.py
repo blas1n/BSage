@@ -21,6 +21,7 @@ from bsage.garden.graph_models import (
     ProvenanceRecord,
     normalize_name,
 )
+from bsage.garden.write_queue import SQLiteWriteQueue
 
 if TYPE_CHECKING:
     from bsage.garden.graph_extractor import GraphExtractor
@@ -115,32 +116,48 @@ class GraphStore(GraphBackend):
     Uses WAL mode for concurrent read access.
     """
 
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, *, write_queue_maxsize: int = 256) -> None:
         self._db_path = db_path
         self._db: aiosqlite.Connection | None = None
-        self._write_lock: asyncio.Lock = asyncio.Lock()
         self._rebuild_lock: asyncio.Lock = asyncio.Lock()
+        self._write_queue: SQLiteWriteQueue | None = None
+        self._write_queue_maxsize = write_queue_maxsize
 
     async def initialize(self) -> None:
-        """Open connection, enable WAL mode, and create tables."""
+        """Open connection, enable WAL mode, create tables, start writer."""
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._db = await aiosqlite.connect(str(self._db_path))
         await self._db.execute("PRAGMA journal_mode=WAL")
         await self._db.execute("PRAGMA foreign_keys=ON")
         await self._db.executescript(_SCHEMA_SQL)
         await self._db.commit()
+        # All writes funnel through this single-writer queue; reads stay
+        # on the same aiosqlite connection but bypass the queue. See
+        # bsage/garden/write_queue.py for the design rationale.
+        self._write_queue = SQLiteWriteQueue(
+            self._db,
+            name="graph",
+            maxsize=self._write_queue_maxsize,
+        )
+        await self._write_queue.start()
         logger.info("graph_store_initialized", path=str(self._db_path))
 
     async def close(self) -> None:
-        """Close the database connection."""
+        """Drain the write queue and close the database connection."""
+        if self._write_queue is not None:
+            await self._write_queue.stop()
+            self._write_queue = None
         if self._db:
             await self._db.close()
             self._db = None
 
     async def commit(self) -> None:
         """Commit the current transaction."""
-        async with self._write_lock:
+
+        async def _commit() -> None:
             await self._conn.commit()
+
+        await self._submit_write(_commit)
 
     @property
     def _conn(self) -> aiosqlite.Connection:
@@ -148,6 +165,17 @@ class GraphStore(GraphBackend):
             msg = "GraphStore not initialized — call initialize() first"
             raise RuntimeError(msg)
         return self._db
+
+    async def _submit_write(self, op):
+        """Submit ``op`` to the write queue, awaiting its result.
+
+        Used as the single entry point for every mutating SQLite call,
+        replacing the per-method ``async with _write_lock`` pattern.
+        """
+        if self._write_queue is None:
+            msg = "GraphStore not initialized — call initialize() first"
+            raise RuntimeError(msg)
+        return await self._write_queue.submit(op)
 
     # ------------------------------------------------------------------
     # Entity CRUD
@@ -161,11 +189,10 @@ class GraphStore(GraphBackend):
         added so that ``delete_by_source`` can correctly determine whether
         the entity should be removed when one of its sources is deleted.
         """
-        async with self._write_lock:
-            return await self._upsert_entity_locked(entity)
+        return await self._submit_write(lambda: self._upsert_entity_locked(entity))
 
     async def _upsert_entity_locked(self, entity: GraphEntity) -> str:
-        # Caller must hold _write_lock
+        # Caller must hold the write queue (i.e. is running on the writer task)
         norm = normalize_name(entity.name)
         row = await self._fetchone(
             "SELECT id FROM entities WHERE name_normalized = ? AND entity_type = ?",
@@ -221,11 +248,10 @@ class GraphStore(GraphBackend):
 
     async def upsert_relationship(self, rel: GraphRelationship) -> str:
         """Insert a relationship, skipping duplicates on (source_id, target_id, rel_type)."""
-        async with self._write_lock:
-            return await self._upsert_relationship_locked(rel)
+        return await self._submit_write(lambda: self._upsert_relationship_locked(rel))
 
     async def _upsert_relationship_locked(self, rel: GraphRelationship) -> str:
-        # Caller must hold _write_lock
+        # Caller must be on the writer task
         row = await self._fetchone(
             """SELECT id FROM relationships
                WHERE source_id = ? AND target_id = ? AND rel_type = ?""",
@@ -268,11 +294,10 @@ class GraphStore(GraphBackend):
 
         Returns the number of deleted entities.
         """
-        async with self._write_lock:
-            return await self._delete_by_source_locked(source_path)
+        return await self._submit_write(lambda: self._delete_by_source_locked(source_path))
 
     async def _delete_by_source_locked(self, source_path: str) -> int:
-        # Caller must hold _write_lock
+        # Caller must be on the writer task
         # 1. Delete relationships from this source
         await self._conn.execute("DELETE FROM relationships WHERE source_path = ?", (source_path,))
 
@@ -304,7 +329,8 @@ class GraphStore(GraphBackend):
 
         Skips duplicate (entity_id, source_path) combinations.
         """
-        async with self._write_lock:
+
+        async def _op() -> None:
             await self._conn.execute(
                 """INSERT OR IGNORE INTO provenance (entity_id, source_path, extraction_method,
                                                     confidence, extracted_at)
@@ -318,6 +344,8 @@ class GraphStore(GraphBackend):
                 ),
             )
             await self._conn.commit()
+
+        await self._submit_write(_op)
 
     # ------------------------------------------------------------------
     # Queries
@@ -525,7 +553,8 @@ class GraphStore(GraphBackend):
         Returns:
             Number of entities confirmed.
         """
-        async with self._write_lock:
+
+        async def _op() -> int:
             cursor = await self._conn.execute(
                 """UPDATE entities SET updated_at = datetime('now')
                    WHERE source_path = ?""",
@@ -533,6 +562,8 @@ class GraphStore(GraphBackend):
             )
             await self._conn.commit()
             return cursor.rowcount
+
+        return await self._submit_write(_op)
 
     # ------------------------------------------------------------------
     # Source content hashing (incremental rebuild)
@@ -548,12 +579,15 @@ class GraphStore(GraphBackend):
 
     async def set_source_hash(self, source_path: str, content_hash: str) -> None:
         """Store or update the content hash for a source."""
-        async with self._write_lock:
+
+        async def _op() -> None:
             await self._set_source_hash_locked(source_path, content_hash)
             await self._conn.commit()
 
+        await self._submit_write(_op)
+
     async def _set_source_hash_locked(self, source_path: str, content_hash: str) -> None:
-        """Store or update content hash. Caller must hold _write_lock."""
+        """Store or update content hash. Caller must be on the writer task."""
         await self._conn.execute(
             """INSERT OR REPLACE INTO source_hashes (source_path, content_hash, updated_at)
                VALUES (?, ?, datetime('now'))""",
@@ -562,11 +596,14 @@ class GraphStore(GraphBackend):
 
     async def remove_source_hash(self, source_path: str) -> None:
         """Remove the stored content hash for a source."""
-        async with self._write_lock:
+
+        async def _op() -> None:
             await self._conn.execute(
                 "DELETE FROM source_hashes WHERE source_path = ?", (source_path,)
             )
             await self._conn.commit()
+
+        await self._submit_write(_op)
 
     # ------------------------------------------------------------------
     # Vault rebuild
@@ -622,10 +659,14 @@ class GraphStore(GraphBackend):
                         skipped += 1
                         continue
 
-                    async with self._write_lock:
+                    async def _rebuild_one(
+                        rp: str = rel_path,
+                        ch: str = content_hash,
+                        body: str = content,
+                    ) -> None:
                         try:
-                            await self._delete_by_source_locked(rel_path)
-                            entities, rels = extractor.extract_from_note(rel_path, content)
+                            await self._delete_by_source_locked(rp)
+                            entities, rels = extractor.extract_from_note(rp, body)
                             id_map: dict[str, str] = {}
                             for entity in entities:
                                 resolved_id = await self._upsert_entity_locked(entity)
@@ -637,11 +678,13 @@ class GraphStore(GraphBackend):
                                     target_id=id_map.get(rel.target_id, rel.target_id),
                                 )
                                 await self._upsert_relationship_locked(resolved)
-                            await self._set_source_hash_locked(rel_path, content_hash)
+                            await self._set_source_hash_locked(rp, ch)
                             await self._conn.commit()
                         except Exception:
                             await self._conn.rollback()
                             raise
+
+                    await self._submit_write(_rebuild_one)
                     count += 1
                 except (FileNotFoundError, OSError, UnicodeDecodeError):
                     logger.warning("graph_rebuild_note_failed", path=rel_path, exc_info=True)
@@ -664,18 +707,21 @@ class GraphStore(GraphBackend):
     async def execute_batch(
         self, statements: list[tuple[str, tuple]], *, commit: bool = True
     ) -> int:
-        """Execute multiple write statements within the write lock.
+        """Execute multiple write statements through the write queue.
 
         Returns total number of affected rows.
         """
-        total = 0
-        async with self._write_lock:
+
+        async def _op() -> int:
+            total = 0
             for sql, params in statements:
                 cursor = await self._conn.execute(sql, params)
                 total += cursor.rowcount
             if commit and total:
                 await self._conn.commit()
-        return total
+            return total
+
+        return await self._submit_write(_op)
 
     async def _fetchone(self, sql: str, params: tuple = ()) -> aiosqlite.Row | None:
         cursor = await self._conn.execute(sql, params)

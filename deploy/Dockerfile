@@ -22,7 +22,8 @@ RUN uv pip install --system --no-cache .
 
 # Build frontend
 COPY frontend/ ./frontend/
-RUN npm install -g pnpm && cd frontend && CI=true pnpm install --frozen-lockfile && pnpm build
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate \
+    && cd frontend && CI=true pnpm install --frozen-lockfile && pnpm run build
 
 ENV PYTHONPATH=/app
 

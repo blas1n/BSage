@@ -38,6 +38,9 @@ Thumbs.db
 # Frontend
 frontend/node_modules/
 frontend/dist/
+frontend/.next/
+frontend/.env.local
+frontend/next-env.d.ts
 
 # pnpm store (should never be committed)
 .pnpm-store/

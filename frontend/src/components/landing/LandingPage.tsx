@@ -1,29 +1,28 @@
 import { Brain, Network, Search, Puzzle, Leaf } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "../../hooks/useAuth";
 
-const features = [
-  {
-    icon: Network,
-    title: "Knowledge Graph",
-    description:
-      "Visualize connections between your ideas with an interactive ontology-powered graph.",
-  },
-  {
-    icon: Search,
-    title: "Smart Search",
-    description:
-      "AI-powered search that understands context and surfaces relevant insights instantly.",
-  },
-  {
-    icon: Puzzle,
-    title: "Plugin Ecosystem",
-    description:
-      "Extend your brain with plugins — collect data, automate workflows, sync everywhere.",
-  },
-];
-
 export function LandingPage() {
-  const { login, signup } = useAuth();
+  const { t } = useTranslation();
+  const { login, signup } = useAuth({ probeRemoteSession: false });
+
+  const features = [
+    {
+      icon: Network,
+      title: t("landing.features.graph.title"),
+      description: t("landing.features.graph.description"),
+    },
+    {
+      icon: Search,
+      title: t("landing.features.search.title"),
+      description: t("landing.features.search.description"),
+    },
+    {
+      icon: Puzzle,
+      title: t("landing.features.plugins.title"),
+      description: t("landing.features.plugins.description"),
+    },
+  ];
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-gray-950 px-4 overflow-hidden">
@@ -48,9 +47,9 @@ export function LandingPage() {
               BSage
             </h1>
             <p className="mt-2 text-gray-400 text-base leading-relaxed">
-              Your AI-powered second brain.
+              {t("landing.tagline")}
               <br />
-              Organize knowledge, surface insights, grow ideas.
+              {t("landing.subtitle")}
             </p>
           </div>
         </div>
@@ -83,22 +82,22 @@ export function LandingPage() {
             onClick={login}
             className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white hover:bg-accent-dark focus:outline-none focus:ring-2 focus:ring-accent/50 focus:ring-offset-2 focus:ring-offset-gray-950 transition-colors cursor-pointer"
           >
-            Sign in with BSVibe
+            {t("landing.signIn")}
           </button>
           <p className="text-sm text-gray-500">
-            Don't have an account?{" "}
+            {t("landing.noAccount")}{" "}
             <button
               onClick={signup}
-              className="text-accent hover:text-accent-light font-medium transition-colors"
+              className="inline-flex min-h-11 items-center text-accent hover:text-accent-light font-medium transition-colors"
             >
-              Sign up
+              {t("landing.signUp")}
             </button>
           </p>
         </div>
 
         {/* Footer */}
         <p className="text-xs text-gray-600">
-          Powered by{" "}
+          {t("landing.poweredBy")}{" "}
           <span className="text-gray-500 font-medium">BSVibe</span>
         </p>
       </div>

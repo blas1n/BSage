@@ -1,14 +1,23 @@
 import { test, expect } from "./fixtures";
 
 test.describe("Sidebar navigation", () => {
-  test("shows BSage logo with hub icon and subtitle", async ({ page }) => {
+  test("shows BSage brand name and tagline", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "BSage", level: 1 })).toBeVisible();
+    // BSage migrated to @bsvibe/layout SidebarBrand which renders the
+    // product name in a styled span (no longer an <h1>) and the tagline
+    // in a muted span. Both are visible text inside the brand link.
+    const brand = page.getByRole("link", { name: /BSage.*Kinetic Archivist/i });
+    await expect(brand).toBeVisible();
+    await expect(page.getByText("BSage", { exact: true })).toBeVisible();
     await expect(page.getByText("The Kinetic Archivist")).toBeVisible();
   });
 
-  test("shows New Session button", async ({ page }) => {
+  test("shows + New Session top-action CTA", async ({ page }) => {
     await page.goto("/");
+    // The "+ New Session" CTA lives in ResponsiveSidebar.topAction. It is
+    // still rendered as an <a href="#/"> so the legacy link role is
+    // preserved (clicking returns to the chat view, where session
+    // creation is owned by ChatView/useChat).
     await expect(page.getByRole("link", { name: /New Session/ })).toBeVisible();
   });
 
@@ -22,17 +31,23 @@ test.describe("Sidebar navigation", () => {
 
   test("Current Chat is active by default on root hash", async ({ page }) => {
     await page.goto("/");
-    const chatLink = page.getByRole("link", { name: "Current Chat" });
-    // Active state uses bg-accent-light/10 class — check via computed style or class
-    await expect(chatLink).toHaveClass(/bg-accent-light/);
+    // Active state for hash routes is driven by a data-bsage-active
+    // attribute the wrapper sets on the inner label span based on the
+    // current hash. We query directly for the labelled span — the
+    // sidebar link's accessibility tree is already verified by the
+    // sibling `shows all navigation links` test.
+    await expect(
+      page.locator('[data-bsage-active="true"]', { hasText: "Current Chat" }),
+    ).toBeVisible();
   });
 
   test("clicking Knowledge Base navigates and activates link", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("link", { name: "Knowledge Base" }).click();
     await expect(page).toHaveURL(/#\/graph/);
-    const graphLink = page.getByRole("link", { name: "Knowledge Base" });
-    await expect(graphLink).toHaveClass(/bg-accent-light/);
+    await expect(
+      page.locator('[data-bsage-active="true"]', { hasText: "Knowledge Base" }),
+    ).toBeVisible();
   });
 
   test("clicking Plugins navigates to plugins page", async ({ page }) => {

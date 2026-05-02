@@ -2,7 +2,7 @@
  * Live smoke tests against the real backend.
  *
  * Disables the mockApiResponses fixture and hits the actual Gateway at
- * localhost:18400 through the dev server's VITE_API_URL. Validates that
+ * localhost:18400 through the dev server's NEXT_PUBLIC_API_URL. Validates that
  * Phase 0/1/6 endpoints return the expected data for a seeded vault.
  */
 

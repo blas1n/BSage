@@ -1,5 +1,6 @@
 """Tests for VectorStore — SQLite-backed vector embedding storage."""
 
+import asyncio
 import math
 
 import pytest
@@ -112,3 +113,20 @@ class TestVectorStore:
         s = VectorStore(tmp_path / "new.db")
         with pytest.raises(RuntimeError, match="not initialized"):
             await s.store("a.md", [1.0])
+
+
+# Sprint 3 — concurrent write regression (S3-4 / G4)
+async def test_concurrent_store_no_lock_errors(store: VectorStore) -> None:
+    """100 concurrent ``store()`` calls must all succeed under the queue."""
+    n = 100
+
+    async def write_one(i: int) -> None:
+        await store.store(f"note/{i:03d}.md", [float(i), 1.0])
+
+    results = await asyncio.gather(
+        *(write_one(i) for i in range(n)),
+        return_exceptions=True,
+    )
+    failures = [r for r in results if isinstance(r, BaseException)]
+    assert failures == []
+    assert await store.count() == n
