@@ -31,6 +31,7 @@ class PluginMeta:
     trigger: dict[str, Any] | None = None
     credentials: list[dict[str, Any]] | None = None
     input_schema: dict[str, Any] | None = None
+    mcp_exposed: bool = False  # True → register as MCP tool for external clients
 
     # Runtime function references — set by PluginLoader, not serialised
     _execute_fn: Callable | None = field(default=None, repr=False, compare=False)
@@ -252,6 +253,7 @@ class PluginLoader:
             trigger=meta_dict.get("trigger"),
             credentials=meta_dict.get("credentials"),
             input_schema=meta_dict.get("input_schema"),
+            mcp_exposed=bool(meta_dict.get("mcp_exposed", False)),
             _execute_fn=execute_fn,
             _notify_fn=notify_fn,
             _setup_fn=setup_fn,

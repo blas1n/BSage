@@ -32,8 +32,19 @@ class TestPluginMeta:
         assert meta.trigger is None
         assert meta.credentials is None
         assert meta.input_schema is None
+        assert meta.mcp_exposed is False
         assert meta._execute_fn is None
         assert meta._notify_fn is None
+
+    def test_mcp_exposed_can_be_set(self) -> None:
+        meta = PluginMeta(
+            name="test",
+            version="1.0.0",
+            category="input",
+            description="Test",
+            mcp_exposed=True,
+        )
+        assert meta.mcp_exposed is True
 
     def test_execute_fn_not_shown_in_repr(self) -> None:
         async def my_fn(ctx):

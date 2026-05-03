@@ -16,6 +16,7 @@ def plugin(
     trigger: dict[str, Any] | None = None,
     credentials: list[dict[str, Any]] | None = None,
     input_schema: dict[str, Any] | None = None,
+    mcp_exposed: bool = False,
 ) -> Callable:
     """Decorator that attaches Plugin metadata to the execute function.
 
@@ -51,6 +52,7 @@ def plugin(
             "trigger": trigger,
             "credentials": credentials,
             "input_schema": input_schema,
+            "mcp_exposed": mcp_exposed,
         }
 
         def _attach_notify(notify_fn: Callable) -> Callable:

@@ -14,8 +14,9 @@ from pydantic import BaseModel, Field
 
 from bsage.core.plugin_loader import PluginMeta
 from bsage.core.skill_loader import SkillMeta
-from bsage.garden.markdown_utils import extract_frontmatter, extract_title
+from bsage.gateway import mcp_tools
 from bsage.gateway.dependencies import AppState
+from bsage.gateway.mcp_tools import _extract_body_preview as _extract_body_preview  # re-export
 
 logger = structlog.get_logger(__name__)
 
@@ -114,84 +115,26 @@ def create_mcp_routes(state: AppState) -> APIRouter:
 
     @router.post("/search_knowledge", response_model=SearchKnowledgeResponse)
     async def search_knowledge(body: SearchKnowledgeRequest) -> SearchKnowledgeResponse:
-        """Semantic search across the vault knowledge base.
-
-        Uses vector embeddings when available, falls back to full-text search.
-        """
-        results: list[SearchResult] = []
-
-        # Use the existing knowledge search infrastructure from routes.py
-        if state.vector_store is not None and state.embedder is not None and state.embedder.enabled:
-            try:
-                query_embedding = await state.embedder.embed(body.query)
-                vector_results = await state.vector_store.search(query_embedding, top_k=body.top_k)
-                for path, score in vector_results:
-                    try:
-                        abs_path = state.vault.resolve_path(path)
-                        content = await state.vault.read_note_content(abs_path)
-                    except (FileNotFoundError, OSError):
-                        continue
-                    fm = extract_frontmatter(content)
-                    title = extract_title(content) or path.rsplit("/", 1)[-1].removesuffix(".md")
-                    tags = [str(t).lower() for t in fm.get("tags", []) or []]
-                    preview = _extract_body_preview(content)
-                    results.append(
-                        SearchResult(
-                            title=title,
-                            path=path,
-                            preview=preview,
-                            score=round(score, 4),
-                            tags=tags,
-                        )
-                    )
-                return SearchKnowledgeResponse(results=results, query=body.query)
-            except (RuntimeError, OSError, ValueError):
-                logger.warning("mcp_vector_search_fallback", exc_info=True)
-
-        # Fallback: use retriever.search which handles full-text + graph
-        try:
-            search_text = await state.retriever.search(body.query, top_k=body.top_k)
-            results.append(
-                SearchResult(
-                    title="Search Results",
-                    path="",
-                    preview=search_text[:500],
-                    score=1.0,
-                    tags=[],
-                )
-            )
-        except Exception:
-            logger.warning("mcp_search_fallback_failed", exc_info=True)
-
-        return SearchKnowledgeResponse(results=results, query=body.query)
+        """Semantic search across the vault. Delegates to mcp_tools."""
+        result = await mcp_tools.search_knowledge(state, body.model_dump())
+        return SearchKnowledgeResponse(
+            results=[SearchResult(**r) for r in result["results"]],
+            query=result["query"],
+        )
 
     @router.post("/get_graph_context", response_model=GraphContextResponse)
     async def get_graph_context(body: GraphContextRequest) -> GraphContextResponse:
-        """Retrieve knowledge graph context for a topic.
-
-        Traverses the knowledge graph to find related entities,
-        relationships, and connected notes.
-        """
+        """Knowledge graph context for a topic. Delegates to mcp_tools."""
         if state.graph_retriever is None:
             raise HTTPException(status_code=503, detail="Knowledge graph not available")
-
         try:
-            context = await state.graph_retriever.retrieve(
-                body.topic,
-                max_hops=body.max_hops,
-                top_k=body.top_k,
-            )
-            has_results = bool(context.strip())
-            return GraphContextResponse(
-                topic=body.topic,
-                context=context if has_results else "No graph context found for this topic.",
-                has_results=has_results,
-            )
+            result = await mcp_tools.get_graph_context(state, body.model_dump())
         except Exception:
             logger.exception("mcp_graph_context_failed", topic=body.topic)
             raise HTTPException(
                 status_code=500, detail="Internal error retrieving graph context"
             ) from None
+        return GraphContextResponse(**result)
 
     @router.post("/run_skill", response_model=RunSkillResponse)
     async def run_skill(body: RunSkillRequest) -> RunSkillResponse:
@@ -247,18 +190,8 @@ def create_mcp_routes(state: AppState) -> APIRouter:
 
 
 # -- Helpers -------------------------------------------------------------------
-
-
-def _extract_body_preview(content: str, max_len: int = 200) -> str:
-    """Extract body preview from markdown content, skipping frontmatter."""
-    body = content
-    if content.startswith("---\n"):
-        try:
-            end_idx = content.index("\n---\n", 4)
-            body = content[end_idx + 5 :]
-        except ValueError:
-            pass
-    return body.strip()[:max_len]
+# Note: ``_extract_body_preview`` lives in ``mcp_tools`` (re-exported above
+# at module top so existing tests keep importing it from this module).
 
 
 def _meta_to_plugin_info(
