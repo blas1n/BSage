@@ -267,11 +267,11 @@ requires-dist = [
     { name = "apscheduler", specifier = ">=3.10.0" },
     { name = "boto3", marker = "extra == 'all-plugins'", specifier = ">=1.28.0" },
     { name = "boto3", marker = "extra == 's3'", specifier = ">=1.28.0" },
-    { name = "bsvibe-audit", git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-audit&rev=feat%2Fbsvibe-audit-impl" },
+    { name = "bsvibe-audit", git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-audit&rev=main" },
     { name = "bsvibe-auth", extras = ["fastapi"], git = "https://github.com/BSVibe/BSVibe-Auth.git?subdirectory=python&rev=v0.5.0" },
-    { name = "bsvibe-authz", git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-authz&rev=feat%2Fbsvibe-audit-impl" },
-    { name = "bsvibe-core", git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-core&rev=feat%2Fbsvibe-audit-impl" },
-    { name = "bsvibe-fastapi", git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-fastapi&rev=feat%2Fbsvibe-audit-impl" },
+    { name = "bsvibe-authz", git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-authz&rev=main" },
+    { name = "bsvibe-core", git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-core&rev=main" },
+    { name = "bsvibe-fastapi", git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-fastapi&rev=main" },
     { name = "click", specifier = ">=8.0.0" },
     { name = "cryptography", specifier = ">=43.0.0" },
     { name = "fastapi", specifier = ">=0.110.0" },
@@ -296,11 +296,25 @@ provides-extras = ["dev", "s3", "all-plugins"]
 dev = [{ name = "pre-commit", specifier = ">=4.6.0" }]
 
 [[package]]
-name = "bsvibe-audit"
+name = "bsvibe-alerts"
 version = "0.1.0"
-source = { git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-audit&rev=feat%2Fbsvibe-audit-impl#02db90bf7e8ce63907ec59b38ff508fb7d6f0c24" }
+source = { git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-alerts&rev=main#92770da53c93df060631c4ba711690e32fe9ca32" }
 dependencies = [
     { name = "bsvibe-core" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "structlog" },
+]
+
+[[package]]
+name = "bsvibe-audit"
+version = "0.1.0"
+source = { git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-audit&rev=main#92770da53c93df060631c4ba711690e32fe9ca32" }
+dependencies = [
+    { name = "bsvibe-alerts" },
+    { name = "bsvibe-core" },
+    { name = "click" },
     { name = "httpx" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -326,7 +340,7 @@ fastapi = [
 [[package]]
 name = "bsvibe-authz"
 version = "0.1.0"
-source = { git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-authz&rev=feat%2Fbsvibe-audit-impl#02db90bf7e8ce63907ec59b38ff508fb7d6f0c24" }
+source = { git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-authz&rev=main#92770da53c93df060631c4ba711690e32fe9ca32" }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
@@ -339,7 +353,7 @@ dependencies = [
 [[package]]
 name = "bsvibe-core"
 version = "0.1.0"
-source = { git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-core&rev=feat%2Fbsvibe-audit-impl#02db90bf7e8ce63907ec59b38ff508fb7d6f0c24" }
+source = { git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-core&rev=main#92770da53c93df060631c4ba711690e32fe9ca32" }
 dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -349,7 +363,7 @@ dependencies = [
 [[package]]
 name = "bsvibe-fastapi"
 version = "0.1.0"
-source = { git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-fastapi&rev=feat%2Fbsvibe-audit-impl#02db90bf7e8ce63907ec59b38ff508fb7d6f0c24" }
+source = { git = "https://github.com/BSVibe/bsvibe-python.git?subdirectory=packages%2Fbsvibe-fastapi&rev=main#92770da53c93df060631c4ba711690e32fe9ca32" }
 dependencies = [
     { name = "bsvibe-core" },
     { name = "fastapi" },
