@@ -114,17 +114,38 @@ def _safe_extract(zip_path, dest_root) -> None:
 
 
 def _build_note(rel_path, content: str, source: str):
-    """Build a GardenNote from a markdown file."""
+    """Build a GardenNote from a markdown file.
+
+    Title precedence: frontmatter.name > first H1 > filename stem.
+    Many AI tools (Claude Code memory, Codex AGENTS.md) wrap notes in
+    YAML frontmatter with a human-readable ``name:`` field — using that
+    is far nicer than ``feedback_xxx_yyy_zzz`` filename fallback.
+    """
     import hashlib
 
+    from bsage.garden.markdown_utils import extract_frontmatter
     from bsage.garden.note import GardenNote
 
-    title = rel_path.stem
-    for line in content.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("# "):
-            title = stripped[2:].strip() or title
-            break
+    title: str | None = None
+    if content.startswith("---\n"):
+        try:
+            fm = extract_frontmatter(content)
+            if isinstance(fm, dict):
+                fm_name = fm.get("name") or fm.get("title")
+                if isinstance(fm_name, str) and fm_name.strip():
+                    title = fm_name.strip()
+        except Exception:
+            pass
+
+    if title is None:
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("# "):
+                title = stripped[2:].strip() or None
+                break
+
+    if title is None:
+        title = rel_path.stem
 
     digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
 

@@ -73,6 +73,41 @@ class TestSingleMarkdown:
         n = ctx.garden.write_garden.await_args.args[0]
         assert n.title == "no-heading"
 
+    @pytest.mark.asyncio
+    async def test_frontmatter_name_wins_over_h1(self, tmp_path: Path) -> None:
+        # Real-world Claude Code memory files use frontmatter with a
+        # human-readable name field. Title precedence: frontmatter.name >
+        # first H1 > filename stem.
+        f = tmp_path / "feedback_xyz.md"
+        f.write_text(
+            "---\nname: Report bug then fix it — no ask\ntype: feedback\n---\n# Some H1\nbody"
+        )
+        execute = _load()
+        ctx = _ctx({"path": str(f)})
+        await execute(ctx)
+        n = ctx.garden.write_garden.await_args.args[0]
+        assert n.title == "Report bug then fix it — no ask"
+
+    @pytest.mark.asyncio
+    async def test_frontmatter_title_field_also_works(self, tmp_path: Path) -> None:
+        f = tmp_path / "x.md"
+        f.write_text("---\ntitle: My Frontmatter Title\n---\nbody")
+        execute = _load()
+        ctx = _ctx({"path": str(f)})
+        await execute(ctx)
+        n = ctx.garden.write_garden.await_args.args[0]
+        assert n.title == "My Frontmatter Title"
+
+    @pytest.mark.asyncio
+    async def test_h1_used_when_no_frontmatter_name(self, tmp_path: Path) -> None:
+        f = tmp_path / "x.md"
+        f.write_text("---\ntype: idea\n---\n# Real H1\nbody")
+        execute = _load()
+        ctx = _ctx({"path": str(f)})
+        await execute(ctx)
+        n = ctx.garden.write_garden.await_args.args[0]
+        assert n.title == "Real H1"
+
 
 class TestZipUpload:
     @pytest.mark.asyncio
