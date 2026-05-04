@@ -114,8 +114,10 @@ test.describe("Settings MCP section visual (Phase 5c)", () => {
   test("MCP section exposes bsage-mcp command + Claude Desktop config + SSE URL", async ({ page }) => {
     await page.goto("/#/settings");
     await page.waitForSelector("text=MCP Server");
+    // Localhost dev server → self-hosted view shows bsage-mcp
     await expect(page.locator("text=bsage-mcp").first()).toBeVisible();
-    await expect(page.locator("text=Claude Desktop config snippet")).toBeVisible();
-    await expect(page.getByText("/api/mcp/sse")).toBeVisible();
+    await expect(page.locator("text=Claude Desktop").first()).toBeVisible();
+    // SSE URL is now /mcp/sse (no /api prefix — backend mounts at /mcp)
+    await expect(page.getByText("/mcp/sse")).toBeVisible();
   });
 });

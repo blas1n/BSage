@@ -281,15 +281,37 @@ export function SettingsView() {
   );
 }
 
+/** True when the current host suggests a hosted (non-localhost) deployment. */
+function isHostedDeployment(): boolean {
+  if (typeof window === "undefined") return false;
+  const h = window.location.hostname;
+  return h !== "localhost" && h !== "127.0.0.1" && !h.endsWith(".local");
+}
+
 function McpConnectionInfo() {
   const [copied, setCopied] = useState<string | null>(null);
+  const hosted = isHostedDeployment();
 
-  const sseUrl = `${window.location.origin}/api/mcp/sse`;
-  const claudeDesktopConfig = JSON.stringify(
+  // SSE URL — for hosted, use the API host (sage.bsvibe.dev → api-sage.bsvibe.dev).
+  // For self-hosted, the Gateway and frontend share an origin.
+  const sseUrl = hosted
+    ? `${window.location.origin.replace("//", "//api-")}/mcp/sse`
+    : `${window.location.origin}/mcp/sse`;
+
+  const claudeDesktopConfigStdio = JSON.stringify(
+    { mcpServers: { bsage: { command: "bsage-mcp" } } },
+    null,
+    2,
+  );
+
+  // Hosted users can wire Claude Desktop via mcp-proxy: a tiny stdio→SSE
+  // bridge that runs locally and forwards to the remote SSE endpoint.
+  const claudeDesktopConfigBridge = JSON.stringify(
     {
       mcpServers: {
         bsage: {
-          command: "bsage-mcp",
+          command: "uvx",
+          args: ["mcp-proxy", `${sseUrl}?token=YOUR_JWT_HERE`],
         },
       },
     },
@@ -316,37 +338,21 @@ function McpConnectionInfo() {
         the vault.
       </p>
 
-      <div className="space-y-3">
+      {hosted && (
+        <div className="mb-4 px-3 py-2 rounded-lg border border-amber-400/20 bg-amber-400/5 text-[11px] text-amber-200/80">
+          You&apos;re on a hosted deployment. The local <code>bsage-mcp</code>
+          {" "}command needs the BSage package installed on the same machine
+          as the vault — it doesn&apos;t apply here. Use the{" "}
+          <strong>SSE endpoint</strong> (Cursor, Codex CLI) or wire Claude
+          Desktop through <strong>mcp-proxy</strong> below.
+        </div>
+      )}
+
+      <div className="space-y-4">
         <div>
-          <div className="text-xs text-gray-400 mb-1.5">stdio (Claude Desktop, Cursor local)</div>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 min-h-10 inline-flex items-center px-3 py-2 text-xs font-mono text-gray-200 bg-gray-850 border border-gray-700 rounded-lg">
-              bsage-mcp
-            </code>
-            <button
-              onClick={() => copy("cmd", "bsage-mcp")}
-              className="min-h-10 px-3 py-2 text-xs rounded-lg border border-gray-700 bg-gray-850 text-gray-200 hover:bg-gray-800 transition-colors"
-            >
-              {copied === "cmd" ? "Copied" : "Copy"}
-            </button>
+          <div className="text-xs text-gray-400 mb-1.5">
+            SSE endpoint <span className="text-gray-600">— recommended for hosted; supported by Cursor, Codex CLI, custom clients</span>
           </div>
-        </div>
-
-        <div>
-          <div className="text-xs text-gray-400 mb-1.5">Claude Desktop config snippet</div>
-          <pre className="text-xs font-mono text-gray-200 bg-gray-850 border border-gray-700 rounded-lg p-3 overflow-x-auto">
-            {claudeDesktopConfig}
-          </pre>
-          <button
-            onClick={() => copy("json", claudeDesktopConfig)}
-            className="mt-2 min-h-10 px-3 py-1.5 text-xs rounded-lg border border-gray-700 bg-gray-850 text-gray-200 hover:bg-gray-800 transition-colors"
-          >
-            {copied === "json" ? "Copied" : "Copy JSON"}
-          </button>
-        </div>
-
-        <div>
-          <div className="text-xs text-gray-400 mb-1.5">SSE endpoint (remote clients)</div>
           <div className="flex items-center gap-2">
             <code className="flex-1 min-h-10 inline-flex items-center px-3 py-2 text-xs font-mono text-gray-200 bg-gray-850 border border-gray-700 rounded-lg break-all">
               {sseUrl}
@@ -363,6 +369,48 @@ function McpConnectionInfo() {
             <code className="text-gray-400">?token=&lt;jwt&gt;</code> for browser clients.
           </p>
         </div>
+
+        <div>
+          <div className="text-xs text-gray-400 mb-1.5">
+            Claude Desktop {hosted ? "(via mcp-proxy bridge — Claude Desktop is stdio-only)" : "(stdio)"}
+          </div>
+          <pre className="text-xs font-mono text-gray-200 bg-gray-850 border border-gray-700 rounded-lg p-3 overflow-x-auto">
+            {hosted ? claudeDesktopConfigBridge : claudeDesktopConfigStdio}
+          </pre>
+          <button
+            onClick={() =>
+              copy("json", hosted ? claudeDesktopConfigBridge : claudeDesktopConfigStdio)
+            }
+            className="mt-2 min-h-10 px-3 py-1.5 text-xs rounded-lg border border-gray-700 bg-gray-850 text-gray-200 hover:bg-gray-800 transition-colors"
+          >
+            {copied === "json" ? "Copied" : "Copy JSON"}
+          </button>
+          {hosted && (
+            <p className="text-[10px] text-gray-600 mt-1.5">
+              <code>uvx mcp-proxy</code> is a one-line install. Replace
+              {" "}<code>YOUR_JWT_HERE</code> with a token from your account.
+            </p>
+          )}
+        </div>
+
+        {!hosted && (
+          <div>
+            <div className="text-xs text-gray-400 mb-1.5">
+              stdio command <span className="text-gray-600">— self-hosted only</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 min-h-10 inline-flex items-center px-3 py-2 text-xs font-mono text-gray-200 bg-gray-850 border border-gray-700 rounded-lg">
+                bsage-mcp
+              </code>
+              <button
+                onClick={() => copy("cmd", "bsage-mcp")}
+                className="min-h-10 px-3 py-2 text-xs rounded-lg border border-gray-700 bg-gray-850 text-gray-200 hover:bg-gray-800 transition-colors"
+              >
+                {copied === "cmd" ? "Copied" : "Copy"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );
