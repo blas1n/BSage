@@ -143,6 +143,7 @@ class TestSourceHint:
         ctx = _ctx({"path": str(f)})
         await execute(ctx)
         n = ctx.garden.write_garden.await_args.args[0]
+        # Base tags = ai-memory + source; no prefix here (filename has no _)
         assert n.tags == ["ai-memory", "custom"]
         assert n.extra_fields["provenance"]["source"] == "custom"
 
@@ -167,6 +168,99 @@ class TestSourceHint:
         n = ctx.garden.write_garden.await_args.args[0]
         # unknown source string is sanitized — only known values accepted
         assert n.extra_fields["provenance"]["source"] == "custom"
+
+
+class TestNoteTypeAndTags:
+    """Each imported note must carry meaningful metadata derived from
+    the file content — not a fixed tag set repeated for every file."""
+
+    @pytest.mark.asyncio
+    async def test_frontmatter_type_feedback_maps_to_preference(self, tmp_path: Path) -> None:
+        f = tmp_path / "x.md"
+        f.write_text("---\nname: X\ntype: feedback\n---\nbody")
+        execute = _load()
+        ctx = _ctx({"path": str(f), "source": "claude-code"})
+        await execute(ctx)
+        n = ctx.garden.write_garden.await_args.args[0]
+        assert n.note_type == "preference"
+
+    @pytest.mark.asyncio
+    async def test_frontmatter_type_project_kept_as_project(self, tmp_path: Path) -> None:
+        f = tmp_path / "x.md"
+        f.write_text("---\nname: X\ntype: project\n---\nbody")
+        execute = _load()
+        ctx = _ctx({"path": str(f)})
+        await execute(ctx)
+        n = ctx.garden.write_garden.await_args.args[0]
+        assert n.note_type == "project"
+
+    @pytest.mark.asyncio
+    async def test_frontmatter_type_reference_maps_to_fact(self, tmp_path: Path) -> None:
+        f = tmp_path / "x.md"
+        f.write_text("---\nname: X\ntype: reference\n---\nbody")
+        execute = _load()
+        ctx = _ctx({"path": str(f)})
+        await execute(ctx)
+        n = ctx.garden.write_garden.await_args.args[0]
+        assert n.note_type == "fact"
+
+    @pytest.mark.asyncio
+    async def test_filename_prefix_drives_type_when_no_frontmatter_type(
+        self, tmp_path: Path
+    ) -> None:
+        f = tmp_path / "feedback_no_frontmatter_type.md"
+        f.write_text("---\nname: X\n---\nbody")
+        execute = _load()
+        ctx = _ctx({"path": str(f)})
+        await execute(ctx)
+        n = ctx.garden.write_garden.await_args.args[0]
+        assert n.note_type == "preference"
+
+    @pytest.mark.asyncio
+    async def test_filename_prefix_added_as_tag(self, tmp_path: Path) -> None:
+        f = tmp_path / "project_alpha.md"
+        f.write_text("---\nname: Alpha\ntype: project\n---\nbody")
+        execute = _load()
+        ctx = _ctx({"path": str(f), "source": "claude-code"})
+        await execute(ctx)
+        n = ctx.garden.write_garden.await_args.args[0]
+        assert "project" in n.tags
+        assert "ai-memory" in n.tags
+        assert "claude-code" in n.tags
+
+    @pytest.mark.asyncio
+    async def test_unknown_filename_prefix_not_added_as_tag(self, tmp_path: Path) -> None:
+        # Don't pollute tags with arbitrary stems like 'mynotes_xyz'
+        f = tmp_path / "mynotes_xyz.md"
+        f.write_text("# Body")
+        execute = _load()
+        ctx = _ctx({"path": str(f)})
+        await execute(ctx)
+        n = ctx.garden.write_garden.await_args.args[0]
+        assert "mynotes" not in n.tags
+
+    @pytest.mark.asyncio
+    async def test_frontmatter_tags_merged(self, tmp_path: Path) -> None:
+        f = tmp_path / "x.md"
+        f.write_text("---\nname: X\ntype: idea\ntags: [docker, ci, oncall]\n---\nbody")
+        execute = _load()
+        ctx = _ctx({"path": str(f), "source": "custom"})
+        await execute(ctx)
+        n = ctx.garden.write_garden.await_args.args[0]
+        for t in ("docker", "ci", "oncall", "ai-memory", "custom"):
+            assert t in n.tags
+        # No duplicates
+        assert len(n.tags) == len(set(n.tags))
+
+    @pytest.mark.asyncio
+    async def test_unknown_frontmatter_type_falls_back_to_preference(self, tmp_path: Path) -> None:
+        f = tmp_path / "x.md"
+        f.write_text("---\nname: X\ntype: weird-thing\n---\nbody")
+        execute = _load()
+        ctx = _ctx({"path": str(f)})
+        await execute(ctx)
+        n = ctx.garden.write_garden.await_args.args[0]
+        assert n.note_type == "preference"
 
 
 class TestProvenance:

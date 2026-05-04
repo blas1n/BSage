@@ -113,48 +113,121 @@ def _safe_extract(zip_path, dest_root) -> None:
         zf.extractall(dest_root)
 
 
+_VALID_NOTE_TYPES = frozenset(
+    {"idea", "insight", "project", "event", "task", "fact", "person", "preference"}
+)
+
+# Map common AI-memory frontmatter `type:` values + filename prefixes onto
+# BSage's GardenNote types. Falls through to `preference` for anything
+# unrecognized (matches the original plugin's default).
+_TYPE_ALIAS_MAP = {
+    "feedback": "preference",
+    "preference": "preference",
+    "project": "project",
+    "reference": "fact",
+    "fact": "fact",
+    "user": "person",
+    "person": "person",
+    "idea": "idea",
+    "insight": "insight",
+    "event": "event",
+    "task": "task",
+}
+
+
 def _build_note(rel_path, content: str, source: str):
     """Build a GardenNote from a markdown file.
 
-    Title precedence: frontmatter.name > first H1 > filename stem.
-    Many AI tools (Claude Code memory, Codex AGENTS.md) wrap notes in
-    YAML frontmatter with a human-readable ``name:`` field — using that
-    is far nicer than ``feedback_xxx_yyy_zzz`` filename fallback.
+    Pulls title / type / tags from the frontmatter when present so each
+    imported note carries useful metadata, not a fixed
+    ``["ai-memory", source]`` tag set that's identical for every file.
+
+    Title precedence:    frontmatter.name > frontmatter.title > first H1 > stem
+    note_type precedence: frontmatter.type (mapped) > filename-prefix-mapped > preference
+    Tags: union of base ["ai-memory", source] + filename-prefix tag (e.g.
+    "feedback") + frontmatter.tags (deduped, lowercased).
     """
     import hashlib
 
     from bsage.garden.markdown_utils import extract_frontmatter
     from bsage.garden.note import GardenNote
 
-    title: str | None = None
+    fm: dict | None = None
     if content.startswith("---\n"):
         try:
-            fm = extract_frontmatter(content)
-            if isinstance(fm, dict):
-                fm_name = fm.get("name") or fm.get("title")
-                if isinstance(fm_name, str) and fm_name.strip():
-                    title = fm_name.strip()
+            parsed = extract_frontmatter(content)
+            if isinstance(parsed, dict):
+                fm = parsed
         except Exception:
-            pass
+            fm = None
 
+    # Title
+    title: str | None = None
+    if fm:
+        for k in ("name", "title"):
+            v = fm.get(k)
+            if isinstance(v, str) and v.strip():
+                title = v.strip()
+                break
     if title is None:
         for line in content.splitlines():
             stripped = line.strip()
             if stripped.startswith("# "):
                 title = stripped[2:].strip() or None
                 break
-
     if title is None:
         title = rel_path.stem
+
+    # Filename-prefix tag — Claude Code convention names files
+    # `feedback_xxx`, `project_xxx`, `reference_xxx`, `user_xxx`. Other
+    # tools likely don't follow this; we still capture the first segment
+    # if it matches a known type. Avoids leaking generic stems like
+    # `MEMORY` as a tag.
+    stem = rel_path.stem
+    prefix = stem.split("_", 1)[0].lower() if "_" in stem else None
+    prefix_tag = prefix if prefix in _TYPE_ALIAS_MAP else None
+
+    # note_type — frontmatter.type wins, then prefix mapping, then default
+    note_type = "preference"
+    if fm:
+        raw_type = fm.get("type")
+        if isinstance(raw_type, str):
+            mapped = _TYPE_ALIAS_MAP.get(raw_type.strip().lower())
+            if mapped:
+                note_type = mapped
+    if note_type == "preference" and prefix_tag:
+        mapped = _TYPE_ALIAS_MAP.get(prefix_tag)
+        if mapped:
+            note_type = mapped
+    # final safety: must be in BSage's valid set
+    if note_type not in _VALID_NOTE_TYPES:
+        note_type = "preference"
+
+    # Tags — union (preserve order, dedupe)
+    tag_seq: list[str] = ["ai-memory", source]
+    if prefix_tag:
+        tag_seq.append(prefix_tag)
+    if fm:
+        fm_tags = fm.get("tags")
+        if isinstance(fm_tags, list):
+            for t in fm_tags:
+                if isinstance(t, str) and t.strip():
+                    tag_seq.append(t.strip().lower())
+    seen: set[str] = set()
+    tags: list[str] = []
+    for t in tag_seq:
+        if t not in seen:
+            seen.add(t)
+            tags.append(t)
 
     digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
     return GardenNote(
         title=title,
         content=content,
-        note_type="preference",
+        note_type=note_type,
         source="ai-memory-input",
-        tags=["ai-memory", source],
+        tags=tags,
         confidence=0.9,
         extra_fields={
             "provenance": {
