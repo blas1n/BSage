@@ -63,3 +63,27 @@ test.describe("Graph view visual snapshot (Phase 1)", () => {
     await page.screenshot({ path: "test-results/visual/graph-with-data-community-mode.png" });
   });
 });
+
+test.describe("Upload modal visual (Phase 5b)", () => {
+  test("plugin manager with upload modal open", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/#/plugins");
+    const card = page.locator("[data-testid='plugin-card']").filter({
+      hasText: "chatgpt-memory-input",
+    });
+    await card.locator("button").last().click();
+    await page.waitForSelector("text=Import via chatgpt-memory-input");
+    await page.screenshot({ path: "test-results/visual/upload-modal-desktop.png" });
+  });
+
+  test("plugin manager with upload modal — mobile", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/#/plugins");
+    const card = page.locator("[data-testid='plugin-card']").filter({
+      hasText: "chatgpt-memory-input",
+    });
+    await card.locator("button").last().click();
+    await page.waitForSelector("text=Import via chatgpt-memory-input");
+    await page.screenshot({ path: "test-results/visual/upload-modal-mobile.png" });
+  });
+});

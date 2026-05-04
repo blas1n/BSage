@@ -5,6 +5,26 @@ import type { EntryMeta } from "../../api/types";
 import { Icon } from "../common/Icon";
 import { Toggle } from "../common/Toggle";
 import { SetupModal } from "../dashboard/SetupModal";
+import { PluginUploadModal } from "./PluginUploadModal";
+
+/** Detect plugins whose input_schema declares an `upload_id` or `path`
+ * field — these require a file via POST /api/uploads instead of a
+ * payload-less /run/{name} call. */
+function entryNeedsUpload(entry: EntryMeta): boolean {
+  const schema = entry.input_schema;
+  if (!schema || typeof schema !== "object") return false;
+  const props = (schema as { properties?: Record<string, unknown> }).properties;
+  if (!props || typeof props !== "object") return false;
+  return "upload_id" in props || "path" in props;
+}
+
+/** Default `accept=` hint per known import plugin. */
+function entryAcceptHint(name: string): string | undefined {
+  if (name.includes("chatgpt")) return ".json";
+  if (name.includes("claude-memory")) return ".zip,.json";
+  if (name.includes("obsidian")) return ".zip";
+  return undefined;
+}
 
 type CategoryFilter = "all" | "input" | "process" | "output";
 type EntryTypeFilter = "all" | "plugin" | "skill";
@@ -45,6 +65,7 @@ export function PluginManagerView() {
   const [runningName, setRunningName] = useState<string | null>(null);
   const togglingRef = useRef(false);
   const [setupTarget, setSetupTarget] = useState<string | null>(null);
+  const [uploadTarget, setUploadTarget] = useState<EntryMeta | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [typeFilter, setTypeFilter] = useState<EntryTypeFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -79,16 +100,27 @@ export function PluginManagerView() {
     });
   }, [allEntries, categoryFilter, typeFilter, searchQuery]);
 
-  const handleRun = useCallback(async (name: string) => {
-    setRunningName(name);
-    try {
-      await api.run(name);
-    } catch {
-      // errors shown via event panel
-    } finally {
-      setRunningName(null);
-    }
-  }, []);
+  const handleRun = useCallback(
+    async (name: string) => {
+      // Branch upload-needing plugins (chatgpt-memory-input, claude-memory-input,
+      // obsidian-input, etc.) into the dedicated dropzone modal so the user
+      // can supply a file. Plain plugins keep the body-less /run path.
+      const target = [...plugins, ...skills].find((e) => e.name === name);
+      if (target && entryNeedsUpload(target)) {
+        setUploadTarget(target);
+        return;
+      }
+      setRunningName(name);
+      try {
+        await api.run(name);
+      } catch {
+        // errors shown via event panel
+      } finally {
+        setRunningName(null);
+      }
+    },
+    [plugins, skills],
+  );
 
   const handleToggle = useCallback(
     async (name: string) => {
@@ -226,6 +258,20 @@ export function PluginManagerView() {
           onClose={() => setSetupTarget(null)}
           onSuccess={() => {
             setSetupTarget(null);
+            refreshData();
+          }}
+        />
+      )}
+
+      {uploadTarget && (
+        <PluginUploadModal
+          pluginName={uploadTarget.name}
+          title={`Import via ${uploadTarget.name}`}
+          subtitle={uploadTarget.description}
+          accept={entryAcceptHint(uploadTarget.name)}
+          onClose={() => setUploadTarget(null)}
+          onComplete={() => {
+            setUploadTarget(null);
             refreshData();
           }}
         />

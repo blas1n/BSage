@@ -48,6 +48,23 @@ const MOCK_PLUGINS_RESPONSE: EntryMeta[] = [
     trigger: { type: "on_demand" },
     entry_type: "plugin",
   },
+  {
+    name: "chatgpt-memory-input",
+    version: "1.0.0",
+    category: "input",
+    description: "Import ChatGPT conversation export",
+    is_dangerous: false,
+    has_credentials: false,
+    credentials_configured: true,
+    enabled: true,
+    trigger: { type: "on_demand" },
+    entry_type: "plugin",
+    input_schema: {
+      type: "object",
+      properties: { upload_id: { type: "string" }, path: { type: "string" } },
+    },
+    mcp_exposed: true,
+  },
 ];
 
 const MOCK_SKILLS_RESPONSE: EntryMeta[] = [

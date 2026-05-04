@@ -33,14 +33,13 @@ test.describe("Plugin Manager view", () => {
 
   test("renders plugin cards with name, version, and description", async ({ page }) => {
     const cards = page.locator("[data-testid='plugin-card']");
-    await expect(cards).toHaveCount(2);
+    // Phase 5b adds chatgpt-memory-input to the fixture
+    await expect(cards).toHaveCount(3);
 
-    // First card: slack-input
     await expect(page.getByText("slack-input")).toBeVisible();
     await expect(page.getByText("v1.0.0").first()).toBeVisible();
-
-    // Second card: shell-executor
     await expect(page.getByText("shell-executor")).toBeVisible();
+    await expect(page.getByText("chatgpt-memory-input")).toBeVisible();
   });
 
   test("shows category badges on plugin cards", async ({ page }) => {
@@ -81,11 +80,11 @@ test.describe("Plugin Manager view", () => {
 
   test("filtering by Input category shows only input plugins", async ({ page }) => {
     await page.getByRole("button", { name: "Input" }).click();
-    // Only slack-input should remain (category=input)
+    // slack-input + chatgpt-memory-input (both category=input)
     await expect(page.getByText("slack-input")).toBeVisible();
-    // shell-executor (category=process) should be hidden as a card
+    await expect(page.getByText("chatgpt-memory-input")).toBeVisible();
     const cards = page.locator("[data-testid='plugin-card']");
-    await expect(cards).toHaveCount(1);
+    await expect(cards).toHaveCount(2);
   });
 
   test("search filters entries by name", async ({ page }) => {
@@ -115,5 +114,47 @@ test.describe("Skills section", () => {
     // Skills section has Run buttons
     const skillSection = page.locator("section").filter({ has: page.getByRole("heading", { name: "Skills" }) });
     await expect(skillSection.getByText("Run").first()).toBeVisible();
+  });
+});
+
+test.describe("Upload modal wiring (Phase 5b)", () => {
+  test("clicking Run on an upload-needing plugin opens the upload modal", async ({ page }) => {
+    await page.goto("/#/plugins");
+
+    // chatgpt-memory-input has input_schema with upload_id => Run should
+    // open the dropzone modal instead of POSTing /run/{name}.
+    const card = page.locator("[data-testid='plugin-card']").filter({
+      hasText: "chatgpt-memory-input",
+    });
+    // Run button is the icon-prefixed accent button; pick the last button
+    // in the card footer.
+    await card.locator("button").last().click();
+
+    await expect(page.getByText("Import via chatgpt-memory-input")).toBeVisible();
+    await expect(page.getByText(/Drop file here or click to choose/)).toBeVisible();
+    await expect(page.getByText(/Accepted: \.json/)).toBeVisible();
+  });
+
+  test("plain plugin Run still calls /run directly (no modal)", async ({ page }) => {
+    await page.goto("/#/plugins");
+
+    let ranDirectly = false;
+    await page.route("**/api/run/shell-executor", (route) => {
+      ranDirectly = true;
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ name: "shell-executor", results: [] }),
+      });
+    });
+
+    const card = page.locator("[data-testid='plugin-card']").filter({
+      hasText: "shell-executor",
+    });
+    await card.locator("button").last().click();
+    await page.waitForTimeout(500);
+
+    expect(ranDirectly).toBe(true);
+    await expect(page.getByText("Import via")).not.toBeVisible();
   });
 });

@@ -10,6 +10,10 @@ export interface EntryMeta {
   enabled: boolean;
   trigger?: { type: string; schedule?: string; sources?: string[]; hint?: string } | null;
   entry_type: "plugin" | "skill";
+  /** JSON Schema describing the input_data payload accepted by /api/run/{name}. */
+  input_schema?: Record<string, unknown> | null;
+  /** True when the plugin opts in to MCP tool registration. */
+  mcp_exposed?: boolean;
 }
 
 /** POST /api/chat request body. */

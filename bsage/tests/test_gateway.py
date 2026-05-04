@@ -168,6 +168,46 @@ class TestCredentialStatusInMeta:
         assert plugin["credentials_configured"] is True
         assert plugin["enabled"] is True
 
+    def test_plugin_meta_exposes_input_schema(self, client, mock_state) -> None:
+        from bsage.core.plugin_loader import PluginMeta
+
+        schema = {
+            "type": "object",
+            "properties": {"upload_id": {"type": "string"}, "path": {"type": "string"}},
+        }
+        meta = PluginMeta(
+            name="chatgpt-memory-input",
+            version="1.0.0",
+            category="input",
+            description="ChatGPT export importer",
+            input_schema=schema,
+            mcp_exposed=True,
+        )
+        mock_state.plugin_loader.load_all = AsyncMock(return_value={meta.name: meta})
+        mock_state.credential_store.list_services = MagicMock(return_value=[])
+
+        response = client.get("/api/plugins")
+        plugin = response.json()[0]
+        assert plugin["input_schema"] == schema
+        assert plugin["mcp_exposed"] is True
+
+    def test_plugin_meta_defaults_when_unset(self, client, mock_state) -> None:
+        from bsage.core.plugin_loader import PluginMeta
+
+        meta = PluginMeta(
+            name="vanilla-input",
+            version="1.0.0",
+            category="input",
+            description="No schema",
+        )
+        mock_state.plugin_loader.load_all = AsyncMock(return_value={meta.name: meta})
+        mock_state.credential_store.list_services = MagicMock(return_value=[])
+
+        response = client.get("/api/plugins")
+        plugin = response.json()[0]
+        assert plugin["input_schema"] is None
+        assert plugin["mcp_exposed"] is False
+
     def test_skill_with_dict_credentials_fields(self, client, mock_state) -> None:
         meta = _make_meta(
             name="custom-skill",

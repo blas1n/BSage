@@ -207,6 +207,8 @@ def _meta_to_dict(
         "enabled": enabled,
         "trigger": meta.trigger,
         "entry_type": "plugin" if hasattr(meta, "_execute_fn") else "skill",
+        "input_schema": getattr(meta, "input_schema", None),
+        "mcp_exposed": bool(getattr(meta, "mcp_exposed", False)),
     }
 
 
