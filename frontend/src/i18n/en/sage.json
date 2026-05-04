@@ -4,6 +4,7 @@
     "knowledgeBase": "Knowledge Base",
     "vaultBrowser": "Vault Browser",
     "plugins": "Plugins",
+    "importsExports": "Imports & Exports",
     "settings": "Settings",
     "newSession": "New Session",
     "signOut": "Sign out"

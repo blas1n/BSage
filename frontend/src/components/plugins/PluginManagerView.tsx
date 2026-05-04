@@ -85,8 +85,18 @@ export function PluginManagerView() {
 
   const allEntries = useMemo(() => [...plugins, ...skills], [plugins, skills]);
 
+  // Hide one-shot import/export plugins — they live in their own
+  // 'Imports & Exports' tab. Plugins page is for persistent integrations
+  // (cron / webhook / on_input triggers) and skills.
+  const isOneShotIO = useCallback((e: EntryMeta) => {
+    if (e.entry_type !== "plugin") return false;
+    if (e.category !== "input" && e.category !== "output") return false;
+    return e.trigger?.type === "on_demand";
+  }, []);
+
   const filtered = useMemo(() => {
     return allEntries.filter((e) => {
+      if (isOneShotIO(e)) return false;
       if (categoryFilter !== "all" && e.category !== categoryFilter) return false;
       if (typeFilter !== "all" && e.entry_type !== typeFilter) return false;
       if (searchQuery) {
@@ -98,7 +108,7 @@ export function PluginManagerView() {
       }
       return true;
     });
-  }, [allEntries, categoryFilter, typeFilter, searchQuery]);
+  }, [allEntries, categoryFilter, typeFilter, searchQuery, isOneShotIO]);
 
   const handleRun = useCallback(
     async (name: string) => {

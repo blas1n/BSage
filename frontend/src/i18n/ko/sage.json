@@ -4,6 +4,7 @@
     "knowledgeBase": "지식 베이스",
     "vaultBrowser": "볼트 탐색기",
     "plugins": "플러그인",
+    "importsExports": "가져오기 / 내보내기",
     "settings": "설정",
     "newSession": "새 세션",
     "signOut": "로그아웃"

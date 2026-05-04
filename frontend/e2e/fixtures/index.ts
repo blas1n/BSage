@@ -65,6 +65,23 @@ const MOCK_PLUGINS_RESPONSE: EntryMeta[] = [
     },
     mcp_exposed: true,
   },
+  {
+    name: "obsidian-output",
+    version: "1.0.0",
+    category: "output",
+    description: "Export BSage garden + seeds to a local Obsidian vault directory",
+    is_dangerous: false,
+    has_credentials: true,
+    credentials_configured: true,
+    enabled: true,
+    trigger: { type: "on_demand" },
+    entry_type: "plugin",
+    input_schema: {
+      type: "object",
+      properties: { output_vault_path: { type: "string" } },
+    },
+    mcp_exposed: true,
+  },
 ];
 
 const MOCK_SKILLS_RESPONSE: EntryMeta[] = [

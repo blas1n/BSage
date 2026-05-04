@@ -9,6 +9,7 @@ import { useWebSocket } from "./hooks/useWebSocket";
 import { ApprovalModal } from "./components/approval/ApprovalModal";
 import { ChatView } from "./components/chat/ChatView";
 import { DashboardView } from "./components/dashboard/DashboardView";
+import { ImportsExportsView } from "./components/imports/ImportsExportsView";
 import { PluginManagerView } from "./components/plugins/PluginManagerView";
 import { EventPanel } from "./components/events/EventPanel";
 import { KnowledgeGraphView } from "./components/graph/KnowledgeGraphView";
@@ -61,6 +62,8 @@ function RouteContent({ hash }: { hash: string }) {
       return <DashboardView />;
     case "#/plugins":
       return <PluginManagerView />;
+    case "#/imports":
+      return <ImportsExportsView />;
     case "#/graph":
       return <KnowledgeGraphView />;
     case "#/vault":
