@@ -64,7 +64,7 @@ test.describe("Frontend — Phase 1 / 5 bundle markers", () => {
     expect((await res.text())).toContain("BSage");
   });
 
-  test("loaded chunks include MCP Server section + upload modal strings", async ({ page }) => {
+  test("loaded chunks include MCP Server section + graph view physics props", async ({ page }) => {
     const loaded: string[] = [];
     page.on("response", (r) => {
       const u = r.url();
@@ -91,15 +91,22 @@ test.describe("Frontend — Phase 1 / 5 bundle markers", () => {
     // Wait for the SettingsView error branch to render — proves the
     // chunk that contains it loaded
     await page.waitForSelector("text=Failed to load settings", { timeout: 15000 });
+    // Visit graph too so the graph chunk loads
+    await page.evaluate(() => { location.hash = "#/graph"; });
+    await page.waitForTimeout(1000);
 
-    // Now grep loaded chunks for our markers
+    // Look for markers that prove the latest deploy shipped:
+    //   - "MCP Server" — Settings section heading (PR #35)
+    //   - "Manage keys & connect" — Settings → MCP card button (PR #35)
+    //   - "warmupTicks" / "d3VelocityDecay" — graph view physics (PR #31 + #35)
+    // Strings inside lazy-loaded modals (McpServerSetupModal, PluginUploadModal)
+    // aren't asserted because they only download when the user actually opens
+    // the modal — testing that requires a logged-in session.
     const markers = [
       "MCP Server",
-      "bsage-mcp",
-      "Drop file here",
-      "Import via",
-      "warmupTicks",       // Phase 1 graph view prop
-      "d3VelocityDecay",   // Phase 1 graph view prop
+      "Manage keys & connect",
+      "warmupTicks",
+      "d3VelocityDecay",
     ];
     const found = new Set<string>();
     for (const url of loaded) {
