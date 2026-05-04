@@ -1,4 +1,4 @@
-import { test } from "./fixtures";
+import { test, expect } from "./fixtures";
 
 /**
  * Visual snapshot capture for the Phase 1 graph view (mock 60-node data).
@@ -85,5 +85,37 @@ test.describe("Upload modal visual (Phase 5b)", () => {
     await card.locator("button").last().click();
     await page.waitForSelector("text=Import via chatgpt-memory-input");
     await page.screenshot({ path: "test-results/visual/upload-modal-mobile.png" });
+  });
+});
+
+test.describe("Settings MCP section visual (Phase 5c)", () => {
+  test("settings page shows MCP Server section", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/#/settings");
+    const heading = page.locator("text=MCP Server").first();
+    await heading.waitFor();
+    // SettingsView has its own overflow-y-auto inner container — page-level
+    // scroll is a no-op. Drive the inner scrollable ancestor instead.
+    await heading.evaluate((el) => el.scrollIntoView({ block: "start" }));
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: "test-results/visual/settings-mcp-desktop.png" });
+  });
+
+  test("settings MCP section — mobile", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/#/settings");
+    const heading = page.locator("text=MCP Server").first();
+    await heading.waitFor();
+    await heading.evaluate((el) => el.scrollIntoView({ block: "start" }));
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: "test-results/visual/settings-mcp-mobile.png" });
+  });
+
+  test("MCP section exposes bsage-mcp command + Claude Desktop config + SSE URL", async ({ page }) => {
+    await page.goto("/#/settings");
+    await page.waitForSelector("text=MCP Server");
+    await expect(page.locator("text=bsage-mcp").first()).toBeVisible();
+    await expect(page.locator("text=Claude Desktop config snippet")).toBeVisible();
+    await expect(page.getByText("/api/mcp/sse")).toBeVisible();
   });
 });

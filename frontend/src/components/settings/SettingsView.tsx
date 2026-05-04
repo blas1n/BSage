@@ -264,6 +264,8 @@ export function SettingsView() {
           </section>
         )}
 
+        <McpConnectionInfo />
+
         <section className="border-t border-white/5 pt-6">
           <h3 className="text-sm font-medium text-gray-300 mb-3">{t("settings.account")}</h3>
           <button
@@ -276,5 +278,92 @@ export function SettingsView() {
         </section>
       </div>
     </div>
+  );
+}
+
+function McpConnectionInfo() {
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const sseUrl = `${window.location.origin}/api/mcp/sse`;
+  const claudeDesktopConfig = JSON.stringify(
+    {
+      mcpServers: {
+        bsage: {
+          command: "bsage-mcp",
+        },
+      },
+    },
+    null,
+    2,
+  );
+
+  const copy = async (key: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(key);
+      window.setTimeout(() => setCopied((k) => (k === key ? null : k)), 1500);
+    } catch {
+      // clipboard blocked — user can copy manually
+    }
+  };
+
+  return (
+    <section className="border-t border-white/5 pt-6">
+      <h3 className="text-sm font-medium text-gray-300 mb-3">MCP Server</h3>
+      <p className="text-xs text-gray-500 mb-3">
+        BSage exposes its tools through the standard Model Context Protocol so
+        Claude Desktop, Cursor and other MCP-aware clients can read and write
+        the vault.
+      </p>
+
+      <div className="space-y-3">
+        <div>
+          <div className="text-xs text-gray-400 mb-1.5">stdio (Claude Desktop, Cursor local)</div>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 min-h-10 inline-flex items-center px-3 py-2 text-xs font-mono text-gray-200 bg-gray-850 border border-gray-700 rounded-lg">
+              bsage-mcp
+            </code>
+            <button
+              onClick={() => copy("cmd", "bsage-mcp")}
+              className="min-h-10 px-3 py-2 text-xs rounded-lg border border-gray-700 bg-gray-850 text-gray-200 hover:bg-gray-800 transition-colors"
+            >
+              {copied === "cmd" ? "Copied" : "Copy"}
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <div className="text-xs text-gray-400 mb-1.5">Claude Desktop config snippet</div>
+          <pre className="text-xs font-mono text-gray-200 bg-gray-850 border border-gray-700 rounded-lg p-3 overflow-x-auto">
+            {claudeDesktopConfig}
+          </pre>
+          <button
+            onClick={() => copy("json", claudeDesktopConfig)}
+            className="mt-2 min-h-10 px-3 py-1.5 text-xs rounded-lg border border-gray-700 bg-gray-850 text-gray-200 hover:bg-gray-800 transition-colors"
+          >
+            {copied === "json" ? "Copied" : "Copy JSON"}
+          </button>
+        </div>
+
+        <div>
+          <div className="text-xs text-gray-400 mb-1.5">SSE endpoint (remote clients)</div>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 min-h-10 inline-flex items-center px-3 py-2 text-xs font-mono text-gray-200 bg-gray-850 border border-gray-700 rounded-lg break-all">
+              {sseUrl}
+            </code>
+            <button
+              onClick={() => copy("sse", sseUrl)}
+              className="min-h-10 px-3 py-2 text-xs rounded-lg border border-gray-700 bg-gray-850 text-gray-200 hover:bg-gray-800 transition-colors"
+            >
+              {copied === "sse" ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <p className="text-[10px] text-gray-600 mt-1.5">
+            EventSource cannot send Authorization headers — append{" "}
+            <code className="text-gray-400">?token=&lt;jwt&gt;</code> for browser clients.
+          </p>
+        </div>
+      </div>
+    </section>
   );
 }
