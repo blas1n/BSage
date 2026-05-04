@@ -89,3 +89,116 @@ test.describe("Imports & Exports visual snapshots", () => {
     await page.screenshot({ path: "test-results/visual/imports-exports-mobile.png" });
   });
 });
+
+test.describe("ai-memory-input — instructions + source picker + result feedback", () => {
+  test("modal shows source picker (Claude Code / Codex / opencode / Cursor / Custom)", async ({ page }) => {
+    await page.goto("/#/imports");
+    await page.waitForSelector("text=ai-memory-input");
+    const card = page.locator("[data-testid='io-card']").filter({ hasText: "ai-memory-input" });
+    await card.getByRole("button", { name: /Import/ }).click();
+
+    await expect(page.getByRole("button", { name: "Claude Code" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Codex CLI" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "opencode" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Cursor" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Custom" })).toBeVisible();
+  });
+
+  test("instructions update when source changes", async ({ page }) => {
+    await page.goto("/#/imports");
+    const card = page.locator("[data-testid='io-card']").filter({ hasText: "ai-memory-input" });
+    await card.getByRole("button", { name: /Import/ }).click();
+    // Default = Claude Code
+    await expect(page.getByText(/~\/\.claude\/CLAUDE\.md/)).toBeVisible();
+    // Switch
+    await page.getByRole("button", { name: "Codex CLI" }).click();
+    await expect(page.getByText(/AGENTS\.md/)).toBeVisible();
+  });
+
+  test("import success surfaces result count", async ({ page }) => {
+    await page.route("**/api/uploads", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          upload_id: "u1",
+          path: "/tmp/u1/note.md",
+          filename: "note.md",
+          expires_at: new Date(Date.now() + 3600_000).toISOString(),
+        }),
+      }),
+    );
+    await page.route("**/api/run/ai-memory-input", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          name: "ai-memory-input",
+          results: [{ imported: 3, source: "claude-code" }],
+        }),
+      }),
+    );
+
+    await page.goto("/#/imports");
+    const card = page.locator("[data-testid='io-card']").filter({ hasText: "ai-memory-input" });
+    await card.getByRole("button", { name: /Import/ }).click();
+
+    // Inject a fake .md file
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "memory.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from("# Hi\nbody"),
+    });
+    await page.getByRole("button", { name: /^Import$/ }).click();
+    await expect(page.getByText("Import complete")).toBeVisible();
+    await expect(page.getByText(/3 notes written.*claude-code/)).toBeVisible();
+  });
+
+  test("import error from plugin is surfaced (not silent)", async ({ page }) => {
+    await page.route("**/api/uploads", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          upload_id: "u2",
+          path: "/tmp/u2/file.txt",
+          filename: "file.txt",
+          expires_at: new Date(Date.now() + 3600_000).toISOString(),
+        }),
+      }),
+    );
+    await page.route("**/api/run/ai-memory-input", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          name: "ai-memory-input",
+          results: [{ imported: 0, error: "unsupported extension: .txt" }],
+        }),
+      }),
+    );
+
+    await page.goto("/#/imports");
+    const card = page.locator("[data-testid='io-card']").filter({ hasText: "ai-memory-input" });
+    await card.getByRole("button", { name: /Import/ }).click();
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "file.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("not md"),
+    });
+    await page.getByRole("button", { name: /^Import$/ }).click();
+    await expect(page.getByText(/unsupported extension/)).toBeVisible();
+  });
+});
+
+test.describe("ai-memory-input visual snapshot", () => {
+  test("modal with Claude Code source — desktop", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/#/imports");
+    await page.waitForSelector("text=ai-memory-input");
+    const card = page.locator("[data-testid='io-card']").filter({ hasText: "ai-memory-input" });
+    await card.getByRole("button", { name: /Import/ }).click();
+    await page.waitForSelector("text=Claude Code");
+    await page.screenshot({ path: "test-results/visual/ai-memory-modal-desktop.png" });
+  });
+});

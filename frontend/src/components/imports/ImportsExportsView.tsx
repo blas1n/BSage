@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
 import type { EntryMeta } from "../../api/types";
 import { Icon } from "../common/Icon";
-import { PluginUploadModal } from "../plugins/PluginUploadModal";
+import { PluginUploadModal, type SourceOption } from "../plugins/PluginUploadModal";
 
 /** Detect plugins whose input_schema declares an `upload_id` or `path` field. */
 function entryNeedsUpload(entry: EntryMeta): boolean {
@@ -18,9 +18,80 @@ function entryNeedsUpload(entry: EntryMeta): boolean {
 
 /** Default `accept=` hint per known import plugin. */
 function entryAcceptHint(name: string): string | undefined {
+  if (name === "ai-memory-input") return ".md,.zip";
   if (name.includes("chatgpt")) return ".json";
   if (name.includes("claude-memory")) return ".zip,.json";
   if (name.includes("obsidian")) return ".zip";
+  return undefined;
+}
+
+/** Static instructions per plugin — where to find the file the user should upload. */
+const PLUGIN_INSTRUCTIONS: Record<string, string> = {
+  "chatgpt-memory-input":
+    "1. Visit chatgpt.com → Settings → Data controls → Export data\n" +
+    "2. Wait for the email, download the ZIP\n" +
+    "3. Extract → upload conversations.json (or memory.json for saved memories)",
+  "claude-memory-input":
+    "1. Visit claude.ai → Settings → Account → Export data\n" +
+    "2. Wait for the email, download the ZIP\n" +
+    "3. Upload the ZIP as-is — we'll find conversations.json inside",
+  "obsidian-input":
+    "1. Compress your Obsidian vault folder into a ZIP\n" +
+    "   (e.g. right-click the vault folder → Compress)\n" +
+    "2. Upload the ZIP — we'll walk the *.md files",
+  "ai-memory-input":
+    "Drop in any markdown memory/context file from your AI tool of choice.\n\n" +
+    "Single file or a ZIP of many. Pick the source above so we can tag it.",
+};
+
+/** Source picker options for ai-memory-input. */
+const AI_MEMORY_SOURCES: SourceOption[] = [
+  {
+    value: "claude-code",
+    label: "Claude Code",
+    instructions:
+      "Anthropic's CLI agent.\n\n" +
+      "Look in: ~/.claude/CLAUDE.md (user-level)\n" +
+      "         ~/.claude/projects/<slug>/CLAUDE.md (per-project)\n" +
+      "         ~/.claude/projects/<slug>/memory/*.md (topic notes)\n\n" +
+      "Easiest: tar/zip the entire ~/.claude folder, upload here.",
+  },
+  {
+    value: "codex",
+    label: "Codex CLI",
+    instructions:
+      "OpenAI's coding agent CLI.\n\n" +
+      "Look in: ~/.codex/AGENTS.md or your project's AGENTS.md\n\n" +
+      "Upload the .md file directly, or zip multiple together.",
+  },
+  {
+    value: "opencode",
+    label: "opencode",
+    instructions:
+      "Open-source AI coding agent.\n\n" +
+      "Look in: ~/.config/opencode/ (or your project's AGENTS.md)\n\n" +
+      "Upload the .md file directly, or zip multiple together.",
+  },
+  {
+    value: "cursor",
+    label: "Cursor",
+    instructions:
+      "Cursor IDE rules.\n\n" +
+      "Look in: <project>/.cursor/rules/*.mdc\n" +
+      "         or <project>/.cursorrules\n\n" +
+      "Upload the file directly. (.mdc → rename to .md before upload.)",
+  },
+  {
+    value: "custom",
+    label: "Custom",
+    instructions:
+      "Any markdown file you want to import as a memory/preference note.\n\n" +
+      "Title is taken from the first H1 heading, falling back to the filename.",
+  },
+];
+
+function entrySourceOptions(name: string): SourceOption[] | undefined {
+  if (name === "ai-memory-input") return AI_MEMORY_SOURCES;
   return undefined;
 }
 
@@ -143,9 +214,10 @@ export function ImportsExportsView() {
           title={`${target.category === "output" ? "Export via" : "Import via"} ${target.name}`}
           subtitle={target.description}
           accept={entryAcceptHint(target.name)}
+          instructions={PLUGIN_INSTRUCTIONS[target.name]}
+          sourceOptions={entrySourceOptions(target.name)}
           onClose={() => setTarget(null)}
           onComplete={() => {
-            setTarget(null);
             void refresh();
           }}
         />

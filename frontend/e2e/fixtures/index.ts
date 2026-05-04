@@ -66,6 +66,28 @@ const MOCK_PLUGINS_RESPONSE: EntryMeta[] = [
     mcp_exposed: true,
   },
   {
+    name: "ai-memory-input",
+    version: "1.0.0",
+    category: "input",
+    description:
+      "Import memory/context markdown files from any AI tool — Claude Code, Codex, opencode, etc.",
+    is_dangerous: false,
+    has_credentials: false,
+    credentials_configured: true,
+    enabled: true,
+    trigger: { type: "on_demand" },
+    entry_type: "plugin",
+    input_schema: {
+      type: "object",
+      properties: {
+        upload_id: { type: "string" },
+        path: { type: "string" },
+        source: { type: "string" },
+      },
+    },
+    mcp_exposed: true,
+  },
+  {
     name: "obsidian-output",
     version: "1.0.0",
     category: "output",

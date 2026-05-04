@@ -1,10 +1,13 @@
-"""ChatGPT export → BSage garden notes.
+"""ChatGPT export → seeds + IngestCompiler.
 
 Accepts an OpenAI ``conversations.json`` export (uploaded via /api/uploads)
 or, when present, a ``memory.json`` / ``user.json`` ``memories`` blob.
-Each conversation becomes one ``insight`` GardenNote, each saved memory
-becomes one ``preference`` GardenNote. Provenance.external_id keys
-re-imports for in-place updates.
+
+Each conversation / saved memory is written as a SEED with provenance
+keyed by external_id; :class:`IngestCompiler` then classifies it
+against existing vault content. The plugin itself never writes to
+``garden/`` — that boundary is enforced by the restricted garden
+interface plugins receive.
 """
 
 from bsage.plugin import plugin
@@ -12,7 +15,7 @@ from bsage.plugin import plugin
 
 @plugin(
     name="chatgpt-memory-input",
-    version="1.0.0",
+    version="2.0.0",
     category="input",
     description="Import ChatGPT conversation + saved-memory exports into BSage garden",
     trigger={"type": "on_demand"},
@@ -31,9 +34,11 @@ from bsage.plugin import plugin
     mcp_exposed=True,
 )
 async def execute(context) -> dict:
-    """Parse ChatGPT export at input_data.path → write GardenNotes."""
+    """Parse ChatGPT export at input_data.path → seeds + a single batched compile."""
     import json
     from pathlib import Path
+
+    from bsage.garden.ingest_compiler import BatchItem
 
     input_data = context.input_data or {}
     src_path = input_data.get("path")
@@ -49,46 +54,74 @@ async def execute(context) -> dict:
     except (OSError, json.JSONDecodeError) as exc:
         return {"imported": 0, "error": f"parse failed: {exc}"}
 
-    imported = 0
+    seeds: list[dict] = []
 
     # Path 1: conversations.json — list of conversation objects
     if isinstance(raw, list):
         for conv in raw:
             if not isinstance(conv, dict):
                 continue
-            note = _conversation_to_note(conv)
-            if note is None:
-                continue
-            await context.garden.write_garden(note)
-            imported += 1
+            seed = _conversation_to_seed(conv)
+            if seed is not None:
+                seeds.append(seed)
 
     # Path 2: memory.json or user.json with `memories` array
     elif isinstance(raw, dict):
         memories = raw.get("memories") or raw.get("memory")
         if isinstance(memories, list):
             for idx, mem in enumerate(memories):
-                note = _memory_to_note(mem, idx)
-                if note is None:
-                    continue
-                await context.garden.write_garden(note)
-                imported += 1
+                seed = _memory_to_seed(mem, idx)
+                if seed is not None:
+                    seeds.append(seed)
 
-    return {"imported": imported, "source": "chatgpt"}
+    seeds_written = 0
+    batch_items: list[BatchItem] = []
+    for seed in seeds:
+        await context.garden.write_seed(f"chatgpt/{seed['kind']}", seed)
+        seeds_written += 1
+        batch_items.append(
+            BatchItem(
+                label=f"chatgpt/{seed['kind']}/{seed['provenance']['external_id']}",
+                content=_compile_payload(seed),
+            )
+        )
+
+    compile_result = None
+    compile_error: str | None = None
+    if context.ingest_compiler is not None and batch_items:
+        try:
+            compile_result = await context.ingest_compiler.compile_batch(
+                items=batch_items,
+                seed_source="chatgpt-memory-input",
+            )
+        except Exception as exc:
+            compile_error = str(exc)
+            context.logger.warning(
+                "chatgpt_memory_batch_compile_failed",
+                items=len(batch_items),
+                exc_info=True,
+            )
+
+    return {
+        "imported": seeds_written,
+        "source": "chatgpt",
+        "notes_created": compile_result.notes_created if compile_result else 0,
+        "notes_updated": compile_result.notes_updated if compile_result else 0,
+        "llm_calls": compile_result.llm_calls if compile_result else 0,
+        "compile_error": compile_error,
+        "compiler_available": context.ingest_compiler is not None,
+    }
 
 
-def _conversation_to_note(conv: dict):
-    """Build a GardenNote from a ChatGPT conversation object."""
-    from bsage.garden.note import GardenNote
-
+def _conversation_to_seed(conv: dict) -> dict | None:
+    """Build a seed payload from a ChatGPT conversation object."""
     title = str(conv.get("title") or "Untitled chat")
     cid = str(conv.get("id") or conv.get("conversation_id") or title)
     create_time = conv.get("create_time")
 
-    # Extract user/assistant text from the message graph (`mapping`).
     body_lines: list[str] = []
     mapping = conv.get("mapping")
     if isinstance(mapping, dict):
-        # Walk in roughly chronological order — sort by message create_time
         msgs = []
         for node in mapping.values():
             if not isinstance(node, dict):
@@ -113,27 +146,21 @@ def _conversation_to_note(conv: dict):
 
     body = "\n\n".join(body_lines) if body_lines else "(no text content)"
 
-    return GardenNote(
-        title=title,
-        content=body,
-        note_type="insight",
-        source="chatgpt-memory-input",
-        tags=["chatgpt", "memory"],
-        confidence=0.7,
-        extra_fields={
-            "provenance": {
-                "source": "chatgpt",
-                "external_id": cid,
-                "exported_at": create_time,
-            },
+    return {
+        "kind": "conversation",
+        "title": title,
+        "content": body,
+        "tags": ["chatgpt", "memory"],
+        "provenance": {
+            "source": "chatgpt",
+            "external_id": cid,
+            "exported_at": create_time,
         },
-    )
+    }
 
 
-def _memory_to_note(mem, idx: int):
-    """Build a GardenNote from a saved-memory entry (string or dict)."""
-    from bsage.garden.note import GardenNote
-
+def _memory_to_seed(mem, idx: int) -> dict | None:
+    """Build a seed payload from a saved-memory entry (string or dict)."""
     if isinstance(mem, str):
         title = mem[:80]
         content = mem
@@ -147,18 +174,24 @@ def _memory_to_note(mem, idx: int):
     if not content.strip():
         return None
 
-    return GardenNote(
-        title=str(title),
-        content=content,
-        note_type="preference",
-        source="chatgpt-memory-input",
-        tags=["chatgpt", "memory", "saved"],
-        confidence=0.85,
-        extra_fields={
-            "provenance": {
-                "source": "chatgpt",
-                "external_id": external_id,
-                "kind": "saved_memory",
-            },
+    return {
+        "kind": "saved_memory",
+        "title": str(title),
+        "content": content,
+        "tags": ["chatgpt", "memory", "saved"],
+        "provenance": {
+            "source": "chatgpt",
+            "external_id": external_id,
+            "kind": "saved_memory",
         },
+    }
+
+
+def _compile_payload(seed: dict) -> str:
+    """Format a seed as the prompt-friendly payload for IngestCompiler."""
+    return (
+        f"# ChatGPT {seed['kind']}: {seed['title']}\n\n"
+        f"external_id: {seed['provenance']['external_id']}\n\n"
+        f"---\n\n"
+        f"{seed['content']}"
     )

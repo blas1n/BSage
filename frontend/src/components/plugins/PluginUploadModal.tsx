@@ -6,6 +6,8 @@ import { Icon } from "../common/Icon";
 
 type Status = "idle" | "uploading" | "running" | "done" | "error";
 
+export type SourceOption = { value: string; label: string; instructions: string };
+
 export interface PluginUploadModalProps {
   /** Plugin name to invoke after upload completes (e.g. chatgpt-memory-input). */
   pluginName: string;
@@ -15,6 +17,12 @@ export interface PluginUploadModalProps {
   subtitle?: string;
   /** Comma-separated `accept` list for the file input. */
   accept?: string;
+  /** Optional how-to-get-this-file instructions (markdown-ish plain text). */
+  instructions?: string;
+  /** Optional source picker. When provided, user picks one and it's
+   *  forwarded to the plugin as input_data.source. The instructions
+   *  block updates per selection. */
+  sourceOptions?: SourceOption[];
   /** Closes the modal — caller controls visibility. */
   onClose: () => void;
   /** Optional callback fired once the plugin run completes. */
@@ -26,6 +34,8 @@ export function PluginUploadModal({
   title,
   subtitle,
   accept,
+  instructions,
+  sourceOptions,
   onClose,
   onComplete,
 }: PluginUploadModalProps) {
@@ -33,7 +43,12 @@ export function PluginUploadModal({
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string>("");
+  const [source, setSource] = useState<string>(sourceOptions?.[0]?.value ?? "");
+  const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const sourceOption = sourceOptions?.find((o) => o.value === source);
+  const helpText = sourceOption?.instructions ?? instructions;
 
   const onPick = useCallback((picked: File | null) => {
     setFile(picked);
@@ -50,6 +65,7 @@ export function PluginUploadModal({
   const submit = useCallback(async () => {
     if (!file) return;
     setError(null);
+    setResult(null);
     try {
       setStatus("uploading");
       setProgress(`Uploading ${file.name}…`);
@@ -57,30 +73,47 @@ export function PluginUploadModal({
 
       setStatus("running");
       setProgress(`Running ${pluginName}…`);
-      const result = await api.runWithInput(pluginName, {
+      const payload: Record<string, unknown> = {
         upload_id: upload.upload_id,
         path: upload.path,
         filename: upload.filename,
-      });
+      };
+      if (source) payload.source = source;
+      const runResult = await api.runWithInput(pluginName, payload);
 
-      setStatus("done");
+      // Surface plugin's own structured result so users can see what happened.
+      // PluginRunner returns results: list[dict]; the first item is the plugin
+      // execute() return value when produced via on_demand triggering.
+      const first = Array.isArray(runResult.results) && runResult.results.length > 0
+        ? (runResult.results[0] as Record<string, unknown>)
+        : {};
+      setResult(first);
+
+      // Plugin-reported error (e.g. "no input file provided") is success at the
+      // HTTP layer but a failure semantically — show it as such.
+      if (typeof first.error === "string") {
+        setStatus("error");
+        setError(first.error);
+      } else {
+        setStatus("done");
+      }
       setProgress("");
-      onComplete?.(result.results);
+      onComplete?.(runResult.results);
     } catch (err) {
       setStatus("error");
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [file, pluginName, onComplete]);
+  }, [file, pluginName, source, onComplete]);
 
   const busy = status === "uploading" || status === "running";
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur p-4"
       onClick={busy ? undefined : onClose}
     >
       <div
-        className="w-full max-w-md rounded-xl bg-surface border border-white/10 p-6"
+        className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-xl bg-surface border border-white/10 p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between mb-4">
@@ -99,6 +132,39 @@ export function PluginUploadModal({
             <Icon name="close" size={20} />
           </button>
         </div>
+
+        {sourceOptions && sourceOptions.length > 0 && (
+          <div className="mb-4">
+            <div className="text-[11px] font-medium text-gray-400 mb-2">Source</div>
+            <div className="flex flex-wrap gap-1.5">
+              {sourceOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setSource(opt.value)}
+                  className={`min-h-10 px-3 py-1.5 text-xs rounded-lg font-medium transition-colors ${
+                    source === opt.value
+                      ? "bg-accent-light/20 text-accent-light"
+                      : "text-gray-400 hover:bg-white/5"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {helpText && (
+          <details className="mb-4 group" open>
+            <summary className="cursor-pointer text-[11px] text-accent-light hover:underline list-none flex items-center gap-1">
+              <Icon name="help_outline" size={12} />
+              <span>How to get this file</span>
+            </summary>
+            <pre className="text-[10px] font-mono text-gray-300 bg-gray-850 border border-gray-700 rounded-lg p-3 mt-2 whitespace-pre-wrap">
+              {helpText}
+            </pre>
+          </details>
+        )}
 
         <div
           onDragOver={(e) => e.preventDefault()}
@@ -141,10 +207,20 @@ export function PluginUploadModal({
           <p className="text-xs text-gray-400 mt-4 font-mono">{progress}</p>
         )}
         {error && (
-          <p className="text-xs text-red-400 mt-4 font-mono break-words">{error}</p>
+          <div className="mt-4 px-3 py-2 rounded-lg border border-red-400/30 bg-red-400/10 text-xs text-red-300 break-words">
+            {error}
+          </div>
         )}
         {status === "done" && (
-          <p className="text-xs text-accent-light mt-4">Import complete.</p>
+          <div className="mt-4 px-3 py-2 rounded-lg border border-accent-light/30 bg-accent-light/10 text-xs text-accent-light">
+            <div className="font-bold mb-0.5">Import complete</div>
+            {result && typeof result.imported === "number" && (
+              <div className="text-[10px] opacity-80 font-mono">
+                {result.imported} note{result.imported === 1 ? "" : "s"} written
+                {typeof result.source === "string" && ` · source=${result.source}`}
+              </div>
+            )}
+          </div>
         )}
 
         <div className="flex justify-end gap-2 mt-6">

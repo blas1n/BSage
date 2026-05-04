@@ -444,7 +444,7 @@ class TestPermissionDenied:
     def test_plugin_execute_permission_checks_tenant_write_relation(self, real_state) -> None:
         fga = _RecordingFGA()
         real_state.agent_loop.get_entry = MagicMock(return_value=object())
-        real_state.agent_loop.on_input = AsyncMock(return_value=[])
+        real_state.agent_loop.run_entry_direct = AsyncMock(return_value={"ok": True})
 
         app = _build_app(real_state, user=_user_principal(), fga=fga)
         client = TestClient(app)
