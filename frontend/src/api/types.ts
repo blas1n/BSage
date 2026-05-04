@@ -1,3 +1,20 @@
+/** MCP API key (PAT) record returned by GET /api/mcp/api-keys (sans token). */
+export interface MCPAPIKey {
+  id: string;
+  name: string;
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+/** POST /api/mcp/api-keys response — token shown ONCE at creation. */
+export interface MCPAPIKeyIssued {
+  id: string;
+  name: string;
+  token: string;
+  created_at: string;
+}
+
 /** Mirrors backend PluginMeta / SkillMeta serialized by _meta_to_dict(). */
 export interface EntryMeta {
   name: string;

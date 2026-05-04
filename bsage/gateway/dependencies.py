@@ -43,6 +43,7 @@ from bsage.gateway.authz import combined_principal
 from bsage.gateway.event_broadcaster import WebSocketEventBroadcaster
 from bsage.gateway.ws import manager as ws_manager
 from bsage.interface.ws_interface import WebSocketApprovalInterface
+from bsage.mcp.api_keys import MCPAPIKeyStore
 
 logger = structlog.get_logger(__name__)
 
@@ -94,6 +95,10 @@ class AppState:
             primary_key=settings.credential_encryption_key or None,
             retired_keys=settings.credential_encryption_retired_keys,
         )
+
+        # MCP API keys (PATs) for Claude Desktop / Cursor / mcp-proxy.
+        # SHA-256 hashes only; raw token shown to user once at creation.
+        self.mcp_api_keys = MCPAPIKeyStore(settings.credentials_dir / "mcp_api_keys.json")
 
         # LLM (reads from RuntimeConfig per-call)
         self.llm_client = LiteLLMClient(runtime_config=self.runtime_config)

@@ -12,6 +12,7 @@ documented as ``eventsource-sse-auth-trap``).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 import structlog
@@ -19,7 +20,22 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from mcp.server.sse import SseServerTransport
 from starlette.responses import Response
 
+from bsage.mcp.api_keys import TOKEN_PREFIX
+
 logger = structlog.get_logger(__name__)
+
+
+@dataclass
+class _MCPKeyPrincipal:
+    """Synthetic principal for MCP requests authenticated via a PAT.
+
+    Mirrors the shape of the real ``bsvibe_authz.User`` enough that
+    downstream tools that read ``id`` / ``active_tenant_id`` keep working.
+    """
+
+    id: str
+    active_tenant_id: str | None
+    auth_method: str = "mcp_api_key"
 
 
 def create_sse_routes(state: Any) -> APIRouter:
@@ -34,8 +50,30 @@ def create_sse_routes(state: Any) -> APIRouter:
         request: Request,
         token: str | None = Query(default=None),
     ) -> Any:
-        """Get the current user — accept ``?token=`` because EventSource
-        cannot set the Authorization header."""
+        """Get the current user — try MCP API key first, then JWT.
+
+        EventSource can't send Authorization, so we accept ?token=
+        as well. PAT tokens (bsg_mcp_*) bypass bsvibe-auth entirely
+        and validate against the MCPAPIKeyStore.
+        """
+        # Pull the bearer token from header if no query token
+        bearer = token
+        if not bearer:
+            auth = request.headers.get("authorization", "")
+            if auth.lower().startswith("bearer "):
+                bearer = auth[7:]
+
+        # Path 1 — MCP PAT
+        if bearer and bearer.startswith(TOKEN_PREFIX):
+            record = await state.mcp_api_keys.verify(bearer)
+            if record is None:
+                raise HTTPException(status_code=401, detail="Invalid or revoked API key")
+            return _MCPKeyPrincipal(
+                id=record.user_id or f"mcp-key:{record.id}",
+                active_tenant_id=record.tenant_id,
+            )
+
+        # Path 2 — fall back to JWT via bsvibe-auth (?token= in query)
         if token and "authorization" not in {k.lower() for k in request.headers}:
             request.scope["headers"] = [
                 *request.scope["headers"],

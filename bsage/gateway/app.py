@@ -18,6 +18,7 @@ from bsage.core.config import Settings
 from bsage.gateway.authz import get_authz_settings
 from bsage.gateway.dependencies import AppState
 from bsage.gateway.mcp import create_mcp_routes
+from bsage.gateway.mcp_api_keys_routes import create_mcp_api_keys_routes
 from bsage.gateway.rate_limit import RateLimiter, RateLimitMiddleware
 from bsage.gateway.routes import create_routes
 from bsage.gateway.ws import create_ws_routes
@@ -86,6 +87,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Register API + MCP + WebSocket routes
     app.include_router(create_routes(state))
     app.include_router(create_mcp_routes(state))
+    app.include_router(create_mcp_api_keys_routes(state))
     app.include_router(create_sse_routes(state))
     app.include_router(
         create_ws_routes(

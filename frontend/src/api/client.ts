@@ -7,6 +7,8 @@ import type {
   ConfigUpdate,
   CredentialFieldsResponse,
   EntryMeta,
+  MCPAPIKey,
+  MCPAPIKeyIssued,
   RuntimeConfig,
   VaultBacklink,
   VaultCommunities,
@@ -154,4 +156,17 @@ export const api = {
   vaultCommunities: () => request<VaultCommunities>("/vault/communities"),
 
   vaultTags: () => request<VaultTags>("/vault/tags"),
+
+  // MCP API keys (PATs) — for connecting Claude Desktop / Cursor / etc.
+  mcpKeys: {
+    list: () => request<MCPAPIKey[]>("/mcp/api-keys"),
+    create: (name: string) =>
+      request<MCPAPIKeyIssued>("/mcp/api-keys", {
+        method: "POST",
+        body: JSON.stringify({ name }),
+        headers: { "Content-Type": "application/json" },
+      }),
+    revoke: (id: string) =>
+      request<void>(`/mcp/api-keys/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  },
 };

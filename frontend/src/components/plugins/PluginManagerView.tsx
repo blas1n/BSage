@@ -5,6 +5,7 @@ import type { EntryMeta } from "../../api/types";
 import { Icon } from "../common/Icon";
 import { Toggle } from "../common/Toggle";
 import { SetupModal } from "../dashboard/SetupModal";
+import { McpServerSetupModal } from "./McpServerSetupModal";
 import { PluginUploadModal } from "./PluginUploadModal";
 
 /** Detect plugins whose input_schema declares an `upload_id` or `path`
@@ -66,6 +67,7 @@ export function PluginManagerView() {
   const togglingRef = useRef(false);
   const [setupTarget, setSetupTarget] = useState<string | null>(null);
   const [uploadTarget, setUploadTarget] = useState<EntryMeta | null>(null);
+  const [mcpModalOpen, setMcpModalOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [typeFilter, setTypeFilter] = useState<EntryTypeFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -210,7 +212,11 @@ export function PluginManagerView() {
           </div>
         </div>
 
-        {/* Plugin Grid */}
+        {/* Plugin Grid — virtual MCP Server card always at top */}
+        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+          <McpServerCard onSetup={() => setMcpModalOpen(true)} />
+        </section>
+
         {filtered.length === 0 ? (
           <div className="text-center py-16 text-gray-500">
             <Icon name="extension" className="mx-auto mb-3 opacity-40" size={32} />
@@ -276,6 +282,8 @@ export function PluginManagerView() {
           }}
         />
       )}
+
+      {mcpModalOpen && <McpServerSetupModal onClose={() => setMcpModalOpen(false)} />}
 
       {/* Background glow */}
       <div className="fixed bottom-0 right-0 w-[600px] h-[600px] bg-accent-light/5 rounded-full blur-[120px] -z-10 translate-x-1/2 translate-y-1/2 pointer-events-none" />
@@ -448,6 +456,71 @@ function SkillCard({
           className="inline-flex min-h-10 items-center text-xs font-bold text-accent-light hover:underline disabled:opacity-40"
         >
           {running ? t("plugins.running") : t("plugins.run")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function McpServerCard({ onSetup }: { onSetup: () => void }) {
+  const [keyCount, setKeyCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    // setTimeout(0) defers setState out of the synchronous effect body —
+    // satisfies React 19's set-state-in-effect rule.
+    const id = window.setTimeout(() => {
+      api.mcpKeys
+        .list()
+        .then((ks) => setKeyCount(ks.length))
+        .catch(() => setKeyCount(0));
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, []);
+
+  const status = keyCount === null ? "Loading…" : keyCount === 0 ? "No keys yet" : `${keyCount} active key${keyCount === 1 ? "" : "s"}`;
+
+  return (
+    <div
+      data-testid="mcp-server-card"
+      className="bg-gradient-to-br from-accent-light/5 to-accent/5 rounded-xl border border-accent-light/30 overflow-hidden flex flex-col group hover:border-accent-light/60 transition-colors"
+    >
+      <div className="px-5 py-5 flex-1">
+        <div className="flex items-start gap-3 mb-3">
+          <div className="w-10 h-10 rounded-lg bg-accent-light/15 flex items-center justify-center shrink-0">
+            <Icon name="hub" className="text-accent-light" filled size={22} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="font-headline font-bold text-on-surface leading-tight">
+              BSage MCP Server
+            </h3>
+            <p className="font-mono text-[10px] uppercase tracking-widest text-accent-light mt-0.5">
+              Model Context Protocol
+            </p>
+          </div>
+        </div>
+
+        <p className="text-xs text-on-surface-variant mb-4">
+          Let Claude Desktop, Cursor, Codex CLI and other AI clients use your
+          BSage vault — search, read notes, run import plugins.
+        </p>
+
+        <div className="flex items-center gap-1.5">
+          <span
+            className={`w-2 h-2 rounded-full ${
+              keyCount && keyCount > 0 ? "bg-accent-light" : "bg-gray-500"
+            }`}
+          />
+          <span className="text-[11px] text-gray-400">{status}</span>
+        </div>
+      </div>
+
+      <div className="border-t border-accent-light/20">
+        <button
+          onClick={onSetup}
+          className="w-full min-h-12 py-3 text-xs font-bold text-accent-light hover:bg-accent-light/10 transition-colors inline-flex items-center justify-center gap-1.5"
+        >
+          <Icon name="settings" size={14} />
+          Manage keys & connect
         </button>
       </div>
     </div>

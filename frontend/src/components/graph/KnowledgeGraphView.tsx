@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
-import { forceCollide } from "d3-force";
+import { forceCollide, forceX, forceY } from "d3-force";
 import ReactMarkdown from "react-markdown";
 import { useTranslation } from "react-i18next";
 import remarkGfm from "remark-gfm";
@@ -266,6 +266,11 @@ export function KnowledgeGraphView() {
         })
         .iterations(1),
     );
+    // Weak centering to keep isolated / low-degree nodes inside the canvas.
+    // Without this, charge=-160 pushes degree-0 nodes off-screen and the
+    // user has to drag the canvas to find them.
+    fg.d3Force("x", forceX(0).strength(0.05));
+    fg.d3Force("y", forceY(0).strength(0.05));
 
     // Custom 'cluster' force: pull each node toward its community centroid.
     const clusterForce = (alpha: number) => {
@@ -291,6 +296,9 @@ export function KnowledgeGraphView() {
   }, [filteredData, degreeMap, communities, nodeCommunityIdMap]);
 
   const handleNodeClick = useCallback(async (node: { id?: string; name?: string; group?: string }) => {
+    if (process.env.NODE_ENV !== "production") {
+      console.debug("graph_node_click", { id: node.id, name: node.name, group: node.group });
+    }
     if (!node.id) return;
     const id = node.id as string;
     setSelectedNode({ id, name: node.name || id, group: node.group || "root" });
@@ -467,8 +475,10 @@ export function KnowledgeGraphView() {
               linkDirectionalParticles={1}
               linkDirectionalParticleWidth={2}
               nodePointerAreaPaint={(node: { x?: number; y?: number; id?: string }, color, ctx) => {
+                // Generous hit area — minimum 12px so isolated/low-degree
+                // nodes stay clickable even at default zoom.
                 const deg = (node.id && degreeMap[node.id]) || 0;
-                const r = nodeRadius(deg, false) + 4;
+                const r = Math.max(12, nodeRadius(deg, false) + 6);
                 ctx.beginPath();
                 ctx.arc(node.x ?? 0, node.y ?? 0, r, 0, 2 * Math.PI);
                 ctx.fillStyle = color;

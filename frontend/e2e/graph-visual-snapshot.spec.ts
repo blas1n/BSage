@@ -88,34 +88,47 @@ test.describe("Upload modal visual (Phase 5b)", () => {
   });
 });
 
-test.describe("Settings MCP section visual (Phase 5c)", () => {
-  test("settings page shows MCP Server section", async ({ page }) => {
+test.describe("Plugins MCP card visual (PAT keys flow)", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route("**/api/mcp/api-keys", (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
+      }),
+    );
+  });
+
+  test("plugins page shows BSage MCP Server card — desktop", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto("/#/settings");
-    const heading = page.locator("text=MCP Server").first();
-    await heading.waitFor();
-    // SettingsView has its own overflow-y-auto inner container — page-level
-    // scroll is a no-op. Drive the inner scrollable ancestor instead.
-    await heading.evaluate((el) => el.scrollIntoView({ block: "start" }));
-    await page.waitForTimeout(300);
-    await page.screenshot({ path: "test-results/visual/settings-mcp-desktop.png" });
+    await page.goto("/#/plugins");
+    await page.waitForSelector("text=BSage MCP Server");
+    await page.screenshot({ path: "test-results/visual/plugins-mcp-card-desktop.png" });
   });
 
-  test("settings MCP section — mobile", async ({ page }) => {
+  test("plugins MCP card — mobile", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/#/settings");
-    const heading = page.locator("text=MCP Server").first();
-    await heading.waitFor();
-    await heading.evaluate((el) => el.scrollIntoView({ block: "start" }));
-    await page.waitForTimeout(300);
-    await page.screenshot({ path: "test-results/visual/settings-mcp-mobile.png" });
+    await page.goto("/#/plugins");
+    await page.waitForSelector("text=BSage MCP Server");
+    await page.screenshot({ path: "test-results/visual/plugins-mcp-card-mobile.png" });
   });
 
-  test("MCP section exposes bsage-mcp command + Claude Desktop config + SSE URL", async ({ page }) => {
+  test("MCP card opens Manage modal with empty keys state", async ({ page }) => {
+    await page.goto("/#/plugins");
+    await page.waitForSelector("text=BSage MCP Server");
+    await page.getByRole("button", { name: /Manage keys & connect/ }).click();
+    await expect(page.getByText("BSage MCP Server").nth(1)).toBeVisible();
+    await expect(page.getByText("Generate new key")).toBeVisible();
+    await expect(page.getByText("No keys yet")).toBeVisible();
+    // Connect tabs
+    await expect(page.getByRole("button", { name: "Cursor" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Claude Desktop" })).toBeVisible();
+  });
+
+  test("settings page no longer renders an MCP section", async ({ page }) => {
     await page.goto("/#/settings");
-    await page.waitForSelector("text=MCP Server");
-    await expect(page.locator("text=bsage-mcp").first()).toBeVisible();
-    await expect(page.locator("text=Claude Desktop config snippet")).toBeVisible();
-    await expect(page.getByText("/api/mcp/sse")).toBeVisible();
+    await page.waitForSelector("text=Settings", { timeout: 5000 }).catch(() => null);
+    // Pre-existing 'MCP Server' heading must NOT appear on Settings anymore
+    await expect(page.locator("text=MCP Server")).not.toBeVisible();
   });
 });

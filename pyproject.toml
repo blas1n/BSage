@@ -67,6 +67,7 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "A", "SIM"]
 "bsage/gateway/routes.py" = ["B008"]
 "bsage/gateway/authz.py" = ["B008"]
 "bsage/mcp/sse.py" = ["B008"]
+"bsage/gateway/mcp_api_keys_routes.py" = ["B008"]
 
 [tool.coverage.run]
 source = ["bsage"]
