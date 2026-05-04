@@ -35,6 +35,7 @@ def mock_state():
     state.plugin_loader.get = MagicMock(return_value=_make_meta(name="garden-writer"))
     state.agent_loop = MagicMock()
     state.agent_loop.on_input = AsyncMock(return_value=[{"status": "ok"}])
+    state.agent_loop.run_entry_direct = AsyncMock(return_value={"status": "ok"})
     state.agent_loop.chat = AsyncMock(return_value="Mocked chat response")
     state.vault = MagicMock()
     state.vault.read_notes = AsyncMock(return_value=[])
@@ -228,12 +229,25 @@ class TestCredentialStatusInMeta:
 class TestRunSkillEndpoint:
     """Test POST /api/plugins/{name}/run."""
 
-    def test_run_skill_returns_results(self, client) -> None:
-        response = client.post("/api/plugins/garden-writer/run")
+    def test_run_skill_returns_result(self, client) -> None:
+        response = client.post("/api/plugins/garden-writer/run", json={"foo": "bar"})
         assert response.status_code == 200
         data = response.json()
         assert data["plugin"] == "garden-writer"
-        assert len(data["results"]) == 1
+        assert data["result"] == {"status": "ok"}
+
+    def test_run_skill_passes_body_as_input_data(self, client, mock_state) -> None:
+        # Regression guard: a previous bug discarded the request body and
+        # called run_entry_direct(name, {}), so plugins like ai-memory-input
+        # never saw {path, source}. Lock the contract in.
+        client.post(
+            "/api/plugins/ai-memory-input/run",
+            json={"path": "/tmp/x.zip", "source": "claude-code"},
+        )
+        mock_state.agent_loop.run_entry_direct.assert_awaited_once()
+        args = mock_state.agent_loop.run_entry_direct.await_args.args
+        assert args[0] == "ai-memory-input"
+        assert args[1] == {"path": "/tmp/x.zip", "source": "claude-code"}
 
     def test_run_unknown_skill_returns_404(self, client, mock_state) -> None:
         from bsage.core.exceptions import PluginLoadError
@@ -380,13 +394,24 @@ class TestConnectionManager:
 class TestRunEntryEndpoint:
     """Test POST /api/run/{name} (unified plugin/skill runner)."""
 
-    def test_run_entry_returns_results(self, client, mock_state) -> None:
+    def test_run_entry_returns_result(self, client, mock_state) -> None:
         mock_state.agent_loop.get_entry = MagicMock(return_value=_make_meta(name="garden-writer"))
-        response = client.post("/api/run/garden-writer")
+        response = client.post("/api/run/garden-writer", json={"foo": "bar"})
         assert response.status_code == 200
         data = response.json()
         assert data["name"] == "garden-writer"
-        assert len(data["results"]) == 1
+        assert data["result"] == {"status": "ok"}
+
+    def test_run_entry_passes_body_as_input_data(self, client, mock_state) -> None:
+        # Regression guard for the body-drop bug.
+        mock_state.agent_loop.get_entry = MagicMock(return_value=_make_meta(name="ai-memory-input"))
+        client.post(
+            "/api/run/ai-memory-input",
+            json={"path": "/tmp/x.zip", "source": "claude-code"},
+        )
+        args = mock_state.agent_loop.run_entry_direct.await_args.args
+        assert args[0] == "ai-memory-input"
+        assert args[1] == {"path": "/tmp/x.zip", "source": "claude-code"}
 
     def test_run_unknown_entry_returns_404(self, client, mock_state) -> None:
         mock_state.agent_loop.get_entry = MagicMock(side_effect=KeyError("not found"))
@@ -398,9 +423,17 @@ class TestRunEntryEndpoint:
         response = client.post("/api/run/garden-writer")
         assert response.status_code == 503
 
+    def test_run_entry_safe_mode_rejection_returns_403(self, client, mock_state) -> None:
+        mock_state.agent_loop.get_entry = MagicMock(return_value=_make_meta(name="garden-writer"))
+        mock_state.agent_loop.run_entry_direct = AsyncMock(
+            side_effect=PermissionError("rejected by safe mode")
+        )
+        response = client.post("/api/run/garden-writer")
+        assert response.status_code == 403
+
     def test_run_entry_error_returns_500(self, client, mock_state) -> None:
         mock_state.agent_loop.get_entry = MagicMock(return_value=_make_meta(name="garden-writer"))
-        mock_state.agent_loop.on_input = AsyncMock(side_effect=RuntimeError("boom"))
+        mock_state.agent_loop.run_entry_direct = AsyncMock(side_effect=RuntimeError("boom"))
         response = client.post("/api/run/garden-writer")
         assert response.status_code == 500
 

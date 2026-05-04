@@ -9,8 +9,11 @@ This plugin accepts:
 - A single ``.md`` file via /api/uploads
 - A ``.zip`` containing many ``.md`` files
 
-Optional ``source`` hint (claude-code / codex / opencode / custom) tags
-the resulting GardenNotes so users can filter by AI tool of origin.
+Each file is written as a SEED (raw content + provenance) and then
+handed to BSage's :class:`IngestCompiler`, which classifies the note
+against existing vault content and decides what to create / update /
+append. The plugin itself never writes to ``garden/`` — that boundary
+is enforced by the restricted garden interface plugins receive.
 """
 
 from bsage.plugin import plugin
@@ -21,7 +24,7 @@ _KNOWN_SOURCES = frozenset({"claude-code", "codex", "opencode", "cursor", "custo
 
 @plugin(
     name="ai-memory-input",
-    version="1.0.0",
+    version="2.0.0",
     category="input",
     description=(
         "Import memory/context markdown files from any AI tool — Claude Code, "
@@ -48,10 +51,12 @@ _KNOWN_SOURCES = frozenset({"claude-code", "codex", "opencode", "cursor", "custo
     mcp_exposed=True,
 )
 async def execute(context) -> dict:
-    """Parse uploaded markdown(s) → write each as a GardenNote."""
+    """Parse uploaded markdown(s) → seeds + a single batched compile call."""
     import shutil
     import tempfile
     from pathlib import Path
+
+    from bsage.garden.ingest_compiler import BatchItem
 
     input_data = context.input_data or {}
     src_path = input_data.get("path")
@@ -87,16 +92,48 @@ async def execute(context) -> dict:
         else:
             return {"imported": 0, "error": f"unsupported extension: {src.suffix}"}
 
-        imported = 0
+        seeds_written = 0
+        batch_items: list[BatchItem] = []
+
         for rel_path, content in md_files:
-            note = _build_note(rel_path, content, source)
-            await context.garden.write_garden(note)
-            imported += 1
+            seed_data = _build_seed_data(rel_path, content, source)
+            await context.garden.write_seed(f"ai-memory/{source}", seed_data)
+            seeds_written += 1
+            batch_items.append(
+                BatchItem(
+                    label=f"{source}/{rel_path}",
+                    content=_compile_payload(rel_path, content, source, seed_data),
+                )
+            )
+
+        compile_result = None
+        compile_error: str | None = None
+        if context.ingest_compiler is not None and batch_items:
+            try:
+                compile_result = await context.ingest_compiler.compile_batch(
+                    items=batch_items,
+                    seed_source=f"ai-memory-input/{source}",
+                )
+            except Exception as exc:
+                compile_error = str(exc)
+                context.logger.warning(
+                    "ai_memory_batch_compile_failed",
+                    items=len(batch_items),
+                    exc_info=True,
+                )
     finally:
         if cleanup_dir is not None:
             shutil.rmtree(cleanup_dir, ignore_errors=True)
 
-    return {"imported": imported, "source": source}
+    return {
+        "imported": seeds_written,
+        "source": source,
+        "notes_created": compile_result.notes_created if compile_result else 0,
+        "notes_updated": compile_result.notes_updated if compile_result else 0,
+        "llm_calls": compile_result.llm_calls if compile_result else 0,
+        "compile_error": compile_error,
+        "compiler_available": context.ingest_compiler is not None,
+    }
 
 
 def _safe_extract(zip_path, dest_root) -> None:
@@ -113,44 +150,17 @@ def _safe_extract(zip_path, dest_root) -> None:
         zf.extractall(dest_root)
 
 
-_VALID_NOTE_TYPES = frozenset(
-    {"idea", "insight", "project", "event", "task", "fact", "person", "preference"}
-)
+def _build_seed_data(rel_path, content: str, source: str) -> dict:
+    """Build seed payload — raw markdown plus provenance, no classification.
 
-# Map common AI-memory frontmatter `type:` values + filename prefixes onto
-# BSage's GardenNote types. Falls through to `preference` for anything
-# unrecognized (matches the original plugin's default).
-_TYPE_ALIAS_MAP = {
-    "feedback": "preference",
-    "preference": "preference",
-    "project": "project",
-    "reference": "fact",
-    "fact": "fact",
-    "user": "person",
-    "person": "person",
-    "idea": "idea",
-    "insight": "insight",
-    "event": "event",
-    "task": "task",
-}
-
-
-def _build_note(rel_path, content: str, source: str):
-    """Build a GardenNote from a markdown file.
-
-    Pulls title / type / tags from the frontmatter when present so each
-    imported note carries useful metadata, not a fixed
-    ``["ai-memory", source]`` tag set that's identical for every file.
-
-    Title precedence:    frontmatter.name > frontmatter.title > first H1 > stem
-    note_type precedence: frontmatter.type (mapped) > filename-prefix-mapped > preference
-    Tags: union of base ["ai-memory", source] + filename-prefix tag (e.g.
-    "feedback") + frontmatter.tags (deduped, lowercased).
+    Title is best-effort (frontmatter.name > frontmatter.title > first H1
+    > filename stem) so seeds remain searchable, but we deliberately do
+    NOT decide note_type or invent tags here — that's the compiler's
+    job, against existing vault context.
     """
     import hashlib
 
     from bsage.garden.markdown_utils import extract_frontmatter
-    from bsage.garden.note import GardenNote
 
     fm: dict | None = None
     if content.startswith("---\n"):
@@ -161,7 +171,6 @@ def _build_note(rel_path, content: str, source: str):
         except Exception:
             fm = None
 
-    # Title
     title: str | None = None
     if fm:
         for k in ("name", "title"):
@@ -178,62 +187,31 @@ def _build_note(rel_path, content: str, source: str):
     if title is None:
         title = rel_path.stem
 
-    # Filename-prefix tag — Claude Code convention names files
-    # `feedback_xxx`, `project_xxx`, `reference_xxx`, `user_xxx`. Other
-    # tools likely don't follow this; we still capture the first segment
-    # if it matches a known type. Avoids leaking generic stems like
-    # `MEMORY` as a tag.
-    stem = rel_path.stem
-    prefix = stem.split("_", 1)[0].lower() if "_" in stem else None
-    prefix_tag = prefix if prefix in _TYPE_ALIAS_MAP else None
-
-    # note_type — frontmatter.type wins, then prefix mapping, then default
-    note_type = "preference"
-    if fm:
-        raw_type = fm.get("type")
-        if isinstance(raw_type, str):
-            mapped = _TYPE_ALIAS_MAP.get(raw_type.strip().lower())
-            if mapped:
-                note_type = mapped
-    if note_type == "preference" and prefix_tag:
-        mapped = _TYPE_ALIAS_MAP.get(prefix_tag)
-        if mapped:
-            note_type = mapped
-    # final safety: must be in BSage's valid set
-    if note_type not in _VALID_NOTE_TYPES:
-        note_type = "preference"
-
-    # Tags — union (preserve order, dedupe)
-    tag_seq: list[str] = ["ai-memory", source]
-    if prefix_tag:
-        tag_seq.append(prefix_tag)
-    if fm:
-        fm_tags = fm.get("tags")
-        if isinstance(fm_tags, list):
-            for t in fm_tags:
-                if isinstance(t, str) and t.strip():
-                    tag_seq.append(t.strip().lower())
-    seen: set[str] = set()
-    tags: list[str] = []
-    for t in tag_seq:
-        if t not in seen:
-            seen.add(t)
-            tags.append(t)
-
     digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
-    return GardenNote(
-        title=title,
-        content=content,
-        note_type=note_type,
-        source="ai-memory-input",
-        tags=tags,
-        confidence=0.9,
-        extra_fields={
-            "provenance": {
-                "source": source,
-                "filename": str(rel_path),
-                "sha256": digest,
-            },
+    return {
+        "title": title,
+        "content": content,
+        "tags": ["ai-memory", source],
+        "provenance": {
+            "source": source,
+            "filename": str(rel_path),
+            "sha256": digest,
         },
+    }
+
+
+def _compile_payload(rel_path, content: str, source: str, seed_data: dict) -> str:
+    """Build the prompt-friendly payload handed to IngestCompiler.
+
+    The compiler sees the original markdown verbatim plus a small header
+    that names the source file — enough context for the LLM to classify
+    and to decide whether existing vault notes already cover this
+    material.
+    """
+    return (
+        f"# AI memory import (source: {source}, file: {rel_path})\n\n"
+        f"Title hint: {seed_data['title']}\n\n"
+        f"---\n\n"
+        f"{content}"
     )

@@ -52,8 +52,10 @@ class PluginRunner:
         if meta._execute_fn is None:
             raise PluginRunError(f"Plugin '{meta.name}' has no execute function")
 
+        plugin_context = self._restrict_garden(context)
+
         try:
-            result = await meta._execute_fn(context)
+            result = await meta._execute_fn(plugin_context)
         except PluginRunError:
             await emit_event(
                 self._event_bus,
@@ -101,8 +103,10 @@ class PluginRunner:
 
         await self._auto_inject_credentials(meta, context)
 
+        plugin_context = self._restrict_garden(context)
+
         try:
-            result = await meta._notify_fn(context)
+            result = await meta._notify_fn(plugin_context)
         except PluginRunError:
             await emit_event(
                 self._event_bus,
@@ -128,6 +132,31 @@ class PluginRunner:
             correlation_id=correlation_id,
         )
         return result
+
+    @staticmethod
+    def _restrict_garden(context: SkillContext) -> SkillContext:
+        """Return a SkillContext with garden wrapped to seed-only access.
+
+        External plugin code is not allowed to mutate ``garden/`` directly.
+        It must submit a seed and let :class:`IngestCompiler` produce the
+        garden notes. This wrapper enforces that contract at runtime so
+        callers see a clear ``PermissionError`` if they try to call
+        ``write_garden`` / ``update_note`` / ``append_to_note`` etc.
+        """
+        from dataclasses import is_dataclass, replace
+
+        from bsage.core.skill_context import RestrictedPluginGarden
+
+        if isinstance(context.garden, RestrictedPluginGarden):
+            return context
+        wrapped = RestrictedPluginGarden(context.garden)
+        if is_dataclass(context):
+            return replace(context, garden=wrapped)
+        # Fallback for non-dataclass contexts (e.g. MagicMock in tests):
+        # mutate in place. Callers who care about isolation should pass a
+        # real SkillContext.
+        context.garden = wrapped
+        return context
 
     async def _auto_inject_credentials(self, meta: PluginMeta, context: SkillContext) -> None:
         """Inject credentials into context and validate required fields are present."""

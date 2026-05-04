@@ -1,4 +1,9 @@
-"""Tests for plugins/chatgpt-memory-input/plugin.py."""
+"""Tests for plugins/chatgpt-memory-input/plugin.py.
+
+Plugin writes one SEED per conversation/memory and invokes
+``IngestCompiler`` for each — it never produces garden notes
+directly.
+"""
 
 from __future__ import annotations
 
@@ -20,12 +25,22 @@ def _load():
     return mod.execute
 
 
-def _ctx(input_data=None):
+def _ctx(input_data=None, *, with_compiler: bool = True, batch_result=None):
     c = MagicMock()
     c.input_data = input_data or {}
     c.credentials = {}
+    c.logger = MagicMock()
     c.garden = AsyncMock()
-    c.garden.write_garden = AsyncMock(return_value=Path("/vault/garden/insight/x.md"))
+    c.garden.write_seed = AsyncMock(return_value=Path("/vault/seeds/chatgpt/x.md"))
+    if with_compiler:
+        c.ingest_compiler = AsyncMock()
+        if batch_result is None:
+            batch_result = MagicMock(
+                notes_created=2, notes_updated=0, llm_calls=1, actions_taken=[]
+            )
+        c.ingest_compiler.compile_batch = AsyncMock(return_value=batch_result)
+    else:
+        c.ingest_compiler = None
     return c
 
 
@@ -70,7 +85,7 @@ SAMPLE_MEMORIES = {
 
 class TestChatGPTConversations:
     @pytest.mark.asyncio
-    async def test_imports_each_conversation(self, tmp_path: Path) -> None:
+    async def test_writes_seeds_then_one_batched_compile(self, tmp_path: Path) -> None:
         f = tmp_path / "conversations.json"
         f.write_text(json.dumps(SAMPLE_CONVERSATIONS))
 
@@ -79,41 +94,43 @@ class TestChatGPTConversations:
         result = await execute(ctx)
 
         assert result["imported"] == 2
-        assert ctx.garden.write_garden.await_count == 2
+        assert ctx.garden.write_seed.await_count == 2
+        assert ctx.ingest_compiler.compile_batch.await_count == 1
+        kwargs = ctx.ingest_compiler.compile_batch.await_args.kwargs
+        assert len(kwargs["items"]) == 2
 
     @pytest.mark.asyncio
-    async def test_note_carries_external_id(self, tmp_path: Path) -> None:
+    async def test_seed_carries_external_id(self, tmp_path: Path) -> None:
         f = tmp_path / "c.json"
         f.write_text(json.dumps(SAMPLE_CONVERSATIONS))
         execute = _load()
         ctx = _ctx({"path": str(f)})
         await execute(ctx)
 
-        notes = [c.args[0] for c in ctx.garden.write_garden.await_args_list]
-        ids = {n.extra_fields["provenance"]["external_id"] for n in notes}
+        seeds = [c.args[1] for c in ctx.garden.write_seed.await_args_list]
+        ids = {s["provenance"]["external_id"] for s in seeds}
         assert ids == {"conv-1", "conv-2"}
-        assert all(n.note_type == "insight" for n in notes)
-        assert all("chatgpt" in n.tags for n in notes)
+        assert all("chatgpt" in s["tags"] for s in seeds)
 
     @pytest.mark.asyncio
-    async def test_message_text_preserved_in_body(self, tmp_path: Path) -> None:
+    async def test_message_text_preserved_in_seed_content(self, tmp_path: Path) -> None:
         f = tmp_path / "c.json"
         f.write_text(json.dumps(SAMPLE_CONVERSATIONS))
         execute = _load()
         ctx = _ctx({"path": str(f)})
         await execute(ctx)
 
-        notes = {
-            c.args[0].extra_fields["provenance"]["external_id"]: c.args[0]
-            for c in ctx.garden.write_garden.await_args_list
+        seeds_by_id = {
+            c.args[1]["provenance"]["external_id"]: c.args[1]
+            for c in ctx.garden.write_seed.await_args_list
         }
-        assert "How do generators work?" in notes["conv-1"].content
-        assert "Generators yield values lazily." in notes["conv-1"].content
+        assert "How do generators work?" in seeds_by_id["conv-1"]["content"]
+        assert "Generators yield values lazily." in seeds_by_id["conv-1"]["content"]
 
 
 class TestChatGPTMemories:
     @pytest.mark.asyncio
-    async def test_imports_string_and_dict_memories(self, tmp_path: Path) -> None:
+    async def test_writes_a_seed_per_memory(self, tmp_path: Path) -> None:
         f = tmp_path / "memory.json"
         f.write_text(json.dumps(SAMPLE_MEMORIES))
         execute = _load()
@@ -121,8 +138,46 @@ class TestChatGPTMemories:
         result = await execute(ctx)
 
         assert result["imported"] == 2
-        notes = [c.args[0] for c in ctx.garden.write_garden.await_args_list]
-        assert all(n.note_type == "preference" for n in notes)
+        seeds = [c.args[1] for c in ctx.garden.write_seed.await_args_list]
+        assert all(s["provenance"]["kind"] == "saved_memory" for s in seeds)
+        assert ctx.ingest_compiler.compile_batch.await_count == 1
+
+
+class TestCompilerWiring:
+    @pytest.mark.asyncio
+    async def test_propagates_batch_compile_counts(self, tmp_path: Path) -> None:
+        f = tmp_path / "c.json"
+        f.write_text(json.dumps(SAMPLE_CONVERSATIONS))
+        execute = _load()
+        ctx = _ctx(
+            {"path": str(f)},
+            batch_result=MagicMock(notes_created=1, notes_updated=2, llm_calls=1, actions_taken=[]),
+        )
+        result = await execute(ctx)
+        assert result["notes_created"] == 1
+        assert result["notes_updated"] == 2
+        assert result["llm_calls"] == 1
+
+    @pytest.mark.asyncio
+    async def test_batch_failure_keeps_seeds(self, tmp_path: Path) -> None:
+        f = tmp_path / "c.json"
+        f.write_text(json.dumps(SAMPLE_CONVERSATIONS))
+        execute = _load()
+        ctx = _ctx({"path": str(f)})
+        ctx.ingest_compiler.compile_batch = AsyncMock(side_effect=RuntimeError("boom"))
+        result = await execute(ctx)
+        assert result["imported"] == 2
+        assert result["compile_error"] == "boom"
+
+    @pytest.mark.asyncio
+    async def test_runs_without_compiler(self, tmp_path: Path) -> None:
+        f = tmp_path / "c.json"
+        f.write_text(json.dumps(SAMPLE_CONVERSATIONS))
+        execute = _load()
+        ctx = _ctx({"path": str(f)}, with_compiler=False)
+        result = await execute(ctx)
+        assert result["imported"] == 2
+        assert result["compiler_available"] is False
 
 
 class TestEdgeCases:

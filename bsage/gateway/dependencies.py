@@ -278,12 +278,19 @@ class AppState:
         # Ingest compiler (Karpathy-style ingest-time compilation)
         ingest_compiler: IngestCompiler | None = None
         if self.settings.ingest_compile_enabled:
+            from bsage.garden.ingest_compiler import derive_batch_char_budget
+
+            batch_char_budget = await derive_batch_char_budget(
+                model=self.runtime_config.llm_model,
+                api_base=self.runtime_config.llm_api_base,
+            )
             ingest_compiler = IngestCompiler(
                 garden_writer=self.garden_writer,
                 llm_client=self.llm_client,
                 retriever=self.retriever,
                 event_bus=self.event_bus,
                 max_updates=self.settings.ingest_compile_max_updates,
+                batch_char_budget=batch_char_budget,
             )
 
         self.agent_loop = AgentLoop(

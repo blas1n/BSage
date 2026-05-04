@@ -138,10 +138,15 @@ class AgentLoop:
         refined = await self._refine_seed(plugin_name, raw_data)
         await self._garden_writer.write_seed(plugin_name, refined)
 
-        # 1c. Compile seed into garden notes (Karpathy-style ingest-time compilation)
+        # 1c. Compile seed into garden notes (Karpathy-style ingest-time compilation).
+        # Always batched — a single webhook payload becomes a 1-item batch so the
+        # prompt + chunking + cost story is identical for every caller.
         if self._ingest_compiler:
-            compile_result = await self._ingest_compiler.compile(
-                seed_content=json.dumps(refined, default=str, ensure_ascii=False),
+            from bsage.garden.ingest_compiler import BatchItem
+
+            seed_text = json.dumps(refined, default=str, ensure_ascii=False)
+            compile_result = await self._ingest_compiler.compile_batch(
+                items=[BatchItem(label=plugin_name, content=seed_text)],
                 seed_source=plugin_name,
             )
             await self._garden_writer.write_action(
@@ -420,6 +425,36 @@ class AgentLoop:
         """
         return self._registry[name]
 
+    async def run_entry_direct(self, name: str, input_data: dict[str, Any] | None = None) -> dict:
+        """Invoke a plugin/skill explicitly with the caller's input_data.
+
+        This is the path for user-triggered runs (``POST /api/run/{name}``)
+        — the plugin's ``execute()`` sees the request body directly as
+        ``context.input_data``. It bypasses the on-input refine/compile
+        pipeline (which exists for inbound webhooks where the payload IS
+        the seed) because explicit user runs already know exactly which
+        plugin should handle the data.
+
+        SafeMode is still consulted so a dangerous plugin can be blocked
+        per policy.
+
+        Raises:
+            KeyError: If the entry is not registered.
+            PermissionError: If safe-mode rejects the entry.
+            MissingCredentialError: From the runner.
+        """
+        if self._on_refresh:
+            await self._on_refresh()
+        meta = self._registry[name]
+        approved = await self._safe_mode_guard.check(meta)
+        if not approved:
+            raise PermissionError(f"'{name}' rejected by safe mode")
+        context = self.build_context(input_data=input_data or {})
+        result = await self._runner.run(meta, context)
+        summary = json.dumps(result, default=str)
+        await self._garden_writer.write_action(name, summary)
+        return result
+
     def build_context(
         self,
         input_data: dict[str, Any] | None = None,
@@ -466,6 +501,7 @@ class AgentLoop:
             scheduler=self._scheduler_adapter,
             events=event_emitter,
             graph=self._graph_store,
+            ingest_compiler=self._ingest_compiler,
         )
 
     def _make_reply_fn(self, source_name: str) -> ReplyFn | None:

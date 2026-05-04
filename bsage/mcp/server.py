@@ -80,26 +80,17 @@ _STATIC_TOOL_DEFS: list[dict[str, Any]] = [
     },
     {
         "name": "create_note",
-        "description": "Write a new garden note (title + content + optional metadata).",
+        "description": (
+            "Submit a note for ingestion — writes a seed and lets BSage's "
+            "IngestCompiler classify and link it against existing vault content. "
+            "The compiler decides note_type/tags/links; client-supplied tags and "
+            "links are passed through as hints only."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "title": {"type": "string"},
                 "content": {"type": "string"},
-                "note_type": {
-                    "type": "string",
-                    "default": "idea",
-                    "enum": [
-                        "idea",
-                        "insight",
-                        "project",
-                        "event",
-                        "task",
-                        "fact",
-                        "person",
-                        "preference",
-                    ],
-                },
                 "source": {"type": "string", "default": "mcp"},
                 "tags": {"type": "array", "items": {"type": "string"}},
                 "links": {"type": "array", "items": {"type": "string"}},

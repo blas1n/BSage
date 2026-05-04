@@ -212,6 +212,18 @@ def _meta_to_dict(
     }
 
 
+async def _read_json_body(request: Request) -> dict[str, Any]:
+    """Decode an optional JSON request body, returning ``{}`` on absence/invalid."""
+    raw = await request.body()
+    if not raw:
+        return {}
+    try:
+        decoded = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return {}
+    return decoded if isinstance(decoded, dict) else {}
+
+
 def create_routes(state: AppState) -> APIRouter:
     """Create API routes with injected application state.
 
@@ -328,8 +340,17 @@ def create_routes(state: AppState) -> APIRouter:
         ]
 
     @protected.post("/plugins/{name}/run")
-    async def run_plugin(name: str, _perm: None = Depends(plugins_execute)) -> dict[str, Any]:
-        """Trigger a plugin by name via AgentLoop.on_input."""
+    async def run_plugin(
+        name: str,
+        request: Request,
+        _perm: None = Depends(plugins_execute),
+    ) -> dict[str, Any]:
+        """Trigger a plugin directly with the request body as input_data.
+
+        Direct invocation path — the plugin's ``execute()`` receives the
+        JSON body as ``context.input_data``. Bypasses the inbound-webhook
+        refine/compile pipeline (use ``POST /webhooks/{name}`` for that).
+        """
         try:
             state.plugin_loader.get(name)
         except Exception as exc:
@@ -341,9 +362,12 @@ def create_routes(state: AppState) -> APIRouter:
         if state.agent_loop is None:
             raise HTTPException(status_code=503, detail="Gateway not initialized")
 
+        body = await _read_json_body(request)
         try:
-            results = await state.agent_loop.on_input(name, {})
-            return {"plugin": name, "results": results}
+            result = await state.agent_loop.run_entry_direct(name, body)
+            return {"plugin": name, "result": result}
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
         except Exception as exc:
             logger.exception("plugin_run_failed", plugin=name)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -395,8 +419,17 @@ def create_routes(state: AppState) -> APIRouter:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     @protected.post("/run/{name}")
-    async def run_entry(name: str, _perm: None = Depends(plugins_execute)) -> dict[str, Any]:
-        """Run a plugin or skill by name via unified registry."""
+    async def run_entry(
+        name: str,
+        request: Request,
+        _perm: None = Depends(plugins_execute),
+    ) -> dict[str, Any]:
+        """Run a plugin or skill directly with the request body as input_data.
+
+        Direct invocation — the entry's ``execute()`` sees the JSON body
+        as ``context.input_data``. Use this for explicit user-triggered
+        runs (Imports & Exports UI, ``bsage run`` CLI, MCP plugin bridge).
+        """
         if state.agent_loop is None:
             raise HTTPException(status_code=503, detail="Gateway not initialized")
 
@@ -408,9 +441,12 @@ def create_routes(state: AppState) -> APIRouter:
         if name in state.runtime_config.disabled_entries:
             raise HTTPException(status_code=403, detail=f"'{name}' is disabled")
 
+        body = await _read_json_body(request)
         try:
-            results = await state.agent_loop.on_input(name, {})
-            return {"name": name, "results": results}
+            result = await state.agent_loop.run_entry_direct(name, body)
+            return {"name": name, "result": result}
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
         except Exception as exc:
             logger.exception("run_entry_failed", name=name)
             raise HTTPException(status_code=500, detail=str(exc)) from exc

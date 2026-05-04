@@ -52,6 +52,8 @@ class EventType(Enum):
     # Ingest compiler
     INGEST_COMPILE_START = "ingest_compile_start"
     INGEST_COMPILE_COMPLETE = "ingest_compile_complete"
+    INGEST_COMPILE_BATCH_START = "ingest_compile_batch_start"
+    INGEST_COMPILE_BATCH_COMPLETE = "ingest_compile_batch_complete"
 
     # Credentials
     CREDENTIAL_SETUP_REQUIRED = "credential_setup_required"

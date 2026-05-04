@@ -13,13 +13,11 @@ from __future__ import annotations
 
 import contextlib
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 import structlog
 
 from bsage.garden.markdown_utils import extract_frontmatter, extract_title
-from bsage.garden.note import GardenNote
 
 logger = structlog.get_logger(__name__)
 
@@ -142,11 +140,17 @@ async def create_note(
     params: dict[str, Any],
     principal: Any | None = None,
 ) -> dict[str, Any]:
-    """Create a garden note via GardenWriter.
+    """Submit a note for ingestion.
 
-    ``principal.tenant_id`` (when given) is stamped on the note for
-    multi-tenant isolation. Without a principal the note is written
-    without a tenant_id (stdio context).
+    External MCP callers can't write garden notes directly — that
+    boundary keeps classification + linking under BSage's control.
+    Instead this tool writes a SEED and hands it to
+    :class:`IngestCompiler`, which decides what garden notes to
+    create / update / append against the existing vault.
+
+    ``principal.tenant_id`` is stamped on the seed for tenant
+    isolation. Without a principal (stdio context) the seed is
+    written without a tenant_id.
     """
     title = params["title"]
     content = params.get("content", "")
@@ -156,29 +160,63 @@ async def create_note(
         content = f"{content}\n\n{wikilinks}" if content else wikilinks
 
     tenant_id = getattr(principal, "tenant_id", None) if principal is not None else None
+    source_label = params.get("source", "mcp")
 
-    note = GardenNote(
-        title=title,
-        content=content,
-        note_type=params.get("note_type", "idea"),
-        source=params.get("source", "mcp"),
-        related=links,
-        tags=list(params.get("tags", []) or []),
-        extra_fields=dict(params.get("metadata", {}) or {}),
-        tenant_id=tenant_id,
-    )
+    seed_data: dict[str, Any] = {
+        "title": title,
+        "content": content,
+        "tags": list(params.get("tags", []) or []),
+        "provenance": {
+            "source": source_label,
+            "submitted_via": "mcp",
+            "submitted_at": datetime.now(tz=UTC).isoformat(),
+        },
+    }
+    if tenant_id is not None:
+        seed_data["tenant_id"] = tenant_id
+    metadata = params.get("metadata") or {}
+    if metadata:
+        seed_data["metadata"] = dict(metadata)
 
-    written_path = await state.garden_writer.write_garden(note)
+    seed_path = await state.garden_writer.write_seed(f"mcp/{source_label}", seed_data)
 
-    rel_path = str(written_path)
+    rel_seed_path = str(seed_path)
     with contextlib.suppress(ValueError, AttributeError):
-        rel_path = str(written_path.relative_to(state.vault.root))
+        rel_seed_path = str(seed_path.relative_to(state.vault.root))
+
+    notes_created = 0
+    notes_updated = 0
+    compiler_available = state.ingest_compiler is not None
+
+    if compiler_available:
+        try:
+            result = await state.ingest_compiler.compile(
+                seed_content=_format_mcp_compile_payload(seed_data, links),
+                seed_source=f"mcp/{source_label}",
+            )
+            notes_created = result.notes_created
+            notes_updated = result.notes_updated
+        except Exception:
+            logger.warning("mcp_create_note_compile_failed", exc_info=True)
 
     return {
-        "id": Path(rel_path).stem,
-        "path": rel_path,
-        "created_at": datetime.now(tz=UTC).isoformat(),
+        "seed_path": rel_seed_path,
+        "submitted_at": seed_data["provenance"]["submitted_at"],
+        "notes_created": notes_created,
+        "notes_updated": notes_updated,
+        "compiler_available": compiler_available,
     }
+
+
+def _format_mcp_compile_payload(seed: dict[str, Any], links: list[str]) -> str:
+    """Build the prompt payload IngestCompiler sees for an MCP submission."""
+    parts = [f"# MCP submission: {seed['title']}", ""]
+    if seed.get("tags"):
+        parts.append(f"submitted_tags: {seed['tags']}")
+    if links:
+        parts.append(f"linked_titles: {links}")
+    parts.extend(["", "---", "", seed["content"]])
+    return "\n".join(parts)
 
 
 # -- helpers ------------------------------------------------------------------

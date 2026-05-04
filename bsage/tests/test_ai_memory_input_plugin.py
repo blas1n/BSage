@@ -1,8 +1,8 @@
 """Tests for plugins/ai-memory-input/plugin.py.
 
-Generic AI memory uploader — accepts a single .md file or a .zip of them,
-no longer tied to Claude Code's filesystem layout. Source hint
-(claude-code/codex/opencode/custom) controls provenance + tags.
+Plugin writes each markdown file as a SEED + invokes IngestCompiler —
+it never writes garden notes itself, since external surfaces are
+restricted to the seed-only garden interface.
 """
 
 from __future__ import annotations
@@ -25,12 +25,22 @@ def _load():
     return mod.execute
 
 
-def _ctx(input_data=None):
+def _ctx(input_data=None, *, with_compiler: bool = True, batch_result=None):
     c = MagicMock()
     c.input_data = input_data or {}
     c.credentials = {}
+    c.logger = MagicMock()
     c.garden = AsyncMock()
-    c.garden.write_garden = AsyncMock(return_value=Path("/vault/garden/preference/x.md"))
+    c.garden.write_seed = AsyncMock(return_value=Path("/vault/seeds/ai-memory/x.md"))
+    if with_compiler:
+        c.ingest_compiler = AsyncMock()
+        if batch_result is None:
+            batch_result = MagicMock(
+                notes_created=3, notes_updated=0, llm_calls=1, actions_taken=[]
+            )
+        c.ingest_compiler.compile_batch = AsyncMock(return_value=batch_result)
+    else:
+        c.ingest_compiler = None
     return c
 
 
@@ -51,7 +61,23 @@ class TestSingleMarkdown:
         ctx = _ctx({"path": str(f)})
         result = await execute(ctx)
         assert result["imported"] == 1
-        assert ctx.garden.write_garden.await_count == 1
+        assert ctx.garden.write_seed.await_count == 1
+        # Single batched compile call regardless of file count.
+        assert ctx.ingest_compiler.compile_batch.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_seed_carries_raw_content_and_provenance(self, tmp_path: Path) -> None:
+        f = tmp_path / "memory.md"
+        f.write_text(SAMPLE_MD)
+        execute = _load()
+        ctx = _ctx({"path": str(f), "source": "claude-code"})
+        await execute(ctx)
+        source_arg, data_arg = ctx.garden.write_seed.await_args.args
+        assert source_arg == "ai-memory/claude-code"
+        assert data_arg["content"] == SAMPLE_MD
+        assert data_arg["provenance"]["filename"] == "memory.md"
+        assert len(data_arg["provenance"]["sha256"]) == 64
+        assert data_arg["provenance"]["source"] == "claude-code"
 
     @pytest.mark.asyncio
     async def test_title_from_first_h1(self, tmp_path: Path) -> None:
@@ -60,8 +86,8 @@ class TestSingleMarkdown:
         execute = _load()
         ctx = _ctx({"path": str(f)})
         await execute(ctx)
-        n = ctx.garden.write_garden.await_args.args[0]
-        assert n.title == "My Title"
+        data = ctx.garden.write_seed.await_args.args[1]
+        assert data["title"] == "My Title"
 
     @pytest.mark.asyncio
     async def test_falls_back_to_filename(self, tmp_path: Path) -> None:
@@ -70,14 +96,11 @@ class TestSingleMarkdown:
         execute = _load()
         ctx = _ctx({"path": str(f)})
         await execute(ctx)
-        n = ctx.garden.write_garden.await_args.args[0]
-        assert n.title == "no-heading"
+        data = ctx.garden.write_seed.await_args.args[1]
+        assert data["title"] == "no-heading"
 
     @pytest.mark.asyncio
     async def test_frontmatter_name_wins_over_h1(self, tmp_path: Path) -> None:
-        # Real-world Claude Code memory files use frontmatter with a
-        # human-readable name field. Title precedence: frontmatter.name >
-        # first H1 > filename stem.
         f = tmp_path / "feedback_xyz.md"
         f.write_text(
             "---\nname: Report bug then fix it — no ask\ntype: feedback\n---\n# Some H1\nbody"
@@ -85,33 +108,13 @@ class TestSingleMarkdown:
         execute = _load()
         ctx = _ctx({"path": str(f)})
         await execute(ctx)
-        n = ctx.garden.write_garden.await_args.args[0]
-        assert n.title == "Report bug then fix it — no ask"
-
-    @pytest.mark.asyncio
-    async def test_frontmatter_title_field_also_works(self, tmp_path: Path) -> None:
-        f = tmp_path / "x.md"
-        f.write_text("---\ntitle: My Frontmatter Title\n---\nbody")
-        execute = _load()
-        ctx = _ctx({"path": str(f)})
-        await execute(ctx)
-        n = ctx.garden.write_garden.await_args.args[0]
-        assert n.title == "My Frontmatter Title"
-
-    @pytest.mark.asyncio
-    async def test_h1_used_when_no_frontmatter_name(self, tmp_path: Path) -> None:
-        f = tmp_path / "x.md"
-        f.write_text("---\ntype: idea\n---\n# Real H1\nbody")
-        execute = _load()
-        ctx = _ctx({"path": str(f)})
-        await execute(ctx)
-        n = ctx.garden.write_garden.await_args.args[0]
-        assert n.title == "Real H1"
+        data = ctx.garden.write_seed.await_args.args[1]
+        assert data["title"] == "Report bug then fix it — no ask"
 
 
 class TestZipUpload:
     @pytest.mark.asyncio
-    async def test_imports_each_md_in_zip(self, tmp_path: Path) -> None:
+    async def test_writes_seeds_then_one_batched_compile(self, tmp_path: Path) -> None:
         zp = tmp_path / "memories.zip"
         with zipfile.ZipFile(zp, "w") as zf:
             zf.writestr("a.md", "# A\nbody")
@@ -122,6 +125,12 @@ class TestZipUpload:
         ctx = _ctx({"path": str(zp)})
         result = await execute(ctx)
         assert result["imported"] == 3
+        assert ctx.garden.write_seed.await_count == 3
+        # Three files → still ONE compile call (the whole point of batching).
+        assert ctx.ingest_compiler.compile_batch.await_count == 1
+        # The single call sees all three items.
+        kwargs = ctx.ingest_compiler.compile_batch.await_args.kwargs
+        assert len(kwargs["items"]) == 3
 
     @pytest.mark.asyncio
     async def test_zip_traversal_rejected(self, tmp_path: Path) -> None:
@@ -134,6 +143,69 @@ class TestZipUpload:
             await execute(ctx)
 
 
+class TestCompilerWiring:
+    @pytest.mark.asyncio
+    async def test_batch_items_carry_source_hint_and_filename(self, tmp_path: Path) -> None:
+        f = tmp_path / "rules.md"
+        f.write_text("# Rules\nuse uv")
+        execute = _load()
+        ctx = _ctx({"path": str(f), "source": "claude-code"})
+        await execute(ctx)
+        kwargs = ctx.ingest_compiler.compile_batch.await_args.kwargs
+        assert kwargs["seed_source"] == "ai-memory-input/claude-code"
+        assert len(kwargs["items"]) == 1
+        item = kwargs["items"][0]
+        assert "rules.md" in item.label
+        assert "use uv" in item.content
+
+    @pytest.mark.asyncio
+    async def test_propagates_batch_compile_counts(self, tmp_path: Path) -> None:
+        zp = tmp_path / "memories.zip"
+        with zipfile.ZipFile(zp, "w") as zf:
+            zf.writestr("a.md", "# A\nbody")
+            zf.writestr("b.md", "# B\nbody")
+        execute = _load()
+        ctx = _ctx(
+            {"path": str(zp)},
+            batch_result=MagicMock(notes_created=2, notes_updated=1, llm_calls=1, actions_taken=[]),
+        )
+        result = await execute(ctx)
+        assert result["notes_created"] == 2
+        assert result["notes_updated"] == 1
+        assert result["llm_calls"] == 1
+        assert result["compile_error"] is None
+
+    @pytest.mark.asyncio
+    async def test_batch_compile_failure_is_surfaced_but_seeds_kept(self, tmp_path: Path) -> None:
+        # If the LLM batch fails, seeds remain on disk and the error is
+        # reported back so the user knows to re-run compile later.
+        zp = tmp_path / "memories.zip"
+        with zipfile.ZipFile(zp, "w") as zf:
+            zf.writestr("a.md", "# A\nbody")
+            zf.writestr("b.md", "# B\nbody")
+        execute = _load()
+        ctx = _ctx({"path": str(zp)})
+        ctx.ingest_compiler.compile_batch = AsyncMock(side_effect=RuntimeError("boom"))
+        result = await execute(ctx)
+        assert result["imported"] == 2
+        assert result["notes_created"] == 0
+        assert result["compile_error"] == "boom"
+        assert ctx.garden.write_seed.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_runs_without_compiler_writing_seeds_only(self, tmp_path: Path) -> None:
+        # When the compiler isn't available, we still preserve the user's
+        # input as seeds — they can be compiled later.
+        f = tmp_path / "x.md"
+        f.write_text("# X\nbody")
+        execute = _load()
+        ctx = _ctx({"path": str(f)}, with_compiler=False)
+        result = await execute(ctx)
+        assert result["imported"] == 1
+        assert result["compiler_available"] is False
+        assert ctx.garden.write_seed.await_count == 1
+
+
 class TestSourceHint:
     @pytest.mark.asyncio
     async def test_default_source_is_custom(self, tmp_path: Path) -> None:
@@ -142,21 +214,9 @@ class TestSourceHint:
         execute = _load()
         ctx = _ctx({"path": str(f)})
         await execute(ctx)
-        n = ctx.garden.write_garden.await_args.args[0]
-        # Base tags = ai-memory + source; no prefix here (filename has no _)
-        assert n.tags == ["ai-memory", "custom"]
-        assert n.extra_fields["provenance"]["source"] == "custom"
-
-    @pytest.mark.asyncio
-    async def test_claude_code_source_tag(self, tmp_path: Path) -> None:
-        f = tmp_path / "x.md"
-        f.write_text("# X")
-        execute = _load()
-        ctx = _ctx({"path": str(f), "source": "claude-code"})
-        await execute(ctx)
-        n = ctx.garden.write_garden.await_args.args[0]
-        assert "claude-code" in n.tags
-        assert n.extra_fields["provenance"]["source"] == "claude-code"
+        source_arg, data = ctx.garden.write_seed.await_args.args
+        assert source_arg == "ai-memory/custom"
+        assert data["provenance"]["source"] == "custom"
 
     @pytest.mark.asyncio
     async def test_unknown_source_falls_back_to_custom(self, tmp_path: Path) -> None:
@@ -165,117 +225,8 @@ class TestSourceHint:
         execute = _load()
         ctx = _ctx({"path": str(f), "source": "weird-tool"})
         await execute(ctx)
-        n = ctx.garden.write_garden.await_args.args[0]
-        # unknown source string is sanitized — only known values accepted
-        assert n.extra_fields["provenance"]["source"] == "custom"
-
-
-class TestNoteTypeAndTags:
-    """Each imported note must carry meaningful metadata derived from
-    the file content — not a fixed tag set repeated for every file."""
-
-    @pytest.mark.asyncio
-    async def test_frontmatter_type_feedback_maps_to_preference(self, tmp_path: Path) -> None:
-        f = tmp_path / "x.md"
-        f.write_text("---\nname: X\ntype: feedback\n---\nbody")
-        execute = _load()
-        ctx = _ctx({"path": str(f), "source": "claude-code"})
-        await execute(ctx)
-        n = ctx.garden.write_garden.await_args.args[0]
-        assert n.note_type == "preference"
-
-    @pytest.mark.asyncio
-    async def test_frontmatter_type_project_kept_as_project(self, tmp_path: Path) -> None:
-        f = tmp_path / "x.md"
-        f.write_text("---\nname: X\ntype: project\n---\nbody")
-        execute = _load()
-        ctx = _ctx({"path": str(f)})
-        await execute(ctx)
-        n = ctx.garden.write_garden.await_args.args[0]
-        assert n.note_type == "project"
-
-    @pytest.mark.asyncio
-    async def test_frontmatter_type_reference_maps_to_fact(self, tmp_path: Path) -> None:
-        f = tmp_path / "x.md"
-        f.write_text("---\nname: X\ntype: reference\n---\nbody")
-        execute = _load()
-        ctx = _ctx({"path": str(f)})
-        await execute(ctx)
-        n = ctx.garden.write_garden.await_args.args[0]
-        assert n.note_type == "fact"
-
-    @pytest.mark.asyncio
-    async def test_filename_prefix_drives_type_when_no_frontmatter_type(
-        self, tmp_path: Path
-    ) -> None:
-        f = tmp_path / "feedback_no_frontmatter_type.md"
-        f.write_text("---\nname: X\n---\nbody")
-        execute = _load()
-        ctx = _ctx({"path": str(f)})
-        await execute(ctx)
-        n = ctx.garden.write_garden.await_args.args[0]
-        assert n.note_type == "preference"
-
-    @pytest.mark.asyncio
-    async def test_filename_prefix_added_as_tag(self, tmp_path: Path) -> None:
-        f = tmp_path / "project_alpha.md"
-        f.write_text("---\nname: Alpha\ntype: project\n---\nbody")
-        execute = _load()
-        ctx = _ctx({"path": str(f), "source": "claude-code"})
-        await execute(ctx)
-        n = ctx.garden.write_garden.await_args.args[0]
-        assert "project" in n.tags
-        assert "ai-memory" in n.tags
-        assert "claude-code" in n.tags
-
-    @pytest.mark.asyncio
-    async def test_unknown_filename_prefix_not_added_as_tag(self, tmp_path: Path) -> None:
-        # Don't pollute tags with arbitrary stems like 'mynotes_xyz'
-        f = tmp_path / "mynotes_xyz.md"
-        f.write_text("# Body")
-        execute = _load()
-        ctx = _ctx({"path": str(f)})
-        await execute(ctx)
-        n = ctx.garden.write_garden.await_args.args[0]
-        assert "mynotes" not in n.tags
-
-    @pytest.mark.asyncio
-    async def test_frontmatter_tags_merged(self, tmp_path: Path) -> None:
-        f = tmp_path / "x.md"
-        f.write_text("---\nname: X\ntype: idea\ntags: [docker, ci, oncall]\n---\nbody")
-        execute = _load()
-        ctx = _ctx({"path": str(f), "source": "custom"})
-        await execute(ctx)
-        n = ctx.garden.write_garden.await_args.args[0]
-        for t in ("docker", "ci", "oncall", "ai-memory", "custom"):
-            assert t in n.tags
-        # No duplicates
-        assert len(n.tags) == len(set(n.tags))
-
-    @pytest.mark.asyncio
-    async def test_unknown_frontmatter_type_falls_back_to_preference(self, tmp_path: Path) -> None:
-        f = tmp_path / "x.md"
-        f.write_text("---\nname: X\ntype: weird-thing\n---\nbody")
-        execute = _load()
-        ctx = _ctx({"path": str(f)})
-        await execute(ctx)
-        n = ctx.garden.write_garden.await_args.args[0]
-        assert n.note_type == "preference"
-
-
-class TestProvenance:
-    @pytest.mark.asyncio
-    async def test_records_filename_and_sha256(self, tmp_path: Path) -> None:
-        f = tmp_path / "memory.md"
-        f.write_text(SAMPLE_MD)
-        execute = _load()
-        ctx = _ctx({"path": str(f)})
-        await execute(ctx)
-        n = ctx.garden.write_garden.await_args.args[0]
-        prov = n.extra_fields["provenance"]
-        assert prov["filename"] == "memory.md"
-        assert "sha256" in prov
-        assert len(prov["sha256"]) == 64
+        data = ctx.garden.write_seed.await_args.args[1]
+        assert data["provenance"]["source"] == "custom"
 
 
 class TestEdgeCases:
@@ -301,5 +252,4 @@ class TestEdgeCases:
         execute = _load()
         ctx = _ctx({"path": str(f)})
         result = await execute(ctx)
-        # Either zero imports or error; clearer is error so users know
         assert result["imported"] == 0

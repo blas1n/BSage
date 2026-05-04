@@ -1,4 +1,8 @@
-"""Tests for plugins/obsidian-input/plugin.py."""
+"""Tests for plugins/obsidian-input/plugin.py.
+
+Plugin writes one SEED per .md file and invokes ``IngestCompiler`` for
+each — it never produces garden notes directly.
+"""
 
 from __future__ import annotations
 
@@ -20,12 +24,20 @@ def _load_plugin():
     return mod.execute
 
 
-def _make_context(input_data=None, credentials=None):
+def _make_context(input_data=None, credentials=None, *, with_compiler: bool = True):
     ctx = MagicMock()
     ctx.input_data = input_data or {}
     ctx.credentials = credentials or {}
+    ctx.logger = MagicMock()
     ctx.garden = AsyncMock()
-    ctx.garden.write_garden = AsyncMock(return_value=Path("/vault/garden/idea/x.md"))
+    ctx.garden.write_seed = AsyncMock(return_value=Path("/vault/seeds/obsidian/x.md"))
+    if with_compiler:
+        ctx.ingest_compiler = AsyncMock()
+        ctx.ingest_compiler.compile_batch = AsyncMock(
+            return_value=MagicMock(notes_created=3, notes_updated=0, llm_calls=1, actions_taken=[])
+        )
+    else:
+        ctx.ingest_compiler = None
     return ctx
 
 
@@ -44,7 +56,7 @@ def _seed_vault(root: Path) -> None:
 
 class TestObsidianInputLocalPath:
     @pytest.mark.asyncio
-    async def test_imports_all_md_files(self, tmp_path: Path) -> None:
+    async def test_writes_seeds_then_one_batched_compile(self, tmp_path: Path) -> None:
         _seed_vault(tmp_path)
         execute = _load_plugin()
         ctx = _make_context(input_data={"vault_path": str(tmp_path)})
@@ -52,7 +64,10 @@ class TestObsidianInputLocalPath:
         result = await execute(ctx)
 
         assert result["imported"] == 3
-        assert ctx.garden.write_garden.await_count == 3
+        assert ctx.garden.write_seed.await_count == 3
+        assert ctx.ingest_compiler.compile_batch.await_count == 1
+        kwargs = ctx.ingest_compiler.compile_batch.await_args.kwargs
+        assert len(kwargs["items"]) == 3
 
     @pytest.mark.asyncio
     async def test_skips_dotted_dirs(self, tmp_path: Path) -> None:
@@ -63,36 +78,38 @@ class TestObsidianInputLocalPath:
         ctx = _make_context(input_data={"vault_path": str(tmp_path)})
         await execute(ctx)
         # Only the 3 visible md files
-        assert ctx.garden.write_garden.await_count == 3
+        assert ctx.garden.write_seed.await_count == 3
 
     @pytest.mark.asyncio
-    async def test_note_carries_provenance(self, tmp_path: Path) -> None:
+    async def test_seed_carries_provenance(self, tmp_path: Path) -> None:
         _seed_vault(tmp_path)
         execute = _load_plugin()
         ctx = _make_context(input_data={"vault_path": str(tmp_path)})
         await execute(ctx)
 
-        notes = [c.args[0] for c in ctx.garden.write_garden.await_args_list]
-        for n in notes:
-            assert n.source == "obsidian-input"
-            assert n.extra_fields["provenance"]["source"] == "obsidian"
-            assert "original_path" in n.extra_fields["provenance"]
+        seeds = [c.args[1] for c in ctx.garden.write_seed.await_args_list]
+        for s in seeds:
+            assert s["provenance"]["source"] == "obsidian"
+            assert "original_path" in s["provenance"]
+            assert "obsidian" in s["tags"]
 
     @pytest.mark.asyncio
-    async def test_frontmatter_title_takes_precedence(self, tmp_path: Path) -> None:
+    async def test_frontmatter_title_kept_for_seed_searchability(self, tmp_path: Path) -> None:
         _seed_vault(tmp_path)
         execute = _load_plugin()
         ctx = _make_context(input_data={"vault_path": str(tmp_path)})
         await execute(ctx)
 
-        notes = {
-            c.args[0].extra_fields["provenance"]["original_path"]: c.args[0]
-            for c in ctx.garden.write_garden.await_args_list
+        seeds = {
+            c.args[1]["provenance"]["original_path"]: c.args[1]
+            for c in ctx.garden.write_seed.await_args_list
         }
-        intro = notes["intro.md"]
-        assert intro.title == "Intro"
-        assert intro.note_type == "idea"
-        assert intro.tags == ["welcome"]
+        intro = seeds["intro.md"]
+        assert intro["title"] == "Intro"
+        # Frontmatter tags pass through; note_type is no longer pre-decided
+        # (compiler classifies against existing vault).
+        assert "welcome" in intro["tags"]
+        assert "Hello [[Other]]" in intro["content"]
 
     @pytest.mark.asyncio
     async def test_credentials_vault_path_is_default(self, tmp_path: Path) -> None:

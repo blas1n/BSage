@@ -49,7 +49,9 @@ def state() -> MagicMock:
         ]
     )
     s.garden_writer = MagicMock()
-    s.garden_writer.write_garden = AsyncMock(return_value=Path("/vault/garden/idea/foo.md"))
+    s.garden_writer.write_seed = AsyncMock(return_value=Path("/vault/seeds/mcp/foo.md"))
+    s.ingest_compiler = MagicMock()
+    s.ingest_compiler.compile = AsyncMock(return_value=MagicMock(notes_created=1, notes_updated=0))
     return s
 
 
@@ -154,27 +156,47 @@ class TestListRecent:
 
 
 class TestCreateNote:
+    """create_note submits a SEED + invokes IngestCompiler.
+
+    External MCP callers can no longer write garden notes directly —
+    classification + linking is owned by IngestCompiler. The tool
+    itself returns the seed path plus compile counts so the caller
+    can confirm what changed.
+    """
+
     @pytest.mark.asyncio
-    async def test_writes_via_garden_writer(self, state: MagicMock) -> None:
+    async def test_writes_a_seed_then_invokes_compiler(self, state: MagicMock) -> None:
         result = await mcp_tools.create_note(
             state,
             {
                 "title": "Hello",
                 "content": "Body",
-                "note_type": "idea",
                 "source": "mcp",
                 "tags": ["t1"],
             },
         )
-        state.garden_writer.write_garden.assert_awaited_once()
-        called = state.garden_writer.write_garden.call_args[0][0]
-        assert called.title == "Hello"
-        assert called.content == "Body"
-        assert called.note_type == "idea"
-        assert called.source == "mcp"
-        assert called.tags == ["t1"]
-        assert "path" in result
-        assert "id" in result
+        state.garden_writer.write_seed.assert_awaited_once()
+        seed_source, seed_data = state.garden_writer.write_seed.call_args[0]
+        assert seed_source == "mcp/mcp"
+        assert seed_data["title"] == "Hello"
+        assert seed_data["content"] == "Body"
+        assert seed_data["tags"] == ["t1"]
+        assert seed_data["provenance"]["submitted_via"] == "mcp"
+
+        state.ingest_compiler.compile.assert_awaited_once()
+        assert "seed_path" in result
+        assert result["notes_created"] == 1
+        assert result["compiler_available"] is True
+
+    @pytest.mark.asyncio
+    async def test_garden_writer_write_garden_is_never_called(self, state: MagicMock) -> None:
+        # Add the attribute with a tracking mock so we can assert it
+        # stays untouched. Regression guard against a refactor that
+        # reintroduces a direct garden write from MCP.
+        sentinel = AsyncMock()
+        state.garden_writer.write_garden = sentinel
+        await mcp_tools.create_note(state, {"title": "X", "content": "Y"})
+        sentinel.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_appends_wikilinks_when_links_provided(self, state: MagicMock) -> None:
@@ -186,12 +208,12 @@ class TestCreateNote:
                 "links": ["Other Note", "Second"],
             },
         )
-        called = state.garden_writer.write_garden.call_args[0][0]
-        assert "[[Other Note]]" in called.content
-        assert "[[Second]]" in called.content
+        seed_data = state.garden_writer.write_seed.call_args[0][1]
+        assert "[[Other Note]]" in seed_data["content"]
+        assert "[[Second]]" in seed_data["content"]
 
     @pytest.mark.asyncio
-    async def test_passes_tenant_id_from_principal(self, state: MagicMock) -> None:
+    async def test_stamps_tenant_id_from_principal(self, state: MagicMock) -> None:
         principal = MagicMock()
         principal.tenant_id = "tenant-7"
 
@@ -200,5 +222,13 @@ class TestCreateNote:
             {"title": "T", "content": "B"},
             principal=principal,
         )
-        called = state.garden_writer.write_garden.call_args[0][0]
-        assert called.tenant_id == "tenant-7"
+        seed_data = state.garden_writer.write_seed.call_args[0][1]
+        assert seed_data["tenant_id"] == "tenant-7"
+
+    @pytest.mark.asyncio
+    async def test_runs_without_compiler(self, state: MagicMock) -> None:
+        state.ingest_compiler = None
+        result = await mcp_tools.create_note(state, {"title": "T", "content": "B"})
+        assert result["compiler_available"] is False
+        assert result["notes_created"] == 0
+        assert "seed_path" in result
