@@ -109,13 +109,23 @@ jobs:
           NEXT_PUBLIC_BSVIBE_DEMO: '1'
           NEXT_PUBLIC_API_URL: http://localhost:8900
         run: |
-          nohup pnpm exec next start -p "$FRONTEND_PORT" > /tmp/frontend.log 2>&1 &
+          # Diagnostic: confirm .next chunks exist before starting
+          echo "::group::.next/static chunks (first 5)"
+          ls .next/static/chunks/ | head -5
+          echo "::endgroup::"
+          # Bind explicit hostname; Next 15 has been observed returning
+          # 400 on /_next/* when the listening interface differs from
+          # the request host header on Linux runners.
+          nohup pnpm exec next start -H 0.0.0.0 -p "$FRONTEND_PORT" > /tmp/frontend.log 2>&1 &
           for _ in $(seq 1 30); do
             if curl -fsS -o /dev/null --max-time 2 "http://localhost:${FRONTEND_PORT}/"; then
               echo "frontend ready"; break
             fi
             sleep 2
           done
+          # Verify a real chunk is reachable; fail fast if not
+          CHUNK="$(ls .next/static/chunks/ | head -1)"
+          curl -sS -o /tmp/chunk-check.html -w "GET /_next/static/chunks/$CHUNK -> %{http_code}\n" "http://localhost:${FRONTEND_PORT}/_next/static/chunks/$CHUNK"
 
       - name: Install Playwright browsers
         working-directory: frontend
