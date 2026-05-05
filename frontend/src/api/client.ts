@@ -59,14 +59,18 @@ setOnAuthError(() => {
   }
 });
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(
+  path: string,
+  init?: RequestInit & { timeoutMs?: number },
+): Promise<T> {
   // Preserve the legacy "fall back to fetch on raw RequestInit" surface
   // so existing tests and call sites that build init by hand keep working.
   const method = (init?.method ?? "GET").toUpperCase();
   const headers = (init?.headers as Record<string, string> | undefined) ?? {};
   const body = init?.body;
+  const opts = init?.timeoutMs !== undefined ? { timeoutMs: init.timeoutMs } : undefined;
 
-  return apiClient.request<T>(path, { method, headers, body });
+  return apiClient.request<T>(path, { method, headers, body }, opts);
 }
 
 export const api = {
@@ -112,7 +116,10 @@ export const api = {
   }> => {
     const form = new FormData();
     form.append("file", file);
-    const token = getAccessToken();
+    // ``getAccessToken`` is async — without await we send
+    // ``Bearer [object Promise]`` and the backend bounces it as
+    // "Not enough segments". Surfaced during PR #44 QA.
+    const token = await getAccessToken();
     const resp = await fetch(`${BASE}/uploads`, {
       method: "POST",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -127,12 +134,16 @@ export const api = {
 
   // Run a plugin with a JSON input payload (e.g. {upload_id}). Wraps the
   // existing /run/{name} endpoint with a body, since `run()` above is
-  // body-less.
+  // body-less. Uses a 30-minute timeout because bulk imports
+  // (ai-memory-input + IngestCompiler) regularly take 10-30 minutes on
+  // local LLMs; the @bsvibe/api default of 30s would abort them
+  // mid-flight with an obscure "signal is aborted without reason".
   runWithInput: (name: string, input: Record<string, unknown>) =>
     request<{ name: string; results: unknown[] }>(`/run/${name}`, {
       method: "POST",
       body: JSON.stringify(input),
       headers: { "Content-Type": "application/json" },
+      timeoutMs: 30 * 60 * 1000,
     }),
 
   // Enable/Disable toggle
