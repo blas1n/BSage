@@ -1,0 +1,180 @@
+name: Demo smoke
+
+# Boots demo backend (Docker) + builds & serves demo frontend, runs the
+# @bsvibe/demo Playwright suite against the integrated stack.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  demo-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      COMPOSE_PROJECT: bsage-demo-ci
+      BACKEND_PORT: '8900'
+      FRONTEND_PORT: '3000'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        run: npm install -g pnpm@10
+
+      - name: Generate ephemeral demo secrets
+        run: |
+          {
+            echo "DEMO_JWT_SECRET=$(openssl rand -hex 32)"
+            echo "LLM_MODEL=mock"
+            echo "LLM_API_KEY="
+            echo "LLM_API_BASE="
+            echo "EMBEDDING_MODEL="
+            echo "EMBEDDING_API_KEY="
+            echo "EMBEDDING_API_BASE="
+            echo "SUPABASE_JWT_SECRET="
+            echo "SUPABASE_URL="
+            echo "SAFE_MODE=true"
+            echo "CORS_ORIGINS=[\"http://localhost:3000\"]"
+            echo "LOG_LEVEL=INFO"
+          } > deploy/.env.demo
+
+      - name: Prepare logs directory
+        run: mkdir -p logs-demo
+
+      - name: Build demo image
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          docker compose -p "$COMPOSE_PROJECT" \
+            -f deploy/docker-compose.demo.yml \
+            --env-file deploy/.env.demo \
+            build app
+
+      - name: Initialize vault volume permissions
+        run: |
+          # Named volume bsage-demo-vault is created root-owned by docker; the
+          # app process runs as `appuser` (Dockerfile) and AuditOutbox.mkdir
+          # fails with Errno 13 unless we pre-chown it.
+          docker compose -p "$COMPOSE_PROJECT" \
+            -f deploy/docker-compose.demo.yml \
+            --env-file deploy/.env.demo \
+            run --rm --user root --entrypoint sh app -c "chown -R appuser:appuser /app/vault-demo /app/.credentials"
+
+      - name: Boot demo backend stack
+        run: |
+          docker compose -p "$COMPOSE_PROJECT" \
+            -f deploy/docker-compose.demo.yml \
+            --env-file deploy/.env.demo \
+            up -d
+          for _ in $(seq 1 60); do
+            if curl -fsS -o /dev/null --max-time 2 "http://localhost:${BACKEND_PORT}/api/health"; then
+              echo "backend healthy"; break
+            fi
+            sleep 2
+          done
+
+      - name: Frontend deps
+        working-directory: frontend
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN || secrets.GITHUB_TOKEN }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Force playwright reuseExistingServer
+        working-directory: frontend
+        run: |
+          # Our manually-started next start on port 3000 must be reused;
+          # default config sets reuseExistingServer: !process.env.CI.
+          sed -i 's/reuseExistingServer: !process.env.CI/reuseExistingServer: true/' playwright.config.ts
+          # The webServer block defaults to BSAGE_TEST_FRONTEND_PORT=5173.
+          # If that port is free, Playwright spawns `next dev -p 5173`
+          # in parallel — and the dev server clobbers .next/static/chunks/
+          # with new hashes mid-test, so the static HTML we already served
+          # references chunk filenames that no longer exist (→ 400). Pin
+          # the test port to our prod-mode 3000 so Playwright sees it busy
+          # and does not start a competing server.
+
+      - name: Build frontend in demo mode
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_BSVIBE_DEMO: '1'
+          NEXT_PUBLIC_API_URL: http://localhost:8900
+        run: pnpm run build
+
+      - name: Start frontend in background
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_BSVIBE_DEMO: '1'
+          NEXT_PUBLIC_API_URL: http://localhost:8900
+        run: |
+          # Diagnostic: confirm .next chunks exist before starting
+          echo "::group::.next/static chunks (first 5)"
+          ls .next/static/chunks/ | head -5
+          echo "::endgroup::"
+          # Bind explicit hostname; Next 15 has been observed returning
+          # 400 on /_next/* when the listening interface differs from
+          # the request host header on Linux runners.
+          nohup pnpm exec next start -H 0.0.0.0 -p "$FRONTEND_PORT" > /tmp/frontend.log 2>&1 &
+          for _ in $(seq 1 30); do
+            if curl -fsS -o /dev/null --max-time 2 "http://localhost:${FRONTEND_PORT}/"; then
+              echo "frontend ready"; break
+            fi
+            sleep 2
+          done
+          # Verify a real chunk is reachable; fail fast if not
+          CHUNK="$(ls .next/static/chunks/ | head -1)"
+          curl -sS -o /tmp/chunk-check.html -w "GET /_next/static/chunks/$CHUNK -> %{http_code}\n" "http://localhost:${FRONTEND_PORT}/_next/static/chunks/$CHUNK"
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run demo smoke suite
+        working-directory: frontend
+        env:
+          DEMO_E2E_BASE_URL: http://localhost:3000
+          DEMO_E2E_API_URL: http://localhost:8900
+          # Pin Playwright's webServer/baseURL port to our `next start`
+          # port so the runner reuses the existing prod server instead of
+          # spawning a parallel `next dev` that clobbers .next chunks.
+          BSAGE_TEST_FRONTEND_PORT: '3000'
+        run: pnpm exec playwright test --grep @demo --project=chromium
+
+      - name: Frontend log (on failure)
+        if: failure()
+        run: tail -200 /tmp/frontend.log || true
+
+      - name: Upload Playwright trace + screenshots (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: |
+            frontend/test-results/
+            frontend/playwright-report/
+          retention-days: 7
+
+      - name: Demo backend logs (on failure)
+        if: failure()
+        run: |
+          docker compose -p "$COMPOSE_PROJECT" \
+            -f deploy/docker-compose.demo.yml \
+            --env-file deploy/.env.demo \
+            logs --tail=200 app
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker compose -p "$COMPOSE_PROJECT" \
+            -f deploy/docker-compose.demo.yml \
+            --env-file deploy/.env.demo \
+            down -v
