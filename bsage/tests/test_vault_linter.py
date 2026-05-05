@@ -107,12 +107,12 @@ class TestVaultLinter:
         """Notes with very old captured_at should be flagged as stale."""
 
         vault, writer = vault_and_writer
-        # Create a note manually with old date
-        note_dir = vault.root / "ideas"
+        # Create a note manually with old date in the maturity-based layout.
+        note_dir = vault.root / "garden" / "seedling"
         note_dir.mkdir(parents=True, exist_ok=True)
         old_note = note_dir / "old-note.md"
         old_content = (
-            "---\ntype: idea\nstatus: seed\nsource: test\n"
+            "---\nmaturity: seedling\nstatus: seed\nsource: test\n"
             "captured_at: 2020-01-01\n---\n\n# Old Note\n\nVery old."
         )
         old_note.write_text(old_content, encoding="utf-8")
@@ -140,10 +140,13 @@ class TestVaultLinter:
         linter = VaultLinter(vault=vault, garden_writer=writer, graph_store=mock_graph_store)
         await linter.lint()
 
-        # Check that a lint report note was written
-        insight_files = list((vault.root / "insights").glob("vault-lint-*.md"))
-        assert len(insight_files) >= 1
-        content = insight_files[0].read_text()
+        # Check that a lint report note was written. After the dynamic
+        # ontology refactor lint reports go to garden/seedling like any
+        # other write — Step B5 will likely promote the linter to write
+        # them straight to evergreen.
+        report_files = list((vault.root / "garden" / "seedling").glob("vault-lint-*.md"))
+        assert len(report_files) >= 1
+        content = report_files[0].read_text()
         assert "Vault Lint Report" in content
 
     @pytest.mark.asyncio

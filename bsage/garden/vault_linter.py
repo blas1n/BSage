@@ -68,20 +68,30 @@ class VaultLinter:
         self._stale_days = stale_days
 
     def _resolve_garden_dirs(self) -> list[str]:
-        """Build garden directory list from ontology or vault scan."""
+        """Garden directories the linter scans.
+
+        Post dynamic-ontology refactor: walks the maturity tree
+        (``garden/seedling``, ``garden/budding``, ``garden/evergreen``)
+        plus the ``garden/entities`` stub folder. Legacy ontology
+        entity-type folders (``ideas/``, ``insights/``, ...) still get
+        included so vaults from before the refactor keep linting until
+        they're migrated.
+        """
+        primary = ["garden/seedling", "garden/budding", "garden/evergreen", "garden/entities"]
+        legacy: list[str] = []
         if self._ontology:
-            return [
+            legacy = [
                 meta.get("folder", "").rstrip("/")
                 for meta in self._ontology.get_entity_types().values()
                 if meta.get("folder")
             ]
-        # Fallback: scan vault root for non-system directories
-        dirs: list[str] = []
-        skip = {"seeds", "actions", "tmp", "node_modules"}
-        for child in sorted(self._vault.root.iterdir()):
-            if child.is_dir() and not child.name.startswith((".", "_")) and child.name not in skip:
-                dirs.append(child.name)
-        return dirs
+        seen: set[str] = set()
+        merged: list[str] = []
+        for entry in [*primary, *legacy]:
+            if entry and entry not in seen and (self._vault.root / entry).exists():
+                seen.add(entry)
+                merged.append(entry)
+        return merged
 
     async def lint(self) -> LintReport:
         """Run all lint checks and write a report note.

@@ -37,6 +37,11 @@ class GardenNote:
         note_type: DEPRECATED. Optional kind tag preserved for back-compat
             with vaults from before the dynamic-ontology refactor; new
             writes leave it ``None``.
+        maturity: Andy Matuschak-style growth stage —
+            ``seedling`` (just captured), ``budding`` (in progress), or
+            ``evergreen`` (curated). Drives the vault folder location
+            via :meth:`GardenWriter._resolve_folder`. Defaults to
+            ``seedling`` for new captures.
         tags: Free-form lowercase content tags (e.g. "self-hosting",
             "reverse-proxy"). What the note is ABOUT, not what KIND it is.
         entities: Wikilink targets (e.g. "[[Vaultwarden]]") extracted
@@ -55,6 +60,7 @@ class GardenNote:
     content: str
     source: str
     note_type: str | None = None
+    maturity: str = "seedling"
     related: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
     entities: list[str] = field(default_factory=list)

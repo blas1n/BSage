@@ -140,8 +140,8 @@ class TestIngestCompilerCompile:
         # to classify notes, so we no longer fan out to per-type folders.
         # New notes land in the temporary "ideas/" holding area until
         # Step B3 swaps in the maturity-based layout.
-        ideas_dir = vault.root / "ideas"
-        md_files = list(ideas_dir.glob("*.md"))
+        seedling_dir = vault.root / "garden" / "seedling"
+        md_files = list(seedling_dir.glob("*.md"))
         assert len(md_files) >= 1
         content = md_files[0].read_text()
         assert "Knowledge Graphs Overview" in content
@@ -166,11 +166,10 @@ class TestIngestCompilerCompile:
             GardenNote(
                 title="AI Research",
                 content="Early research on AI.",
-                note_type="insight",
                 source="manual",
             )
         )
-        existing_path = "insights/ai-research.md"
+        existing_path = "garden/seedling/ai-research.md"
 
         plan = json.dumps(
             [
@@ -219,11 +218,10 @@ class TestIngestCompilerCompile:
             GardenNote(
                 title="Machine Learning",
                 content="ML is a subset of AI.",
-                note_type="idea",
                 source="manual",
             )
         )
-        existing_path = "ideas/machine-learning.md"
+        existing_path = "garden/seedling/machine-learning.md"
 
         plan = json.dumps(
             [
@@ -394,8 +392,7 @@ class TestIngestCompilerCompile:
 
         assert result.notes_created == 1
         vault = vault_and_writer[0]
-        # Folder is the temporary "ideas/" holding area post-refactor.
-        note_files = list((vault.root / "ideas").glob("*.md"))
+        note_files = list((vault.root / "garden" / "seedling").glob("*.md"))
         content = note_files[0].read_text()
         assert "[[Machine Learning]]" in content or "Machine Learning" in content
 

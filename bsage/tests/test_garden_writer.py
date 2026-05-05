@@ -97,12 +97,15 @@ class TestWriteGarden:
         result = await writer.write_garden(note)
 
         assert result.exists()
-        # v2.2: notes go to entity-type folders (ideas/) not garden/idea/
-        assert result.parent == tmp_path / "ideas"
+        # Maturity-based layout: garden/seedling for fresh captures.
+        assert result.parent == tmp_path / "garden" / "seedling"
 
         content = result.read_text()
         assert content.startswith("---\n")
+        # The legacy ``type: idea`` field is preserved when the caller still
+        # passes a note_type (1-minor back-compat shim).
         assert "type: idea" in content
+        assert "maturity: seedling" in content
         assert "status: seed" in content
         assert "source: garden-writer" in content
         assert "captured_at:" in content
@@ -425,9 +428,46 @@ class TestHandleWriteNote:
         assert Path(result["path"]).exists()
 
     @pytest.mark.asyncio
-    async def test_handle_write_note_lands_in_default_folder(self, tmp_path: Path) -> None:
-        """Without note_type, new notes land in the temporary 'ideas/' holding
-        area until Step B3 ships the maturity-based layout."""
+    async def test_write_garden_evergreen_lands_in_evergreen_folder(self, tmp_path: Path) -> None:
+        vault = Vault(tmp_path)
+        vault.ensure_dirs()
+        writer = GardenWriter(vault)
+
+        path = await writer.write_garden(
+            GardenNote(
+                title="Stable Idea",
+                content="...",
+                source="manual",
+                maturity="evergreen",
+            )
+        )
+        assert path.parent == tmp_path / "garden" / "evergreen"
+        assert "maturity: evergreen" in path.read_text()
+
+    @pytest.mark.asyncio
+    async def test_write_garden_unknown_maturity_falls_back_to_seedling(
+        self, tmp_path: Path
+    ) -> None:
+        # Typo / out-of-band value must not strand the note in
+        # ``garden/banana`` — fall back to seedling so it stays linkable.
+        vault = Vault(tmp_path)
+        vault.ensure_dirs()
+        writer = GardenWriter(vault)
+
+        path = await writer.write_garden(
+            GardenNote(
+                title="Typo",
+                content="...",
+                source="manual",
+                maturity="banana",
+            )
+        )
+        assert path.parent == tmp_path / "garden" / "seedling"
+
+    @pytest.mark.asyncio
+    async def test_handle_write_note_lands_in_seedling_folder(self, tmp_path: Path) -> None:
+        """Without note_type, new notes land in garden/seedling/ — the
+        first stage of the Andy Matuschak growth cycle."""
         vault = Vault(tmp_path)
         vault.ensure_dirs()
         writer = GardenWriter(vault)
@@ -435,10 +475,11 @@ class TestHandleWriteNote:
         result = await writer.handle_write_note({"title": "Minimal", "content": "Body"})
 
         path = Path(result["path"])
-        assert path.parent.name == "ideas"
-        # Frontmatter no longer carries a "type:" field — tags carry the
-        # meaning instead.
+        assert path.parent.name == "seedling"
+        assert path.parent.parent.name == "garden"
+        # Frontmatter carries maturity but not the legacy "type:" field.
         body = path.read_text()
+        assert "maturity: seedling" in body
         assert "type: idea" not in body
 
     @pytest.mark.asyncio

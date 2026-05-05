@@ -94,23 +94,25 @@ class _WriterIOMixin:
     ) -> Path:  # pragma: no cover - implemented in GardenWriter
         ...
 
-    def _resolve_folder(self, note_type: str | None) -> str:
-        """Resolve the vault folder for a note type using ontology mapping.
+    def _resolve_folder(self, note: GardenNote | None = None) -> str:
+        """Resolve the vault folder for a note from its maturity.
 
-        Notes written without ``note_type`` (the dynamic-ontology default
-        post-refactor) land in ``ideas/`` as a temporary holding area
-        until Step B3 introduces the maturity-based layout. Existing
-        ontology entries still take precedence so vaults from before the
-        refactor keep their folder shape.
+        Andy Matuschak-style three-stage layout: ``garden/seedling``
+        (just captured), ``garden/budding`` (in progress), and
+        ``garden/evergreen`` (curated). Identity comes from connections,
+        not from note kind, so the folder reflects where in the growth
+        cycle the note sits — not what it's about.
+
+        ``None`` defaults to ``seedling`` for the bulk-import path. Any
+        unrecognised maturity string falls back to ``seedling`` so a
+        typo in frontmatter doesn't strand a note in some
+        ``garden/banana/`` folder.
         """
-        if note_type and self._ontology:
-            folder = self._ontology.get_entity_folder(note_type)
-            if folder:
-                return folder.rstrip("/")
-        if not note_type:
-            return "ideas"
-        # Fallback: use type name as folder (e.g. "idea" → "ideas")
-        return f"{note_type}s" if not note_type.endswith("s") else note_type
+        valid = {"seedling", "budding", "evergreen"}
+        maturity = (note.maturity if note else None) or "seedling"
+        if maturity not in valid:
+            maturity = "seedling"
+        return f"garden/{maturity}"
 
     def resolve_plugin_state_path(self, plugin_name: str, subpath: str = "_state.json") -> Path:
         """Resolve a plugin state file path within the vault.
@@ -215,8 +217,10 @@ class _WriterIOMixin:
             date_str = now.strftime("%Y-%m-%d")
             slug = slugify(note.title)
 
-            # v2.2: resolve folder from ontology or fall back to type name
-            folder = self._resolve_folder(note.note_type)
+            # Maturity-based layout: garden/seedling, /budding, /evergreen.
+            # Folder no longer reflects what the note is ABOUT — only where
+            # in the growth cycle it sits.
+            folder = self._resolve_folder(note)
             type_dir = self._vault.resolve_path(folder)
             type_dir.mkdir(parents=True, exist_ok=True)
 
@@ -229,6 +233,7 @@ class _WriterIOMixin:
             metadata: dict = {
                 "status": "seed",
                 "source": note.source,
+                "maturity": note.maturity,
                 "captured_at": date_str,
                 "confidence": note.confidence,
                 "knowledge_layer": note.knowledge_layer,
