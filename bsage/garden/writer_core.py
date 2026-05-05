@@ -507,26 +507,39 @@ class _WriterMutationMixin:
 
         evaluator = MaturityEvaluator(graph, config)
 
-        # v2.2: scan all entity-type folders, not just garden/
-        scan_dirs = [
-            "ideas",
-            "insights",
-            "projects",
-            "people",
-            "events",
-            "tasks",
-            "facts",
-            "preferences",
-        ]
-        # Also scan legacy garden/ if it exists
-        scan_dirs.append("garden")
+        # Maturity-based layout: scan the seedling/budding/evergreen tree
+        # plus any other ``garden/<subdir>/`` (legacy ``garden/idea/`` etc.)
+        # plus any non-system top-level directory (very legacy ``ideas/``).
+        # Notes already in the right maturity folder are picked up once;
+        # notes in legacy paths are found and promoted in place (the
+        # migration CLI handles the actual move).
+        legacy_skip = {"seeds", "actions", "tmp", "node_modules", "garden", ".bsage"}
 
         def _collect_md() -> list[Path]:
             files: list[Path] = []
-            for d in scan_dirs:
-                base = self._vault.root / d
+            seen: set[Path] = set()
+
+            def _add(base: Path) -> None:
+                resolved = base.resolve()
+                if resolved in seen:
+                    return
+                seen.add(resolved)
                 if base.is_dir():
                     files.extend(base.rglob("*.md"))
+
+            garden_root = self._vault.root / "garden"
+            if garden_root.is_dir():
+                for child in garden_root.iterdir():
+                    if child.is_dir() and not child.name.startswith((".", "_")):
+                        _add(child)
+
+            for child in sorted(self._vault.root.iterdir()):
+                if not child.is_dir() or child.name.startswith((".", "_")):
+                    continue
+                if child.name in legacy_skip:
+                    continue
+                _add(child)
+
             return sorted(files)
 
         md_files = await asyncio.to_thread(_collect_md)
@@ -538,26 +551,91 @@ class _WriterMutationMixin:
             content = await asyncio.to_thread(md_file.read_text, "utf-8")
             fm = extract_frontmatter(content)
             current_status = fm.get("status", "seed")
+            current_maturity = fm.get("maturity") or _maturity_from_status(current_status)
 
             new_status = await evaluator.evaluate(rel_path, current_status)
-            if new_status is not None:
-                await self.update_frontmatter_status(md_file, new_status.value)
-                promoted += 1
-                details.append(
-                    {
-                        "path": rel_path,
-                        "from": current_status,
-                        "to": new_status.value,
-                    }
-                )
-                logger.info(
-                    "note_promoted",
-                    path=rel_path,
-                    from_status=current_status,
-                    to_status=new_status.value,
-                )
+            if new_status is None:
+                continue
+
+            # MaturityEvaluator returns NoteMaturity values which already
+            # speak the seedling/budding/evergreen vocabulary used by the
+            # folder layout — promote both the legacy ``status`` field and
+            # the new ``maturity`` field, then move the file when the
+            # destination folder changes.
+            target_maturity = new_status.value
+            new_path = await self._apply_maturity_promotion(
+                md_file=md_file,
+                target_maturity=target_maturity,
+                current_maturity=current_maturity,
+            )
+            promoted += 1
+            details.append(
+                {
+                    "path": str(new_path.relative_to(self._vault.root)),
+                    "from": current_status,
+                    "to": target_maturity,
+                }
+            )
+            logger.info(
+                "note_promoted",
+                path=rel_path,
+                from_status=current_status,
+                to_status=target_maturity,
+                new_path=str(new_path.relative_to(self._vault.root)),
+            )
 
         return {"promoted": promoted, "checked": len(md_files), "details": details}
+
+    async def _apply_maturity_promotion(
+        self,
+        *,
+        md_file: Path,
+        target_maturity: str,
+        current_maturity: str,
+    ) -> Path:
+        """Update frontmatter ``status`` + ``maturity`` and move file when the
+        target folder changes. Returns the (possibly new) path."""
+        await self.update_frontmatter_status(md_file, target_maturity)
+        await self._set_frontmatter_field(md_file, "maturity", target_maturity)
+
+        if target_maturity == current_maturity:
+            return md_file
+        if not str(md_file).startswith(str(self._vault.root)):
+            return md_file
+        rel = md_file.relative_to(self._vault.root)
+        # Only auto-move notes that already live in the maturity tree —
+        # legacy paths get left in place for the migration CLI.
+        if not str(rel).startswith("garden/"):
+            return md_file
+
+        target_dir = self._vault.resolve_path(f"garden/{target_maturity}")
+        target_dir.mkdir(parents=True, exist_ok=True)
+        new_path = target_dir / md_file.name
+        if new_path == md_file:
+            return md_file
+        if new_path.exists():
+            new_path = self._find_dedup_path(target_dir, md_file.stem)
+        await asyncio.to_thread(md_file.rename, new_path)
+        return new_path
+
+    async def _set_frontmatter_field(self, path: Path, key: str, value: Any) -> None:
+        """Set a single frontmatter field, preserving body and other fields."""
+        async with self._garden_lock:
+            text = await asyncio.to_thread(path.read_text, "utf-8")
+            if not text.startswith("---\n"):
+                return
+            closing = text.find("\n---\n", 4)
+            if closing == -1:
+                return
+            try:
+                fm = yaml.safe_load(text[4:closing]) or {}
+            except yaml.YAMLError:
+                return
+            if not isinstance(fm, dict):
+                return
+            fm[key] = value
+            new_text = build_frontmatter(fm) + text[closing + 5 :]
+            await asyncio.to_thread(path.write_text, new_text, encoding="utf-8")
 
     async def update_note(
         self, path: str, content: str, *, preserve_frontmatter: bool = True
@@ -985,6 +1063,25 @@ class GardenWriter(_WriterIOMixin, _WriterMutationMixin, _WriterToolHandlersMixi
         # Fallback: use timestamp-based name to guarantee uniqueness
         ts = datetime.now(tz=UTC).strftime("%Y%m%d%H%M%S%f")
         return directory / f"{slug}_{ts}.md"
+
+
+def _maturity_from_status(status: str) -> str:
+    """Map a legacy ``status:`` value onto the maturity vocabulary.
+
+    Pre-refactor notes wrote ``status: seed | growing | evergreen``. The
+    new layout uses ``maturity: seedling | budding | evergreen``. The
+    promote_maturity migration writes both fields; this helper covers
+    pre-migration reads so the comparison "did the maturity change?"
+    works on legacy notes.
+    """
+    mapping = {
+        "seed": "seedling",
+        "seedling": "seedling",
+        "growing": "budding",
+        "budding": "budding",
+        "evergreen": "evergreen",
+    }
+    return mapping.get(status.strip().lower(), "seedling")
 
 
 def _create_entity_stub(file_path: Path, name: str, first_mention: str) -> None:

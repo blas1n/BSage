@@ -132,3 +132,53 @@ class TestPromoteMaturity:
         result = await writer.promote_maturity(graph)
         assert result["promoted"] == 0
         assert result["checked"] == 0
+
+    async def test_promotion_moves_file_between_maturity_folders(
+        self, vault: Vault, writer: GardenWriter
+    ) -> None:
+        """Step B3c: when maturity changes the file relocates from
+        ``garden/seedling`` → ``garden/budding`` and the frontmatter
+        ``maturity:`` field is rewritten."""
+        path = vault.root / "garden" / "seedling" / "moving.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "---\nmaturity: seedling\nstatus: seedling\n---\n# Moving\nbody.\n",
+            encoding="utf-8",
+        )
+
+        graph = AsyncMock()
+        graph.count_relationships_for_entity = AsyncMock(return_value=4)
+        graph.count_distinct_sources = AsyncMock(return_value=3)
+        graph.get_entity_updated_at = AsyncMock(return_value=None)
+
+        result = await writer.promote_maturity(graph)
+
+        assert result["promoted"] == 1
+        new_rel = result["details"][0]["path"]
+        assert new_rel.startswith("garden/budding/")
+        new_path = vault.root / new_rel
+        assert new_path.exists()
+        assert not path.exists()
+        body = new_path.read_text()
+        assert "maturity: budding" in body
+
+    async def test_promotion_in_legacy_folder_updates_in_place(
+        self, vault: Vault, writer: GardenWriter
+    ) -> None:
+        """Notes still living in legacy paths (``garden/idea/``...) are
+        promoted via frontmatter only — the migration CLI handles the
+        actual move so promote_maturity stays idempotent on unmigrated
+        vaults."""
+        legacy = _create_garden_note(vault.root, "garden/idea/legacy.md", status="seed")
+
+        graph = AsyncMock()
+        graph.count_relationships_for_entity = AsyncMock(return_value=3)
+        graph.count_distinct_sources = AsyncMock(return_value=1)
+        graph.get_entity_updated_at = AsyncMock(return_value=None)
+
+        result = await writer.promote_maturity(graph)
+        assert result["promoted"] == 1
+        # File stayed put; only frontmatter changed.
+        assert legacy.exists()
+        body = legacy.read_text()
+        assert "maturity: seedling" in body
