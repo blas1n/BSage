@@ -51,14 +51,31 @@ jobs:
       - name: Prepare logs directory
         run: mkdir -p logs-demo
 
-      - name: Boot demo backend stack
+      - name: Build demo image
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           docker compose -p "$COMPOSE_PROJECT" \
             -f deploy/docker-compose.demo.yml \
             --env-file deploy/.env.demo \
-            up -d --build
+            build app
+
+      - name: Initialize vault volume permissions
+        run: |
+          # Named volume bsage-demo-vault is created root-owned by docker; the
+          # app process runs as `appuser` (Dockerfile) and AuditOutbox.mkdir
+          # fails with Errno 13 unless we pre-chown it.
+          docker compose -p "$COMPOSE_PROJECT" \
+            -f deploy/docker-compose.demo.yml \
+            --env-file deploy/.env.demo \
+            run --rm --user root --entrypoint sh app -c "chown -R appuser:appuser /app/vault-demo /app/.credentials"
+
+      - name: Boot demo backend stack
+        run: |
+          docker compose -p "$COMPOSE_PROJECT" \
+            -f deploy/docker-compose.demo.yml \
+            --env-file deploy/.env.demo \
+            up -d
           for _ in $(seq 1 60); do
             if curl -fsS -o /dev/null --max-time 2 "http://localhost:${BACKEND_PORT}/api/health"; then
               echo "backend healthy"; break
