@@ -97,7 +97,12 @@ export function KnowledgeGraphView() {
   const [noteLoading, setNoteLoading] = useState(false);
   const [backlinks, setBacklinks] = useState<VaultBacklink[]>([]);
   const [communities, setCommunities] = useState<VaultCommunity[]>([]);
-  const [colorMode, setColorMode] = useState<"group" | "community">("group");
+  // Step B4 of the dynamic-ontology refactor: identity in this graph
+  // comes from connections (Louvain communities), not folder labels —
+  // default to community coloring so users see the emergent structure
+  // first. Group mode is still selectable for users who want the
+  // file-system-shape view.
+  const [colorMode, setColorMode] = useState<"group" | "community">("community");
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<unknown>(null);
   const labelWidthCacheRef = useRef<Map<string, number>>(new Map());
