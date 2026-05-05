@@ -95,6 +95,13 @@ jobs:
           # Our manually-started next start on port 3000 must be reused;
           # default config sets reuseExistingServer: !process.env.CI.
           sed -i 's/reuseExistingServer: !process.env.CI/reuseExistingServer: true/' playwright.config.ts
+          # The webServer block defaults to BSAGE_TEST_FRONTEND_PORT=5173.
+          # If that port is free, Playwright spawns `next dev -p 5173`
+          # in parallel — and the dev server clobbers .next/static/chunks/
+          # with new hashes mid-test, so the static HTML we already served
+          # references chunk filenames that no longer exist (→ 400). Pin
+          # the test port to our prod-mode 3000 so Playwright sees it busy
+          # and does not start a competing server.
 
       - name: Build frontend in demo mode
         working-directory: frontend
@@ -136,6 +143,10 @@ jobs:
         env:
           DEMO_E2E_BASE_URL: http://localhost:3000
           DEMO_E2E_API_URL: http://localhost:8900
+          # Pin Playwright's webServer/baseURL port to our `next start`
+          # port so the runner reuses the existing prod server instead of
+          # spawning a parallel `next dev` that clobbers .next chunks.
+          BSAGE_TEST_FRONTEND_PORT: '3000'
         run: pnpm exec playwright test --grep @demo --project=chromium
 
       - name: Frontend log (on failure)
