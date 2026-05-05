@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DemoBanner, isDemoMode, useAutoDemoSession } from "@bsvibe/demo";
 import { useApproval } from "./hooks/useApproval";
-import { consumeAuthCallback, useAuth } from "./hooks/useAuth";
+import { consumeAuthCallback, injectDemoToken, useAuth } from "./hooks/useAuth";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { ApprovalModal } from "./components/approval/ApprovalModal";
 import { EventsProvider } from "./contexts/EventsContext";
@@ -83,7 +83,14 @@ function RouteContent({ hash }: { hash: string }) {
 }
 
 function DemoApp() {
-  const { loading, error } = useAutoDemoSession(DEMO_API_URL);
+  const { loading, error } = useAutoDemoSession(DEMO_API_URL, {
+    onSessionReady: ({ token, expiresIn }) => {
+      // Stash the demo JWT so getAccessToken() returns it for every
+      // fetch — without this, Settings/Vault calls go out unauth'd
+      // and the dashboard sits empty.
+      injectDemoToken(token, expiresIn);
+    },
+  });
   const hash = useHashRoute();
   const { connectionState, events, clearEvents } = useWebSocket({ enabled: !loading && !error });
   const { current: approvalRequest, respond: respondApproval, pendingCount } = useApproval();
