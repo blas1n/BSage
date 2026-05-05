@@ -228,25 +228,41 @@ class IngestCompiler:
         if not items:
             return _empty_compile_result()
 
+        chunks = _chunk_batch(items, self._batch_char_budget)
         await emit_event(
             self._event_bus,
             "INGEST_COMPILE_BATCH_START",
-            {"source": seed_source, "item_count": len(items)},
+            {"source": seed_source, "item_count": len(items), "chunk_count": len(chunks)},
         )
 
-        chunks = _chunk_batch(items, self._batch_char_budget)
         actions_taken: list[UpdateAction] = []
         notes_created = 0
         notes_updated = 0
         llm_calls = 0
         chunk_failures = 0
 
-        for chunk in chunks:
+        for chunk_index, chunk in enumerate(chunks):
+            # Per-chunk progress event so a long bulk import can stream
+            # progress to a UI loading bar — see plugin runner / SSE
+            # bridges. Plain payload (no exception details) so the event
+            # bus stays free of large blobs.
+            await emit_event(
+                self._event_bus,
+                "INGEST_COMPILE_BATCH_CHUNK_START",
+                {
+                    "source": seed_source,
+                    "chunk_index": chunk_index,
+                    "chunk_count": len(chunks),
+                    "chunk_size": len(chunk),
+                },
+            )
+
             # Per-chunk related lookup — each chunk gets vault context
             # relevant to ITS own seeds, not items 1-3 of the whole
             # batch. Lets the LLM reuse / update existing notes
             # instead of always creating new ones.
             chunk_query = "\n\n".join(item.content[:500] for item in chunk)
+            chunk_result: CompileResult | None = None
             try:
                 related_context = await self._find_related(chunk_query)
 
@@ -262,13 +278,34 @@ class IngestCompiler:
                 logger.warning(
                     "ingest_compile_chunk_failed",
                     source=seed_source,
+                    chunk_index=chunk_index,
                     chunk_size=len(chunk),
                     exc_info=True,
+                )
+                await emit_event(
+                    self._event_bus,
+                    "INGEST_COMPILE_BATCH_CHUNK_FAILED",
+                    {
+                        "source": seed_source,
+                        "chunk_index": chunk_index,
+                        "chunk_count": len(chunks),
+                    },
                 )
                 continue
             actions_taken.extend(chunk_result.actions_taken)
             notes_created += chunk_result.notes_created
             notes_updated += chunk_result.notes_updated
+            await emit_event(
+                self._event_bus,
+                "INGEST_COMPILE_BATCH_CHUNK_DONE",
+                {
+                    "source": seed_source,
+                    "chunk_index": chunk_index,
+                    "chunk_count": len(chunks),
+                    "notes_created": chunk_result.notes_created,
+                    "notes_updated": chunk_result.notes_updated,
+                },
+            )
 
         await emit_event(
             self._event_bus,

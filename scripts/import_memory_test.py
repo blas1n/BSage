@@ -18,7 +18,7 @@ import shutil
 import time
 from pathlib import Path
 
-from bsage.core.runtime_config import RuntimeConfig
+from bsage.core.events import Event, EventBus, EventType
 from bsage.garden.community import detect_communities
 from bsage.garden.graph_extractor import GraphExtractor
 from bsage.garden.ingest_compiler import (
@@ -63,16 +63,103 @@ async def main() -> None:
     vault = Vault(VAULT_ROOT)
     vault.ensure_dirs()
 
-    runtime_config = RuntimeConfig(
-        llm_model=MODEL,
-        llm_api_key="",
-        llm_api_base=API_BASE,
-        bsgateway_url="",
-        safe_mode=False,
-    )
-    from bsage.core.llm import LiteLLMClient
+    # Direct LlmClient adapter — bypasses BSage's LiteLLMClient so we
+    # can hand qwen3 a generous per-attempt timeout (default is too
+    # tight for a 14B model on a consumer Mac). 5 retries × 300s gives
+    # the model enough time to walk through 30+ chunks without the
+    # FallbackChain bailing on a transient slow-down.
+    from bsvibe_llm import LlmClient, LlmSettings, RunAuditMetadata
 
-    llm = LiteLLMClient(runtime_config=runtime_config)
+    class _DirectLlm:
+        def __init__(self) -> None:
+            settings = LlmSettings(
+                bsgateway_url="",
+                model=MODEL,
+                retry_max_attempts=5,
+                retry_base_delay_s=2.0,
+            )
+            self._client = LlmClient(settings=settings)
+
+        async def chat(
+            self,
+            system: str,
+            messages: list,
+            tools=None,
+            tool_handler=None,
+            max_rounds: int = 10,
+            suppress_reasoning: bool = False,
+        ) -> str:
+            full = [{"role": "system", "content": system}, *messages]
+            result = await self._client.complete(
+                messages=full,
+                metadata=RunAuditMetadata(tenant_id="test", run_id="memory-import"),
+                direct=True,
+                timeout_s=300.0,
+                extra={"api_base": API_BASE},
+                suppress_reasoning=suppress_reasoning,
+            )
+            return result.text
+
+    llm = _DirectLlm()
+
+    # Live progress: subscribe to compile_batch chunk events so the
+    # terminal shows what stage we're in (qwen3:14b on consumer Mac
+    # can take ~45-90s per chunk; without progress logs the run looks
+    # frozen).
+    event_bus = EventBus()
+    bus_state = {"start_at": None, "chunk_started_at": None}
+
+    class _ProgressLogger:
+        async def on_event(self, event: Event) -> None:
+            etype = event.event_type
+            payload = event.payload
+            now = time.monotonic()
+            if etype is EventType.INGEST_COMPILE_BATCH_START:
+                bus_state["start_at"] = now
+                print(
+                    f"[bus] BATCH_START items={payload.get('item_count')} "
+                    f"chunks={payload.get('chunk_count')}",
+                    flush=True,
+                )
+            elif etype is EventType.INGEST_COMPILE_BATCH_CHUNK_START:
+                bus_state["chunk_started_at"] = now
+                print(
+                    f"[bus] CHUNK_START "
+                    f"{payload.get('chunk_index') + 1}/{payload.get('chunk_count')} "
+                    f"size={payload.get('chunk_size')}",
+                    flush=True,
+                )
+            elif etype is EventType.INGEST_COMPILE_BATCH_CHUNK_DONE:
+                started = bus_state.get("chunk_started_at") or now
+                print(
+                    f"[bus] CHUNK_DONE  "
+                    f"{payload.get('chunk_index') + 1}/{payload.get('chunk_count')} "
+                    f"created={payload.get('notes_created')} "
+                    f"updated={payload.get('notes_updated')} "
+                    f"({now - started:.1f}s)",
+                    flush=True,
+                )
+            elif etype is EventType.INGEST_COMPILE_BATCH_CHUNK_FAILED:
+                started = bus_state.get("chunk_started_at") or now
+                print(
+                    f"[bus] CHUNK_FAILED "
+                    f"{payload.get('chunk_index') + 1}/{payload.get('chunk_count')} "
+                    f"({now - started:.1f}s)",
+                    flush=True,
+                )
+            elif etype is EventType.INGEST_COMPILE_BATCH_COMPLETE:
+                started = bus_state.get("start_at") or now
+                print(
+                    f"[bus] BATCH_COMPLETE "
+                    f"created={payload.get('notes_created')} "
+                    f"updated={payload.get('notes_updated')} "
+                    f"llm_calls={payload.get('llm_calls')} "
+                    f"({now - started:.1f}s)",
+                    flush=True,
+                )
+
+    event_bus.subscribe(_ProgressLogger())
+
     writer = GardenWriter(vault)
 
     import os
@@ -89,7 +176,7 @@ async def main() -> None:
         garden_writer=writer,
         llm_client=llm,
         retriever=None,
-        event_bus=None,
+        event_bus=event_bus,
         max_updates=20,
         batch_char_budget=budget,
     )

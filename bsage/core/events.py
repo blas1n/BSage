@@ -53,6 +53,9 @@ class EventType(Enum):
     INGEST_COMPILE_START = "ingest_compile_start"
     INGEST_COMPILE_COMPLETE = "ingest_compile_complete"
     INGEST_COMPILE_BATCH_START = "ingest_compile_batch_start"
+    INGEST_COMPILE_BATCH_CHUNK_START = "ingest_compile_batch_chunk_start"
+    INGEST_COMPILE_BATCH_CHUNK_DONE = "ingest_compile_batch_chunk_done"
+    INGEST_COMPILE_BATCH_CHUNK_FAILED = "ingest_compile_batch_chunk_failed"
     INGEST_COMPILE_BATCH_COMPLETE = "ingest_compile_batch_complete"
 
     # Credentials
