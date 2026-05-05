@@ -1,13 +1,26 @@
-"""LiteLLM client — unified LLM interface via litellm.acompletion."""
+"""LiteLLMClient — high-level chat + tool-loop adapter on top of bsvibe-llm.
+
+The BSage entry point for all LLM completions. Owns the system-prompt /
+tool-loop semantics that BSage skills expect; defers the actual vendor
+call to :class:`bsvibe_llm.LlmClient` so retry, fallback, run-audit
+metadata, and provider-aware reasoning suppression live in one place
+(shared with BSNexus, BSGateway, etc).
+
+Direct ``litellm`` usage is intentionally absent here — see
+``bsage/garden/embedder.py`` (embedding-only) and
+``bsage/garden/ingest_compiler.py`` (model registry lookup) for the only
+remaining call sites, both of which use litellm primitives that
+``bsvibe-llm`` does not (yet) wrap.
+"""
 
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
-import litellm
 import structlog
-from litellm.types.utils import Choices, Message, ModelResponse
+from bsvibe_llm import LlmClient, LlmSettings, RunAuditMetadata
+from litellm.types.utils import Message
 
 from bsage.core.skill_context import ToolHandler
 
@@ -18,10 +31,11 @@ logger = structlog.get_logger(__name__)
 
 
 class LiteLLMClient:
-    """Wrapper around litellm.acompletion that reads config per-call.
+    """High-level chat client backed by ``bsvibe_llm.LlmClient``.
 
-    Holds a reference to a RuntimeConfig instance so that LLM model,
-    API key, and API base can be changed at runtime without restart.
+    Holds a reference to a RuntimeConfig instance so model, API key, base
+    URL, and gateway URL can change at runtime without restart — settings
+    are rebuilt per call.
     """
 
     def __init__(self, runtime_config: RuntimeConfig) -> None:
@@ -34,12 +48,9 @@ class LiteLLMClient:
         tools: list[dict] | None = None,
         tool_handler: ToolHandler | None = None,
         max_rounds: int = 10,
+        suppress_reasoning: bool = False,
     ) -> str:
-        """Send a chat completion request via litellm.
-
-        When ``tools`` and ``tool_handler`` are provided, runs a tool-use
-        loop: the LLM can return tool_calls which are executed via
-        ``tool_handler`` and fed back until a final text response.
+        """Send a chat completion, optionally running a tool-use loop.
 
         Args:
             system: System prompt.
@@ -47,17 +58,22 @@ class LiteLLMClient:
             tools: Optional OpenAI-format tool definitions.
             tool_handler: Optional async callback (tool_call_id, name, args) -> result JSON.
             max_rounds: Max tool-use round-trips (only used with tools).
-
-        Returns:
-            The assistant's response text.
+            suppress_reasoning: When True, disable chain-of-thought for
+                reasoning-capable providers (Anthropic extended thinking,
+                OpenAI o-series, Ollama reasoning models, mlx-lm/vllm).
+                Compile-time call sites that want short structured output
+                should set this.
         """
         work_messages = [{"role": "system", "content": system}, *messages]
 
         if not tools or not tool_handler:
             logger.info(
-                "llm_request", model=self._config.llm_model, message_count=len(work_messages)
+                "llm_request",
+                model=self._config.llm_model,
+                message_count=len(work_messages),
+                suppress_reasoning=suppress_reasoning,
             )
-            msg = await self._complete(work_messages)
+            msg = await self._complete(work_messages, suppress_reasoning=suppress_reasoning)
             text = msg.content or ""
             logger.info("llm_response", model=self._config.llm_model, length=len(text))
             return text
@@ -69,7 +85,9 @@ class LiteLLMClient:
                 round=round_num,
                 message_count=len(work_messages),
             )
-            assistant_msg = await self._complete(work_messages, tools=tools)
+            assistant_msg = await self._complete(
+                work_messages, tools=tools, suppress_reasoning=suppress_reasoning
+            )
 
             tool_calls = assistant_msg.tool_calls
             if not tool_calls:
@@ -99,27 +117,60 @@ class LiteLLMClient:
                 break
         return last_text
 
+    # -- internals -----------------------------------------------------------
+
+    def _build_settings(self) -> LlmSettings:
+        bsgateway_url = getattr(self._config, "bsgateway_url", "") or ""
+        return LlmSettings(
+            model=self._config.llm_model,
+            bsgateway_url=bsgateway_url,
+            route_default="bsgateway" if bsgateway_url else "direct",
+        )
+
+    def _build_metadata(self) -> RunAuditMetadata:
+        # BSage is a single-user system; the gateway-side audit pipeline
+        # accepts these placeholders without skipping audit.
+        return RunAuditMetadata(tenant_id="bsage", run_id="local", agent_name="bsage")
+
+    def _build_extra(self) -> dict[str, Any]:
+        """Forward BSage's per-call api_key / api_base via LlmClient extra.
+
+        bsvibe-llm doesn't model api_key on LlmSettings (it relies on env
+        vars by convention). We pass it explicitly so BSage's existing
+        config-driven flow keeps working with no env-var changes.
+        """
+        extra: dict[str, Any] = {}
+        if self._config.llm_api_key:
+            extra["api_key"] = self._config.llm_api_key
+        if self._config.llm_api_base:
+            extra["api_base"] = self._config.llm_api_base
+        return extra
+
     async def _complete(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict] | None = None,
+        *,
+        suppress_reasoning: bool = False,
     ) -> Message:
-        """Call litellm.acompletion and return the first choice's message."""
-        model: str = self._config.llm_model
-        api_key: str = self._config.llm_api_key
-        api_base: str | None = self._config.llm_api_base
+        """Run one completion through bsvibe-llm and return the assistant message."""
+        client = LlmClient(settings=self._build_settings())
+        # Direct mode unless an explicit BSGateway is configured. BSage's
+        # default is local single-user, no gateway.
+        direct = not (getattr(self._config, "bsgateway_url", "") or "")
+        extra = self._build_extra()
 
-        kwargs: dict[str, Any] = {"model": model, "messages": messages}
-        if api_key:
-            kwargs["api_key"] = api_key
-        if api_base:
-            kwargs["api_base"] = api_base
-        if tools:
-            kwargs["tools"] = tools
+        result = await client.complete(
+            messages=messages,
+            metadata=self._build_metadata(),
+            tools=tools,
+            direct=direct,
+            extra=extra or None,
+            suppress_reasoning=suppress_reasoning,
+        )
 
-        response = cast(ModelResponse, await litellm.acompletion(**kwargs))
-
-        if not response.choices:
+        raw = result.raw
+        if raw is None or not getattr(raw, "choices", None):
             raise RuntimeError("LLM returned empty choices")
 
-        return cast(Choices, response.choices[0]).message
+        return raw.choices[0].message

@@ -39,6 +39,9 @@ class Settings(BsvibeSettings):
     llm_model: str = "anthropic/claude-sonnet-4-20250514"
     llm_api_key: str = ""
     llm_api_base: str | None = None
+    # When set, BSage routes LLM calls through BSGateway via bsvibe-llm
+    # for shared run-audit metadata + cost tracking. Empty = direct vendor.
+    bsgateway_url: str = ""
 
     # Paths
     vault_path: Path = Path("./vault")

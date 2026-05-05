@@ -34,6 +34,7 @@ class _ConfigState:
     llm_api_key: str
     llm_api_base: str | None
     safe_mode: bool
+    bsgateway_url: str = ""
     disabled_entries: list[str] = field(default_factory=list)
 
 
