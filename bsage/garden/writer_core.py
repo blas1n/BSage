@@ -227,13 +227,18 @@ class _WriterIOMixin:
             related_links = [f"[[{r}]]" for r in note.related]
 
             metadata: dict = {
-                "type": note.note_type,
                 "status": "seed",
                 "source": note.source,
                 "captured_at": date_str,
                 "confidence": note.confidence,
                 "knowledge_layer": note.knowledge_layer,
             }
+            # Legacy ``type:`` field — kept only when the caller explicitly
+            # set note_type (back-compat with vaults from before the
+            # dynamic-ontology refactor). New writes leave it absent so
+            # tags + entities + community carry the meaning.
+            if note.note_type:
+                metadata["type"] = note.note_type
             # Phase 0 P0.5 — tenant isolation: stamp tenant_id into frontmatter
             # so retrieval can filter by tenant. Falls back to writer default
             # when the caller didn't specify (cron, migration backfill).
@@ -252,6 +257,8 @@ class _WriterIOMixin:
                 metadata["related"] = related_links
             if note.tags:
                 metadata["tags"] = note.tags
+            if note.entities:
+                metadata["entities"] = note.entities
 
             frontmatter = build_frontmatter(metadata)
             content = f"{frontmatter}\n# {note.title}\n\n{note.content}\n"
@@ -275,6 +282,52 @@ class _WriterIOMixin:
             note_type=note.note_type,
             tenant_id=tenant_id,
         )
+        return file_path
+
+    async def ensure_entity_stub(self, name: str, mentioned_in: Path) -> Path:
+        """Auto-create or update a ``garden/entities/<slug>.md`` stub for ``[[name]]``.
+
+        Called from ``IngestCompiler._execute_plan`` after every batch — every
+        wikilink target the LLM extracted gets a real vault file so the graph
+        extractor's ``WIKILINK_RE`` finds something to link to. Without this,
+        ``[[Vaultwarden]]`` in body text would dangle forever.
+
+        Idempotent. When the stub already exists:
+        * if it's still an auto-stub, append the new mention path to its
+          ``mentions:`` list (deduped) and refresh the body's ``Mentioned in``
+          section.
+        * if a human has filled it in (``auto_stub: false`` or absent), leave
+          the body alone — only update the ``mentions:`` list in frontmatter.
+
+        Args:
+            name: Bare entity name (no ``[[ ]]``). Slugified for the path.
+            mentioned_in: Vault-relative path of the note that linked here.
+
+        Returns:
+            Path to the stub file.
+        """
+        clean = name.strip()
+        if not clean:
+            raise ValueError("ensure_entity_stub requires a non-empty name")
+        slug = slugify(clean)
+
+        async with self._garden_lock:
+            entities_dir = self._vault.resolve_path("garden/entities")
+            entities_dir.mkdir(parents=True, exist_ok=True)
+            file_path = entities_dir / f"{slug}.md"
+
+            try:
+                rel_mention = mentioned_in.relative_to(self._vault.root)
+                rel_str = str(rel_mention)
+            except ValueError:
+                rel_str = str(mentioned_in)
+
+            if file_path.exists():
+                _update_entity_stub_mentions(file_path, rel_str)
+            else:
+                _create_entity_stub(file_path, clean, rel_str)
+
+        logger.debug("entity_stub_ensured", name=clean, path=str(file_path))
         return file_path
 
     async def write_action(self, skill_name: str, summary: str) -> None:
@@ -597,12 +650,15 @@ class _WriterMutationMixin:
         await self._notify_sync("garden", abs_path, "update")
         await emit_event(self._event_bus, "NOTE_UPDATED", {"path": note_path})
 
-    async def append_to_note(self, path: str, text: str) -> None:
+    async def append_to_note(self, path: str, text: str) -> Path:
         """Append text to an existing vault note.
 
         Args:
             path: Vault-relative path.
             text: Text to append.
+
+        Returns:
+            Resolved absolute path to the appended-to file.
 
         Raises:
             FileNotFoundError: If the note does not exist.
@@ -625,6 +681,7 @@ class _WriterMutationMixin:
             operation="note_appended",
             source="update",
         )
+        return resolved
 
     async def delete_note(self, path: str) -> None:
         """Delete a note from the vault.
@@ -672,7 +729,7 @@ class _WriterToolHandlersMixin:
 
     async def append_to_note(
         self, path: str, text: str
-    ) -> None:  # pragma: no cover - in mutation mixin
+    ) -> Path:  # pragma: no cover - in mutation mixin
         ...
 
     async def delete_note(self, path: str) -> None:  # pragma: no cover - in mutation mixin
@@ -923,6 +980,82 @@ class GardenWriter(_WriterIOMixin, _WriterMutationMixin, _WriterToolHandlersMixi
         # Fallback: use timestamp-based name to guarantee uniqueness
         ts = datetime.now(tz=UTC).strftime("%Y%m%d%H%M%S%f")
         return directory / f"{slug}_{ts}.md"
+
+
+def _create_entity_stub(file_path: Path, name: str, first_mention: str) -> None:
+    """Write a brand-new auto-stub file for ``[[name]]``."""
+    now_iso = datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    metadata = {
+        "title": name,
+        "created": now_iso,
+        "maturity": "seedling",
+        "auto_stub": True,
+        "mentions": [first_mention],
+    }
+    body = (
+        f"\n# {name}\n\n"
+        f"> Auto-generated entity stub for [[{name}]]. "
+        "Filled in as it gets mentioned.\n\n"
+        "## Mentioned in\n\n"
+        f"- [[{Path(first_mention).stem}]]\n"
+    )
+    file_path.write_text(build_frontmatter(metadata) + body, encoding="utf-8")
+
+
+def _update_entity_stub_mentions(file_path: Path, mention: str) -> None:
+    """Append ``mention`` to an existing entity stub idempotently.
+
+    Touches frontmatter ``mentions:`` always; rewrites the ``## Mentioned in``
+    section only when the stub is still an auto-stub (the user hasn't taken
+    it over yet).
+    """
+    raw = file_path.read_text(encoding="utf-8")
+    fm, body = _split_frontmatter(raw)
+    mentions = list(fm.get("mentions") or [])
+    if mention in mentions:
+        return
+    mentions.append(mention)
+    fm["mentions"] = mentions
+
+    is_auto_stub = bool(fm.get("auto_stub"))
+    if is_auto_stub:
+        body = _rewrite_mentioned_in_section(body, mentions)
+
+    file_path.write_text(build_frontmatter(fm) + body, encoding="utf-8")
+
+
+def _split_frontmatter(raw: str) -> tuple[dict, str]:
+    """Split a markdown file with leading ``---`` frontmatter into (dict, body)."""
+    if not raw.startswith("---\n"):
+        return {}, raw
+    closing = raw.find("\n---\n", 4)
+    if closing == -1:
+        return {}, raw
+    fm_text = raw[4:closing]
+    body = raw[closing + 5 :]
+    try:
+        fm = yaml.safe_load(fm_text) or {}
+    except yaml.YAMLError:
+        return {}, raw
+    if not isinstance(fm, dict):
+        return {}, raw
+    return fm, body
+
+
+def _rewrite_mentioned_in_section(body: str, mentions: list[str]) -> str:
+    """Replace the ``## Mentioned in`` block with the latest mentions list."""
+    marker = "## Mentioned in"
+    items = "\n".join(f"- [[{Path(m).stem}]]" for m in mentions)
+    new_section = f"{marker}\n\n{items}\n"
+    idx = body.find(marker)
+    if idx == -1:
+        # Stub had no section yet — append one.
+        return body.rstrip() + "\n\n" + new_section
+    # Cut from the marker through the next H2 (or end of file).
+    after = body.find("\n## ", idx + len(marker))
+    if after == -1:
+        return body[:idx] + new_section
+    return body[:idx] + new_section + body[after:]
 
 
 __all__ = ["GardenWriter"]

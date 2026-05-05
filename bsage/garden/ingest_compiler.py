@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import structlog
@@ -372,7 +373,7 @@ class IngestCompiler:
 
             try:
                 if action.action == "create":
-                    await self._writer.write_garden(
+                    written_path = await self._writer.write_garden(
                         GardenNote(
                             title=action.title,
                             content=action.content,
@@ -384,10 +385,14 @@ class IngestCompiler:
                     )
                     notes_created += 1
                 elif action.action == "update" and action.target_path:
-                    await self._writer.update_note(action.target_path, action.content)
+                    written_path = await self._writer.update_note(
+                        action.target_path, action.content
+                    )
                     notes_updated += 1
                 elif action.action == "append" and action.target_path:
-                    await self._writer.append_to_note(action.target_path, action.content)
+                    written_path = await self._writer.append_to_note(
+                        action.target_path, action.content
+                    )
                     notes_updated += 1
                 else:
                     logger.warning("ingest_compile_invalid_action", action=action.action)
@@ -402,12 +407,39 @@ class IngestCompiler:
                 continue
 
             actions_taken.append(action)
+            # Ensure every wikilink target has a real vault file so the
+            # graph extractor's ``WIKILINK_RE`` sweep finds nodes on both
+            # ends. Cleaned by ``_clean_entities`` already, so each item
+            # is a valid ``[[Name]]`` actually present in the body.
+            await self._ensure_entity_stubs(action.entities, written_path)
 
         return CompileResult(
             actions_taken=actions_taken,
             notes_updated=notes_updated,
             notes_created=notes_created,
         )
+
+    async def _ensure_entity_stubs(self, entities: list[str], mentioned_in: Path | None) -> None:
+        """Best-effort: create / refresh a stub for every ``[[Name]]`` mentioned.
+
+        Failures are logged but never propagated — a single bad entity (e.g.
+        slug that escapes vault boundary) must not abort the whole compile.
+        """
+        if not mentioned_in:
+            return
+        for wikilink in entities:
+            match = _WIKILINK_PATTERN.match(wikilink.strip())
+            if not match:
+                continue
+            name = match.group(1).strip()
+            try:
+                await self._writer.ensure_entity_stub(name, mentioned_in)
+            except (OSError, ValueError) as exc:
+                logger.warning(
+                    "ingest_compile_entity_stub_failed",
+                    name=name,
+                    error=str(exc),
+                )
 
     def _validate_action(self, raw: dict[str, Any]) -> bool:
         """Check that raw action dict has all required fields."""
