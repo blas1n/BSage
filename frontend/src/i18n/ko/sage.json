@@ -172,6 +172,15 @@
     "title": "이벤트",
     "empty": "아직 이벤트가 없습니다"
   },
+  "imports": {
+    "progress": {
+      "compiling": "임포트 컴파일 중…",
+      "done": "임포트 완료",
+      "chunks": "청크 {{done}} / {{total}}",
+      "notes": "노트 {{count}}개",
+      "failed": "{{count}}개 실패"
+    }
+  },
   "actions": {
     "title": "액션 로그",
     "empty": "아직 기록된 액션이 없습니다"

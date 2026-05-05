@@ -8,6 +8,7 @@ import { useApproval } from "./hooks/useApproval";
 import { consumeAuthCallback, useAuth } from "./hooks/useAuth";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { ApprovalModal } from "./components/approval/ApprovalModal";
+import { EventsProvider } from "./contexts/EventsContext";
 import { ChatView } from "./components/chat/ChatView";
 import { DashboardView } from "./components/dashboard/DashboardView";
 import { ImportsExportsView } from "./components/imports/ImportsExportsView";
@@ -109,7 +110,7 @@ function DemoApp() {
   }
 
   return (
-    <>
+    <EventsProvider events={events}>
       <DemoBanner productName="BSage" locale="en" />
       <Layout
         currentHash={hash}
@@ -126,7 +127,7 @@ function DemoApp() {
           <ApprovalModal request={approvalRequest} onRespond={respondApproval} />
         )}
       </Layout>
-    </>
+    </EventsProvider>
   );
 }
 
@@ -156,21 +157,23 @@ function ProdApp() {
   }
 
   return (
-    <Layout
-      currentHash={hash}
-      connectionState={connectionState}
-      pendingApprovals={pendingCount}
-    >
-      <div className="flex flex-col h-full">
-        <div className="flex-1 min-h-0">
-          <RouteContent hash={hash} />
+    <EventsProvider events={events}>
+      <Layout
+        currentHash={hash}
+        connectionState={connectionState}
+        pendingApprovals={pendingCount}
+      >
+        <div className="flex flex-col h-full">
+          <div className="flex-1 min-h-0">
+            <RouteContent hash={hash} />
+          </div>
+          <EventPanel events={events} onClear={clearEvents} />
         </div>
-        <EventPanel events={events} onClear={clearEvents} />
-      </div>
-      {approvalRequest && (
-        <ApprovalModal request={approvalRequest} onRespond={respondApproval} />
-      )}
-    </Layout>
+        {approvalRequest && (
+          <ApprovalModal request={approvalRequest} onRespond={respondApproval} />
+        )}
+      </Layout>
+    </EventsProvider>
   );
 }
 

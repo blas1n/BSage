@@ -172,6 +172,15 @@
     "title": "Events",
     "empty": "No events yet"
   },
+  "imports": {
+    "progress": {
+      "compiling": "Compiling import…",
+      "done": "Import complete",
+      "chunks": "{{done}} / {{total}} chunks",
+      "notes": "{{count}} notes",
+      "failed": "{{count}} failed"
+    }
+  },
   "actions": {
     "title": "Action Log",
     "empty": "No actions recorded yet"

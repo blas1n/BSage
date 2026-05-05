@@ -2,6 +2,8 @@
 
 import { useCallback, useRef, useState } from "react";
 import { api } from "../../api/client";
+import { useLatestImportProgress } from "../../hooks/useImportProgress";
+import { ImportProgressBar } from "../imports/ImportProgressBar";
 import { Icon } from "../common/Icon";
 
 type Status = "idle" | "uploading" | "running" | "done" | "error";
@@ -49,6 +51,11 @@ export function PluginUploadModal({
 
   const sourceOption = sourceOptions?.find((o) => o.value === source);
   const helpText = sourceOption?.instructions ?? instructions;
+
+  // Derived from the live WSEvent stream — null until a BATCH_START
+  // arrives. Sticks around briefly after BATCH_COMPLETE so the modal can
+  // show "32 notes created · 0 failed" before the user dismisses.
+  const importProgress = useLatestImportProgress();
 
   const onPick = useCallback((picked: File | null) => {
     setFile(picked);
@@ -203,7 +210,19 @@ export function PluginUploadModal({
           />
         </div>
 
-        {progress && (
+        {/* Upload progress text — only shown during the upload step. Once
+            we hit "running" the live ImportProgressBar takes over below. */}
+        {progress && status === "uploading" && (
+          <p className="text-xs text-gray-400 mt-4 font-mono">{progress}</p>
+        )}
+        {/* Live compile progress: appears as soon as the backend emits
+            INGEST_COMPILE_BATCH_START and stays through completion. */}
+        {status === "running" && importProgress && (
+          <ImportProgressBar progress={importProgress} />
+        )}
+        {/* Fallback for the brief window between "uploading" finishing and
+            the first BATCH_START arriving. */}
+        {status === "running" && !importProgress && (
           <p className="text-xs text-gray-400 mt-4 font-mono">{progress}</p>
         )}
         {error && (
