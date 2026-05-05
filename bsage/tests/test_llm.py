@@ -235,6 +235,55 @@ class TestSuppressReasoning:
             assert call.kwargs["suppress_reasoning"] is True
 
 
+class TestTimeoutPassthrough:
+    """Compile-time / bulk-import call sites need to override the litellm
+    default per-attempt timeout (60s) when running against slow local
+    LLMs (qwen3:14b on consumer hardware regularly takes 90-300s per
+    call). ``chat(timeout_s=…)`` is the single per-call switch."""
+
+    async def test_default_omits_timeout(self, mock_llm_client) -> None:
+        # When the caller doesn't ask for a timeout, we don't synthesise
+        # one — let bsvibe-llm / litellm pick their own default.
+        mock_llm_client.complete.return_value = _completion_with_text("ok")
+
+        client = LiteLLMClient(runtime_config=_make_config(llm_api_key="k"))
+        await client.chat(system="t", messages=[])
+
+        kwargs = _last_complete_kwargs(mock_llm_client)
+        assert kwargs.get("timeout_s") is None
+
+    async def test_explicit_timeout_forwarded(self, mock_llm_client) -> None:
+        mock_llm_client.complete.return_value = _completion_with_text("ok")
+
+        client = LiteLLMClient(runtime_config=_make_config(llm_api_key="k"))
+        await client.chat(system="t", messages=[], timeout_s=300.0)
+
+        kwargs = _last_complete_kwargs(mock_llm_client)
+        assert kwargs["timeout_s"] == 300.0
+
+    async def test_timeout_forwarded_in_tool_loop(self, mock_llm_client) -> None:
+        mock_llm_client.complete.side_effect = [
+            _completion_with_tool_call("tc1", "skill-x", {}),
+            _completion_with_text("done"),
+        ]
+
+        client = LiteLLMClient(runtime_config=_make_config(llm_api_key="k"))
+        handler = AsyncMock(return_value="{}")
+        await client.chat(
+            system="t",
+            messages=[],
+            tools=[{"type": "function", "function": {"name": "skill-x"}}],
+            tool_handler=handler,
+            timeout_s=120.0,
+        )
+
+        # Both round-trips carry the timeout — long-running tool loops
+        # don't get cut off mid-conversation by a default that was tuned
+        # for a single round-trip.
+        for call in mock_llm_client.complete.call_args_list:
+            assert call.kwargs["timeout_s"] == 120.0
+
+
 class TestChatWithTools:
     async def test_no_tool_calls_returns_text(self, mock_llm_client) -> None:
         mock_llm_client.complete.return_value = _completion_with_text("Plain answer")

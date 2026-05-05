@@ -201,6 +201,7 @@ class IngestCompiler:
         event_bus: EventBus | None = None,
         max_updates: int = 10,
         batch_char_budget: int | None = None,
+        chunk_timeout_s: float | None = 300.0,
     ) -> None:
         self._writer = garden_writer
         self._llm = llm_client
@@ -210,6 +211,11 @@ class IngestCompiler:
         # ``None`` → conservative default; callers that know the model
         # (AppState construction) should pass a probed value.
         self._batch_char_budget = batch_char_budget or _DEFAULT_BATCH_CHAR_BUDGET
+        # Per-chunk LLM timeout. Defaults to 300s so slow local LLMs
+        # (qwen3:14b commonly takes 90-300s/call on consumer hardware)
+        # finish without hitting the litellm 60s default and triggering
+        # a retry loop. Set to ``None`` to use bsvibe-llm's default.
+        self._chunk_timeout_s = chunk_timeout_s
 
     async def compile_batch(
         self,
@@ -361,6 +367,7 @@ class IngestCompiler:
             system=COMPILE_BATCH_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_msg}],
             suppress_reasoning=True,
+            timeout_s=self._chunk_timeout_s,
         )
         return self._parse_plan(raw)
 

@@ -49,6 +49,7 @@ class LiteLLMClient:
         tool_handler: ToolHandler | None = None,
         max_rounds: int = 10,
         suppress_reasoning: bool = False,
+        timeout_s: float | None = None,
     ) -> str:
         """Send a chat completion, optionally running a tool-use loop.
 
@@ -63,6 +64,12 @@ class LiteLLMClient:
                 OpenAI o-series, Ollama reasoning models, mlx-lm/vllm).
                 Compile-time call sites that want short structured output
                 should set this.
+            timeout_s: Per-attempt timeout in seconds, forwarded to
+                ``LlmClient.complete``. ``None`` keeps the litellm
+                default (~60s). Bulk-import call sites running against
+                slow local LLMs (qwen3:14b ~90-300s/call) should pass
+                a generous value so a slow first response doesn't get
+                cut off and trigger a needless retry.
         """
         work_messages = [{"role": "system", "content": system}, *messages]
 
@@ -72,8 +79,13 @@ class LiteLLMClient:
                 model=self._config.llm_model,
                 message_count=len(work_messages),
                 suppress_reasoning=suppress_reasoning,
+                timeout_s=timeout_s,
             )
-            msg = await self._complete(work_messages, suppress_reasoning=suppress_reasoning)
+            msg = await self._complete(
+                work_messages,
+                suppress_reasoning=suppress_reasoning,
+                timeout_s=timeout_s,
+            )
             text = msg.content or ""
             logger.info("llm_response", model=self._config.llm_model, length=len(text))
             return text
@@ -86,7 +98,10 @@ class LiteLLMClient:
                 message_count=len(work_messages),
             )
             assistant_msg = await self._complete(
-                work_messages, tools=tools, suppress_reasoning=suppress_reasoning
+                work_messages,
+                tools=tools,
+                suppress_reasoning=suppress_reasoning,
+                timeout_s=timeout_s,
             )
 
             tool_calls = assistant_msg.tool_calls
@@ -152,6 +167,7 @@ class LiteLLMClient:
         tools: list[dict] | None = None,
         *,
         suppress_reasoning: bool = False,
+        timeout_s: float | None = None,
     ) -> Message:
         """Run one completion through bsvibe-llm and return the assistant message."""
         client = LlmClient(settings=self._build_settings())
@@ -167,6 +183,7 @@ class LiteLLMClient:
             direct=direct,
             extra=extra or None,
             suppress_reasoning=suppress_reasoning,
+            timeout_s=timeout_s,
         )
 
         raw = result.raw
