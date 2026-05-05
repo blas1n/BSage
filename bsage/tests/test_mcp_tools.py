@@ -144,12 +144,19 @@ class TestGetGraphContext:
 
 class TestListRecent:
     @pytest.mark.asyncio
-    async def test_returns_catalog_grouped_by_type(self, state: MagicMock) -> None:
+    async def test_returns_catalog_grouped_by_maturity(self, state: MagicMock) -> None:
+        # Step B5: list_recent now groups by maturity instead of note_type.
+        # The fixture summaries live under legacy ``garden/idea/`` paths,
+        # which means there's no maturity prefix in the path — they fall
+        # into the "unfiled" bucket. That's the contract: legacy notes
+        # show up but signal that they need migration.
         result = await mcp_tools.list_recent(state, {})
         assert result["total"] == 2
-        assert "idea" in result["categories"]
-        assert "insight" in result["categories"]
-        assert result["categories"]["idea"][0]["title"] == "Note A"
+        assert "unfiled" in result["categories"]
+        assert {entry["title"] for entry in result["categories"]["unfiled"]} == {
+            "Note A",
+            "Note B",
+        }
 
 
 # -- create_note --------------------------------------------------------------

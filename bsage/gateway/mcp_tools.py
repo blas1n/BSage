@@ -116,20 +116,191 @@ async def get_graph_context(state: Any, params: dict[str, Any]) -> dict[str, Any
 
 
 async def list_recent(state: Any, params: dict[str, Any]) -> dict[str, Any]:
-    """Vault catalog grouped by note type. Uses index_reader summaries."""
+    """Vault catalog grouped by maturity (seedling/budding/evergreen).
+
+    Post dynamic-ontology refactor: identity comes from connections, not
+    from a static type enum. Grouping by ``maturity`` reflects WHERE in
+    the growth cycle each note sits — for "what KIND of note is this?"
+    queries the LLM should reach for ``list_by_tag`` instead.
+    """
     summaries = await state.index_reader.get_all_summaries()
-    by_type: dict[str, list[dict[str, Any]]] = {}
+    by_maturity: dict[str, list[dict[str, Any]]] = {}
     for s in summaries:
-        key = getattr(s, "note_type", None) or "uncategorized"
-        by_type.setdefault(key, []).append(
-            {
-                "title": s.title,
-                "path": s.path,
-                "tags": list(getattr(s, "tags", []) or []),
-                "captured_at": getattr(s, "captured_at", None),
-            }
-        )
-    return {"total": len(summaries), "categories": by_type}
+        key = _maturity_for_summary(s)
+        by_maturity.setdefault(key, []).append(_summary_dict(s))
+    return {"total": len(summaries), "categories": by_maturity}
+
+
+def _maturity_for_summary(summary: Any) -> str:
+    """Pick a maturity label out of the index summary or its file path."""
+    explicit = getattr(summary, "maturity", None)
+    if isinstance(explicit, str) and explicit:
+        return explicit
+    path = getattr(summary, "path", "") or ""
+    for stage in ("seedling", "budding", "evergreen"):
+        if path.startswith(f"garden/{stage}/"):
+            return stage
+    return "unfiled"
+
+
+def _summary_dict(summary: Any) -> dict[str, Any]:
+    return {
+        "title": getattr(summary, "title", "") or "",
+        "path": getattr(summary, "path", "") or "",
+        "tags": list(getattr(summary, "tags", []) or []),
+        "captured_at": getattr(summary, "captured_at", None),
+    }
+
+
+# -- list_by_tag --------------------------------------------------------------
+
+
+async def list_by_tag(state: Any, params: dict[str, Any]) -> dict[str, Any]:
+    """Notes that carry one or more of the given tags.
+
+    Implements the "show me all my project notes" navigation post
+    dynamic-ontology refactor — without a fixed note_type enum, tags
+    are how an LLM partitions the vault by topic.
+
+    Params:
+        tags: list of tag strings (lowercase). Required.
+        match: ``"any"`` (default — OR) or ``"all"`` (AND).
+        top_k: max notes returned (default 50).
+    """
+    requested = [str(t).strip().lower() for t in params.get("tags", []) if str(t).strip()]
+    if not requested:
+        return {"tags": [], "match": "any", "results": [], "total": 0}
+
+    match_mode = "all" if params.get("match") == "all" else "any"
+    top_k = int(params.get("top_k", 50))
+
+    summaries = await state.index_reader.get_all_summaries()
+    matches: list[dict[str, Any]] = []
+    requested_set = set(requested)
+    for s in summaries:
+        tags = {str(t).lower() for t in getattr(s, "tags", []) or []}
+        hit = tags >= requested_set if match_mode == "all" else bool(tags & requested_set)
+        if hit:
+            matches.append(_summary_dict(s))
+    return {
+        "tags": requested,
+        "match": match_mode,
+        "total": len(matches),
+        "results": matches[:top_k],
+    }
+
+
+# -- list_tags ----------------------------------------------------------------
+
+
+async def list_tags(state: Any, params: dict[str, Any]) -> dict[str, Any]:
+    """All tags in the vault with usage counts.
+
+    Frequency-sorted so the LLM sees the dominant topic vocabulary
+    first. ``threshold`` (default 3) splits the response into a
+    primary list and a long-tail list — keeps high-noise vaults
+    legible without throwing data away.
+    """
+    threshold = int(params.get("threshold", 3))
+    summaries = await state.index_reader.get_all_summaries()
+    counts: dict[str, int] = {}
+    for s in summaries:
+        for tag in getattr(s, "tags", []) or []:
+            normalised = str(tag).strip().lower()
+            if not normalised:
+                continue
+            counts[normalised] = counts.get(normalised, 0) + 1
+
+    primary = [
+        {"tag": tag, "count": count}
+        for tag, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        if count >= threshold
+    ]
+    long_tail = [
+        {"tag": tag, "count": count}
+        for tag, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        if count < threshold
+    ]
+    return {
+        "threshold": threshold,
+        "primary": primary,
+        "long_tail": long_tail,
+        "total_unique": len(counts),
+    }
+
+
+# -- browse_communities -------------------------------------------------------
+
+
+async def browse_communities(state: Any, params: dict[str, Any]) -> dict[str, Any]:
+    """Louvain community groupings of the vault graph.
+
+    Each community gets a label (auto-generated from the most
+    connected member) and a member list. The LLM uses this to navigate
+    by emergent topic clusters — "show me what's around the auth
+    cluster" — instead of by folder.
+    """
+    if state.graph_store is None:
+        return {"communities": [], "total": 0}
+
+    from bsage.garden.community import communities_to_graph_data, detect_communities
+
+    min_size = int(params.get("min_size", 2))
+    snapshot = await state.graph_store.snapshot()
+    communities = detect_communities(snapshot, min_size=min_size)
+    data = communities_to_graph_data(communities)
+    # Trim node-id payloads — the LLM doesn't need full member lists
+    # in the catalog response, just the label / size / cohesion.
+    summaries = [
+        {
+            "id": c["id"],
+            "label": c["label"],
+            "size": c["size"],
+            "cohesion": c["cohesion"],
+            "color": c.get("color"),
+        }
+        for c in data
+    ]
+    return {"communities": summaries, "total": len(summaries)}
+
+
+# -- browse_entity ------------------------------------------------------------
+
+
+async def browse_entity(state: Any, params: dict[str, Any]) -> dict[str, Any]:
+    """Backlink + outgoing-link view of a single ``[[Name]]`` entity.
+
+    Used to follow ``[[Vaultwarden]]`` from any mentioning note and
+    see the graph neighbourhood. Distinguishes auto-stub entities
+    (just placeholders) from human-edited ones via the ``auto_stub``
+    flag in frontmatter.
+    """
+    name = (params.get("name") or "").strip()
+    if not name:
+        return {"name": "", "found": False}
+
+    from bsage.garden.note import slugify
+
+    slug = slugify(name)
+    rel_path = f"garden/entities/{slug}.md"
+    try:
+        path = state.vault.resolve_path(rel_path)
+    except ValueError:
+        return {"name": name, "found": False}
+    if not path.is_file():
+        return {"name": name, "found": False}
+
+    content = await state.vault.read_note_content(path)
+    fm = extract_frontmatter(content)
+    backlinks = list(fm.get("mentions") or [])
+    return {
+        "name": name,
+        "path": rel_path,
+        "found": True,
+        "auto_stub": bool(fm.get("auto_stub")),
+        "maturity": fm.get("maturity") or "seedling",
+        "backlinks": backlinks,
+    }
 
 
 # -- create_note --------------------------------------------------------------

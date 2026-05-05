@@ -97,7 +97,7 @@ UPDATE_NOTE_TOOL: dict[str, Any] = {
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Vault-relative path (e.g. garden/idea/my-note.md)",
+                    "description": "Vault-relative path (e.g. garden/seedling/my-note.md)",
                 },
                 "content": {
                     "type": "string",
@@ -147,7 +147,7 @@ APPEND_NOTE_TOOL: dict[str, Any] = {
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Vault-relative path (e.g. garden/idea/my-note.md)",
+                    "description": "Vault-relative path (e.g. garden/seedling/my-note.md)",
                 },
                 "text": {
                     "type": "string",
@@ -179,7 +179,7 @@ SEARCH_VAULT_TOOL: dict[str, Any] = {
                     "items": {"type": "string"},
                     "description": (
                         "Vault subdirectories to search "
-                        "(default: seeds, garden/idea, garden/insight)"
+                        "(default: seeds, garden/seedling, garden/budding, garden/evergreen)"
                     ),
                 },
                 "max_results": {

@@ -103,7 +103,13 @@ class VaultRetriever:
                 logger.warning("vector_search_failed_fallback", exc_info=True)
 
         if self._index_reader is None:
-            dirs = context_dirs or ["seeds", "garden/idea", "garden/insight"]
+            dirs = context_dirs or [
+                "seeds",
+                "garden/seedling",
+                "garden/budding",
+                "garden/evergreen",
+                "garden/entities",
+            ]
             return await self._fallback_retrieve(dirs, max_chars=20_000, max_notes_per_dir=top_k)
 
         if context_dirs:

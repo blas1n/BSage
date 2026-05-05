@@ -45,13 +45,18 @@ def state() -> MagicMock:
 
 class TestStaticTools:
     def test_static_tool_count(self) -> None:
-        # 5 read tools + create_note baked in
+        # Step B5 added list_by_tag / list_tags / browse_communities /
+        # browse_entity for the dynamic-ontology navigation surface.
         names = {t["name"] for t in mcp_server._STATIC_TOOL_DEFS}
         assert names == {
             "search_knowledge",
             "get_note",
             "get_graph_context",
             "list_recent",
+            "list_by_tag",
+            "list_tags",
+            "browse_communities",
+            "browse_entity",
             "create_note",
         }
 

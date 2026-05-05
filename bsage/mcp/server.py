@@ -47,7 +47,7 @@ _STATIC_TOOL_DEFS: list[dict[str, Any]] = [
     },
     {
         "name": "get_note",
-        "description": "Read a vault file by relative path (e.g. garden/idea/foo.md).",
+        "description": "Read a vault file by relative path (e.g. garden/seedling/foo.md).",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -71,11 +71,77 @@ _STATIC_TOOL_DEFS: list[dict[str, Any]] = [
     },
     {
         "name": "list_recent",
-        "description": "Vault catalog grouped by note type.",
+        "description": (
+            "Vault catalog grouped by maturity (seedling/budding/evergreen). "
+            "For 'show me all my X' partition queries, prefer list_by_tag."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {},
             "additionalProperties": True,
+        },
+    },
+    {
+        "name": "list_by_tag",
+        "description": (
+            "Notes carrying one or more of the given tags. Use for partition "
+            "queries like 'all my project notes' (tags: ['project']). "
+            "match='all' for AND, 'any' (default) for OR."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "match": {"type": "string", "enum": ["any", "all"], "default": "any"},
+                "top_k": {"type": "integer", "default": 50, "minimum": 1, "maximum": 500},
+            },
+            "required": ["tags"],
+        },
+    },
+    {
+        "name": "list_tags",
+        "description": (
+            "All tags in the vault sorted by frequency. Splits into a "
+            "primary list (count >= threshold) and a long_tail list so "
+            "the dominant topic vocabulary stays legible."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "threshold": {"type": "integer", "default": 3, "minimum": 1},
+            },
+        },
+    },
+    {
+        "name": "browse_communities",
+        "description": (
+            "Louvain communities of the vault graph — emergent topic "
+            "clusters with auto-generated labels. Navigate by 'topic "
+            "neighbourhood' instead of by folder."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "min_size": {"type": "integer", "default": 2, "minimum": 1},
+            },
+        },
+    },
+    {
+        "name": "browse_entity",
+        "description": (
+            "Backlinks + outgoing links + auto-stub flag for a single "
+            "[[Name]] entity. Used to follow a wikilink and see the "
+            "graph neighbourhood of a person/tool/concept/project."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Bare entity name (no [[ ]] brackets).",
+                },
+            },
+            "required": ["name"],
         },
     },
     {
@@ -107,6 +173,10 @@ _STATIC_DISPATCH = {
     "get_note": mcp_tools.get_note,
     "get_graph_context": mcp_tools.get_graph_context,
     "list_recent": mcp_tools.list_recent,
+    "list_by_tag": mcp_tools.list_by_tag,
+    "list_tags": mcp_tools.list_tags,
+    "browse_communities": mcp_tools.browse_communities,
+    "browse_entity": mcp_tools.browse_entity,
     "create_note": mcp_tools.create_note,
 }
 
