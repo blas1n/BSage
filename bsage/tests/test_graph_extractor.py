@@ -247,29 +247,24 @@ def test_extract_typed_relations_with_ontology():
     assert len(belongs_rels) == 1
 
 
-def test_extract_knowledge_layer_from_ontology():
-    """v2.2: knowledge_layer is derived from ontology entity type."""
-    import asyncio
-
-    from bsage.garden.ontology import OntologyRegistry
-
-    async def _run():
-        import tempfile
-
-        with tempfile.TemporaryDirectory() as tmp:
-            from pathlib import Path
-
-            registry = OntologyRegistry(Path(tmp) / "ontology.yaml")
-            await registry.load()
-            return registry
-
-    registry = asyncio.get_event_loop().run_until_complete(_run())
-
-    content = "---\ntype: event\ntitle: Standup\n---\n"
-    extractor = GraphExtractor(ontology=registry)
+def test_extract_knowledge_layer_from_frontmatter():
+    """Post dynamic-ontology refactor knowledge_layer comes from frontmatter
+    (or defaults to ``semantic``). The static type→layer mapping went away
+    with the entity_types enum — callers that care about episodic /
+    procedural now stamp the frontmatter explicitly."""
+    content = "---\ntype: event\nknowledge_layer: episodic\ntitle: Standup\n---\n"
+    extractor = GraphExtractor(ontology=None)
     entities, _ = extractor.extract_from_note("events/standup.md", content)
 
     assert entities[0].knowledge_layer == "episodic"
+
+
+def test_extract_knowledge_layer_defaults_semantic():
+    content = "---\ntype: idea\ntitle: A note\n---\n"
+    extractor = GraphExtractor(ontology=None)
+    entities, _ = extractor.extract_from_note("ideas/a-note.md", content)
+
+    assert entities[0].knowledge_layer == "semantic"
 
 
 def test_extract_fact_triple():

@@ -26,9 +26,12 @@ _SYSTEM_PROMPT_TEMPLATE = Template("""\
 You are a knowledge graph extraction assistant.
 Extract entities and relationships from the given text.
 
-CONSTRAINTS:
-- Entity types MUST be one of: $entity_types
-- Relationship types MUST be one of: $relationship_types
+GUIDELINES:
+- Entity types are FREE-FORM lowercase strings describing what the entity
+  IS (e.g. "person", "tool", "company", "concept"). Use whatever fits;
+  consistency emerges via downstream tag normalisation.
+- Relationship types should come from this curated list when one fits:
+  $relationship_types. If none fits, use "related_to".
 - Only extract clearly stated facts, not speculation.
 
 Respond with ONLY valid JSON in this format:
@@ -96,11 +99,10 @@ class LLMExtractor:
         if len(self._processed_hashes) > _MAX_CACHE_SIZE:
             self._processed_hashes.popitem(last=False)
 
-        # Build prompt with ontology constraints
-        entity_types = ", ".join(self._ontology.get_entity_types().keys())
+        # Build prompt — only relationship types are constrained; entity
+        # types went free-form in the dynamic-ontology refactor.
         relationship_types = ", ".join(self._ontology.get_relationship_types().keys())
         system = _SYSTEM_PROMPT_TEMPLATE.safe_substitute(
-            entity_types=entity_types,
             relationship_types=relationship_types,
         )
 
@@ -133,14 +135,9 @@ class LLMExtractor:
 
         for raw in data.get("entities", []):
             name = raw.get("name", "").strip()
-            entity_type = raw.get("entity_type", "concept")
+            entity_type = (raw.get("entity_type") or "concept").strip().lower() or "concept"
             if not name:
                 continue
-
-            # Validate type against ontology; track unknowns for evolution
-            if not self._ontology.is_valid_entity_type(entity_type):
-                await self._track_unknown_type(entity_type)
-                entity_type = self._ontology.validate_entity_type(entity_type)
 
             entity = GraphEntity(
                 name=name,
@@ -247,19 +244,6 @@ class LLMExtractor:
         if not _matches(domain, source_type):
             return False
         return _matches(range_, target_type)
-
-    async def _track_unknown_type(self, entity_type: str) -> None:
-        """Track unknown entity types and auto-evolve ontology when threshold is reached."""
-        if not self._auto_evolve:
-            return
-        self._unknown_type_counts[entity_type] = self._unknown_type_counts.get(entity_type, 0) + 1
-        if self._unknown_type_counts[entity_type] >= self._unknown_threshold:
-            added = await self._ontology.add_entity_type(
-                entity_type, f"Auto-discovered type: {entity_type}"
-            )
-            if added:
-                logger.info("ontology_auto_evolved", new_type=entity_type)
-                del self._unknown_type_counts[entity_type]
 
     async def _track_unknown_rel_type(self, rel_type: str) -> None:
         """Track unknown relationship types and auto-evolve ontology when threshold is reached."""

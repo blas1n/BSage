@@ -112,34 +112,19 @@ class MaintenanceTasks:
             return {"promoted": 0, "demoted": 0, "error": True}
 
     async def run_ontology_evolution(self) -> dict[str, Any]:
-        """Review ontology for DEPRECATE candidates (zero-activity types)."""
+        """Ontology evolution is a no-op since the dynamic-ontology refactor.
+
+        Entity types went free-form, so the old "deprecate zero-activity
+        types" loop has nothing to deprecate. Kept as a stable maintenance
+        endpoint so existing schedules don't break — relation_types
+        evolution is a future extension.
+        """
         if self._ontology is None or self._graph is None:
             return {"status": "skipped", "reason": "no ontology or graph"}
 
         try:
-            entity_types = self._ontology.get_entity_types()
-            candidates = []
-
-            for type_name, type_info in entity_types.items():
-                if not type_info.get("folder"):
-                    continue
-                count = await self._graph.count_entities_of_type(type_name)
-                if count == 0:
-                    candidates.append(type_name)
-
+            candidates: list[str] = []
             deprecated = 0
-            for type_name in candidates:
-                result = await self._ontology.deprecate_entity_type(
-                    type_name, reason="no relationships found"
-                )
-                if result:
-                    deprecated += 1
-
-            if deprecated or candidates:
-                await self._garden.write_action(
-                    "maintenance:ontology-evolution",
-                    f"Reviewed {len(candidates)} candidates, deprecated {deprecated} types",
-                )
             logger.info(
                 "maintenance_ontology_evolution_done",
                 candidates=len(candidates),

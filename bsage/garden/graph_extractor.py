@@ -112,11 +112,12 @@ class GraphExtractor:
         fm = extract_frontmatter(content)
         body = body_after_frontmatter(content)
 
-        # Determine knowledge layer from ontology or frontmatter
+        # Determine knowledge layer from frontmatter, defaulting to semantic.
+        # The static type→layer table went away with the entity_types enum;
+        # callers that care about episodic / procedural now stamp the
+        # frontmatter explicitly.
         fm_type = fm.get("type", "concept")
         knowledge_layer = fm.get("knowledge_layer", "semantic")
-        if self._ontology and not fm.get("knowledge_layer"):
-            knowledge_layer = self._ontology.get_knowledge_layer(fm_type)
 
         # Bi-temporal: extract valid_from/valid_to from frontmatter
         note_valid_from = str(fm["valid_from"]) if fm.get("valid_from") else None

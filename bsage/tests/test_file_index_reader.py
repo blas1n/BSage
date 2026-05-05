@@ -235,14 +235,16 @@ async def test_loaded_flag_stays_false_on_empty_vault(tmp_path: Path) -> None:
     assert reader._loaded is False  # no entries found → not marked loaded
 
     # Second call should retry (not short-circuit)
-    # Create a note before second call
-    idea_dir = tmp_path / "garden" / "idea"
-    idea_dir.mkdir(parents=True)
-    (idea_dir / "test.md").write_text("---\ntitle: Test\ntype: idea\n---\n", encoding="utf-8")
+    # Create a note before second call (using the maturity-based layout).
+    seedling_dir = tmp_path / "garden" / "seedling"
+    seedling_dir.mkdir(parents=True)
+    (seedling_dir / "test.md").write_text(
+        "---\ntitle: Test\nmaturity: seedling\n---\n", encoding="utf-8"
+    )
 
     await reader._ensure_loaded()
     assert reader._loaded is True
-    summaries = await reader.get_summaries("garden/idea")
+    summaries = await reader.get_summaries("garden/seedling")
     assert len(summaries) == 1
 
 
@@ -250,9 +252,11 @@ async def test_loaded_flag_stays_false_on_empty_vault(tmp_path: Path) -> None:
 async def test_loaded_flag_true_when_entries_found(tmp_path: Path) -> None:
     """When vault has notes, _loaded becomes True after first load."""
     vault = Vault(tmp_path)
-    idea_dir = tmp_path / "garden" / "idea"
-    idea_dir.mkdir(parents=True)
-    (idea_dir / "note.md").write_text("---\ntitle: A\ntype: idea\n---\n", encoding="utf-8")
+    seedling_dir = tmp_path / "garden" / "seedling"
+    seedling_dir.mkdir(parents=True)
+    (seedling_dir / "note.md").write_text(
+        "---\ntitle: A\nmaturity: seedling\n---\n", encoding="utf-8"
+    )
 
     reader = FileIndexReader(vault=vault)
     await reader._ensure_loaded()

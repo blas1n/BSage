@@ -132,35 +132,18 @@ class TestRunOntologyEvolution:
         result = await tasks.run_ontology_evolution()
         assert result["status"] == "skipped"
 
-    async def test_deprecates_zero_activity_types(
+    async def test_returns_zero_counts_after_dynamic_ontology_refactor(
         self, mock_garden, mock_graph, mock_ontology
     ) -> None:
-        mock_ontology.get_entity_types = MagicMock(
-            return_value={
-                "event": {"folder": "events"},
-                "idea": {"folder": "ideas"},
-            }
-        )
-        mock_graph.count_entities_of_type = AsyncMock(return_value=0)
-        mock_ontology.deprecate_entity_type = AsyncMock(return_value=True)
-
+        """Entity-type evolution is a no-op now: types are free-form, so
+        there's nothing to deprecate. The endpoint stays for schedule
+        compatibility but always reports 0 candidates."""
         tasks = MaintenanceTasks(
             garden_writer=mock_garden,
             graph_store=mock_graph,
             ontology=mock_ontology,
         )
         result = await tasks.run_ontology_evolution()
-        assert result["candidates"] == 2
-        assert result["deprecated"] == 2
-
-    async def test_returns_error_dict_on_exception(
-        self, mock_garden, mock_graph, mock_ontology
-    ) -> None:
-        mock_ontology.get_entity_types = MagicMock(side_effect=RuntimeError("oops"))
-        tasks = MaintenanceTasks(
-            garden_writer=mock_garden,
-            graph_store=mock_graph,
-            ontology=mock_ontology,
-        )
-        result = await tasks.run_ontology_evolution()
-        assert result["error"] is True
+        assert result["candidates"] == 0
+        assert result["deprecated"] == 0
+        assert "error" not in result

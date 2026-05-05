@@ -72,16 +72,20 @@ async def test_extract_relationships(ontology, mock_llm_fn):
     assert rels[0].confidence == ConfidenceLevel.INFERRED
 
 
-async def test_invalid_entity_type_falls_back(ontology, mock_llm_fn):
-    """Unknown entity type falls back to 'concept'."""
+async def test_free_form_entity_types_accepted(ontology, mock_llm_fn):
+    """Post dynamic-ontology refactor entity types are FREE-FORM strings.
+
+    The static enum / fall-back-to-concept behaviour is gone — whatever
+    the LLM produces survives, normalised to lowercase. Identity in the
+    graph comes from connections, not from a curated type list."""
     mock_llm_fn.return_value = _llm_response(
-        entities=[{"name": "Foo", "entity_type": "unknown_type"}]
+        entities=[{"name": "Foo", "entity_type": "newly_invented_kind"}]
     )
 
     extractor = LLMExtractor(mock_llm_fn, ontology)
     entities, _ = await extractor.extract("a.md", "C" * 200)
 
-    assert entities[0].entity_type == "concept"
+    assert entities[0].entity_type == "newly_invented_kind"
 
 
 async def test_invalid_rel_type_falls_back(ontology, mock_llm_fn):
@@ -184,35 +188,9 @@ async def test_relationship_with_unknown_entity_skipped(ontology, mock_llm_fn):
     assert len(rels) == 0  # target "Unknown" not in entity list
 
 
-async def test_auto_evolve_adds_type_after_threshold(ontology, mock_llm_fn):
-    """When auto_evolve=True and unknown type appears >= threshold times, it is added."""
-    extractor = LLMExtractor(mock_llm_fn, ontology, auto_evolve=True)
-    extractor._unknown_threshold = 2
-
-    assert not ontology.is_valid_entity_type("food")
-
-    # Each call returns a "food" entity type (not in ontology)
-    for i in range(2):
-        mock_llm_fn.return_value = _llm_response(
-            entities=[{"name": f"Item{i}", "entity_type": "food"}]
-        )
-        await extractor.extract(f"note{i}.md", f"{'L' * 200}{i}")
-
-    # After 2 occurrences (threshold), "food" should be added to ontology
-    assert ontology.is_valid_entity_type("food")
-
-
-async def test_auto_evolve_disabled_by_default(ontology, mock_llm_fn):
-    """When auto_evolve=False (default), unknown types are not added."""
-    extractor = LLMExtractor(mock_llm_fn, ontology)
-
-    for i in range(5):
-        mock_llm_fn.return_value = _llm_response(
-            entities=[{"name": f"Item{i}", "entity_type": "food"}]
-        )
-        await extractor.extract(f"note{i}.md", f"{'M' * 200}{i}")
-
-    assert not ontology.is_valid_entity_type("food")
+# Auto-evolution of entity types was removed in the dynamic-ontology
+# refactor — entity types are free-form strings, so there's nothing to
+# evolve. Relation-type auto-evolution survives below.
 
 
 # ---------------------------------------------------------------------------

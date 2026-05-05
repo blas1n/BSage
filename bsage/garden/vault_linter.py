@@ -70,27 +70,30 @@ class VaultLinter:
     def _resolve_garden_dirs(self) -> list[str]:
         """Garden directories the linter scans.
 
-        Post dynamic-ontology refactor: walks the maturity tree
-        (``garden/seedling``, ``garden/budding``, ``garden/evergreen``)
-        plus the ``garden/entities`` stub folder. Legacy ontology
-        entity-type folders (``ideas/``, ``insights/``, ...) still get
-        included so vaults from before the refactor keep linting until
-        they're migrated.
+        Walks the maturity tree (``garden/seedling``, ``garden/budding``,
+        ``garden/evergreen``) plus the ``garden/entities`` stub folder.
+        Unmigrated legacy folders (``ideas/``, ``insights/``...) are
+        picked up by walking the vault root so the linter still works
+        on vaults that haven't run ``bsage migrate-flatten-vault`` yet.
         """
         primary = ["garden/seedling", "garden/budding", "garden/evergreen", "garden/entities"]
-        legacy: list[str] = []
-        if self._ontology:
-            legacy = [
-                meta.get("folder", "").rstrip("/")
-                for meta in self._ontology.get_entity_types().values()
-                if meta.get("folder")
-            ]
-        seen: set[str] = set()
         merged: list[str] = []
-        for entry in [*primary, *legacy]:
-            if entry and entry not in seen and (self._vault.root / entry).exists():
+        seen: set[str] = set()
+        for entry in primary:
+            if (self._vault.root / entry).exists() and entry not in seen:
                 seen.add(entry)
                 merged.append(entry)
+        # Legacy fallback: any non-system top-level directory is a candidate.
+        skip = {"seeds", "actions", "tmp", "node_modules", "garden"}
+        for child in sorted(self._vault.root.iterdir()):
+            if (
+                child.is_dir()
+                and not child.name.startswith((".", "_"))
+                and child.name not in skip
+                and child.name not in seen
+            ):
+                seen.add(child.name)
+                merged.append(child.name)
         return merged
 
     async def lint(self) -> LintReport:

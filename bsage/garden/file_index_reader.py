@@ -110,22 +110,31 @@ class FileIndexReader:
         return self._vault.root / _INDEX_DIR
 
     def _resolve_categories(self) -> list[str]:
-        """Build scan categories from ontology (dynamic) with legacy fallbacks."""
-        cats: list[str] = ["seeds"]
-        if self._ontology:
-            for _etype, meta in self._ontology.get_entity_types().items():
-                folder = meta.get("folder", "").rstrip("/")
-                if folder:
-                    cats.append(folder)
-        else:
-            # Fallback: scan vault root for directories that look like gardens
-            for child in sorted(self._vault.root.iterdir()):
-                if child.is_dir() and not child.name.startswith((".", "_")):
-                    name = child.name
-                    if name not in ("seeds", "actions", "tmp", "node_modules"):
-                        cats.append(name)
-        # Legacy garden/ paths for backward compatibility
-        cats.extend(["garden/idea", "garden/insight", "garden/project"])
+        """Categories the index reader scans.
+
+        Walks the maturity tree (``garden/seedling``, ``garden/budding``,
+        ``garden/evergreen``) plus the entity stub folder, with seeds at
+        the top. Legacy entity-type folders (``ideas/``, ``insights/``...)
+        are scanned too — vaults migrated by ``bsage migrate-flatten-vault``
+        no longer have them, but unmigrated vaults still need indexing.
+        """
+        cats: list[str] = [
+            "seeds",
+            "garden/seedling",
+            "garden/budding",
+            "garden/evergreen",
+            "garden/entities",
+        ]
+        # Discover any non-system directory at vault root for unmigrated
+        # legacy layouts (ideas/, insights/, etc.). Order is preserved so
+        # the maturity-based primary scan happens first.
+        skip = {"seeds", "actions", "tmp", "node_modules", "garden", ".bsage"}
+        for child in sorted(self._vault.root.iterdir()):
+            if not child.is_dir() or child.name.startswith((".", "_")):
+                continue
+            if child.name in skip:
+                continue
+            cats.append(child.name)
         return cats
 
     async def _ensure_loaded(self) -> None:
