@@ -1,0 +1,80 @@
+# =============================================================================
+# BSage Demo Stack
+# =============================================================================
+# Public interactive demo deployment.
+#
+# - Per-visitor ephemeral tenants (auto-created on /api/v1/demo/session)
+# - Separate JWT issuer (DEMO_JWT_SECRET)
+# - SafeMode forced ON (no external plugin outbound)
+# - Demo vault is per-tenant directory under /app/vault-demo/{tenant_id}/
+# - LLM_API_KEY is empty (demo skills/plugins use mocked LLM responses)
+#
+# Ports (see ~/Works/_infra/port-map.md):
+#   APP   8900
+#   (no PG/Redis — uses SQLite + per-tenant vault)
+#
+# Domain: api-demo-sage.bsvibe.dev → localhost:8900 (via Caddy)
+#
+# Usage:
+#   docker compose -f deploy/docker-compose.demo.yml --env-file deploy/.env.demo up -d
+# =============================================================================
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: bsage-demo-app
+    restart: unless-stopped
+    ports:
+      - "8900:8000"
+    env_file: .env.demo
+    environment:
+      BSVIBE_DEMO_MODE: "true"
+      DEMO_JWT_SECRET: ${DEMO_JWT_SECRET:?DEMO_JWT_SECRET is required for demo backend}
+      LLM_MODEL: ${LLM_MODEL:-mock}
+      LLM_API_KEY: ""
+      LLM_API_BASE: ""
+      EMBEDDING_MODEL: ""
+      EMBEDDING_API_KEY: ""
+      EMBEDDING_API_BASE: ""
+      SUPABASE_JWT_SECRET: ""
+      SUPABASE_URL: ""
+      VAULT_PATH: /app/vault-demo
+      SKILLS_DIR: /app/skills
+      TMP_DIR: /app/tmp
+      CREDENTIALS_DIR: /app/.credentials
+      SAFE_MODE: "true"
+      CORS_ORIGINS: '${CORS_ORIGINS:-["https://demo-sage.bsvibe.dev"]}'
+      GATEWAY_HOST: "0.0.0.0"
+      GATEWAY_PORT: "8000"
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    volumes:
+      - bsage-demo-vault:/app/vault-demo
+      - bsage-demo-credentials:/app/.credentials
+      - ../logs-demo:/app/logs
+    networks:
+      - bsage-demo-network
+
+volumes:
+  bsage-demo-vault:
+    name: bsage-demo-vault
+  bsage-demo-credentials:
+    name: bsage-demo-credentials
+
+networks:
+  bsage-demo-network:
+    driver: bridge
+    name: bsage-demo-network

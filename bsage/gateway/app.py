@@ -89,6 +89,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(create_mcp_routes(state))
     app.include_router(create_mcp_api_keys_routes(state))
     app.include_router(create_sse_routes(state))
+
+    # Demo mode (separate deployment, BSVIBE_DEMO_MODE=true)
+    from bsvibe_demo import is_demo_mode
+
+    if is_demo_mode():
+        from bsage.demo.router import demo_router
+
+        app.include_router(demo_router)
     app.include_router(
         create_ws_routes(
             approval_interface=state.ws_approval_interface,

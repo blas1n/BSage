@@ -26,6 +26,7 @@ dependencies = [
     "bsvibe-core @ git+https://github.com/BSVibe/bsvibe-python.git@main#subdirectory=packages/bsvibe-core",
     "bsvibe-fastapi @ git+https://github.com/BSVibe/bsvibe-python.git@main#subdirectory=packages/bsvibe-fastapi",
     "bsvibe-audit @ git+https://github.com/BSVibe/bsvibe-python.git@main#subdirectory=packages/bsvibe-audit",
+    "bsvibe-demo @ git+https://github.com/BSVibe/bsvibe-python.git@feat/bsvibe-demo#subdirectory=packages/bsvibe-demo",
     "python-dateutil>=2.9.0.post0",
     "networkx>=3.0",
     "cryptography>=43.0.0",

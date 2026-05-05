@@ -3,6 +3,7 @@
 import './i18n';
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { DemoBanner, isDemoMode, useAutoDemoSession } from "@bsvibe/demo";
 import { useApproval } from "./hooks/useApproval";
 import { consumeAuthCallback, useAuth } from "./hooks/useAuth";
 import { useWebSocket } from "./hooks/useWebSocket";
@@ -17,6 +18,10 @@ import { LandingPage } from "./components/landing/LandingPage";
 import { Layout } from "./components/layout/Layout";
 import { SettingsView } from "./components/settings/SettingsView";
 import { VaultView } from "./components/vault/VaultView";
+
+const DEMO_API_URL =
+  (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_URL) ||
+  "https://api-demo-sage.bsvibe.dev";
 
 function useHashRoute() {
   // SSR-safe initial value — hash is only available on the client.
@@ -76,7 +81,56 @@ function RouteContent({ hash }: { hash: string }) {
   }
 }
 
-export default function App() {
+function DemoApp() {
+  const { loading, error } = useAutoDemoSession(DEMO_API_URL);
+  const hash = useHashRoute();
+  const { connectionState, events, clearEvents } = useWebSocket({ enabled: !loading && !error });
+  const { current: approvalRequest, respond: respondApproval, pendingCount } = useApproval();
+  const { t } = useTranslation();
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-gray-950">
+        <div className="text-gray-500">{t("common.loading")}</div>
+        <div className="text-gray-600 text-sm">Setting up your demo sandbox…</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-950">
+        <div className="text-center text-gray-400 p-8">
+          <h1 className="text-xl font-bold mb-2 text-gray-100">Demo unavailable</h1>
+          <p className="text-sm">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <DemoBanner productName="BSage" locale="en" />
+      <Layout
+        currentHash={hash}
+        connectionState={connectionState}
+        pendingApprovals={pendingCount}
+      >
+        <div className="flex flex-col h-full">
+          <div className="flex-1 min-h-0">
+            <RouteContent hash={hash} />
+          </div>
+          <EventPanel events={events} onClear={clearEvents} />
+        </div>
+        {approvalRequest && (
+          <ApprovalModal request={approvalRequest} onRespond={respondApproval} />
+        )}
+      </Layout>
+    </>
+  );
+}
+
+function ProdApp() {
   useEffect(() => {
     if (window.location.hash.startsWith("#/auth/callback") && consumeAuthCallback()) {
       window.location.replace(window.location.pathname + "#/");
@@ -118,4 +172,9 @@ export default function App() {
       )}
     </Layout>
   );
+}
+
+export default function App() {
+  // Build-time switch — demo branch tree-shaken from prod bundles.
+  return isDemoMode() ? <DemoApp /> : <ProdApp />;
 }

@@ -58,3 +58,7 @@ docs/internal
 # Devcontainer local overrides (git worktree mount)
 docker-compose.override.yml
 .env.production
+
+# Demo env (per-product DEMO_JWT_SECRET, demo PG creds)
+.env.demo
+deploy/.env.demo
