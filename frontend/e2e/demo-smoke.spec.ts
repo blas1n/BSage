@@ -14,4 +14,7 @@ runDemoSmokeSuite({
   product: "BSage",
   baseUrl: process.env.DEMO_E2E_BASE_URL ?? "http://localhost:18900",
   apiUrl: process.env.DEMO_E2E_API_URL ?? "http://localhost:18900",
+  // BSage demo uses a single shared tenant — the demo vault is one
+  // showcase, not per-visitor.
+  tenantModel: "shared",
 });
