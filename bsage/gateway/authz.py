@@ -71,6 +71,9 @@ def _authz_settings_safe() -> AuthzSettings:
         "openfga_store_id": os.environ.get("OPENFGA_STORE_ID", ""),
         "openfga_auth_model_id": os.environ.get("OPENFGA_AUTH_MODEL_ID", ""),
         "service_token_signing_secret": os.environ.get("SERVICE_TOKEN_SIGNING_SECRET", ""),
+        # Demo bypass — when set, get_current_user accepts demo-signed
+        # JWTs (is_demo claim) and resolves them to a User(is_demo=True).
+        "demo_jwt_secret": os.environ.get("DEMO_JWT_SECRET") or None,
     }
     return AuthzSettings(**overrides)
 
@@ -269,7 +272,14 @@ def require_bsage_permission(
                 active_tenant_id=getattr(user, "active_tenant_id", None),
                 tenants=[],
                 is_service=getattr(user, "is_service", False),
+                is_demo=getattr(user, "is_demo", False),
             )
+
+        # Demo-mode bypass — demo deployments have no OpenFGA model and the
+        # tenant is a per-visitor sandbox, so every demo principal is
+        # implicitly allowed.
+        if user.is_demo:
+            return
 
         # Resolve cache + fga lazily — tests can pre-supply via dep overrides
         # of _optional_cache_dep / _optional_fga_dep, otherwise we lazily
