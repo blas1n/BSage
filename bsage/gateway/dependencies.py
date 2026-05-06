@@ -187,6 +187,40 @@ class AppState:
             embedder=self.embedder if self.embedder.enabled else None,
         )
 
+        # Canonicalization (slice 5 wiring) — index/lock/decisions/policies/
+        # service. The optional balanced verifier is plugged in here too so
+        # `bsage canon propose --strategy=balanced` runs against the local
+        # Ollama instance when configured (settings.llm_api_base /
+        # settings.embedding_api_base, e.g. http://bsserver:11434).
+        from bsage.garden.canonicalization.decisions import DecisionMemory
+        from bsage.garden.canonicalization.index import (
+            InMemoryCanonicalizationIndex,
+        )
+        from bsage.garden.canonicalization.lock import AsyncIOMutationLock
+        from bsage.garden.canonicalization.policies import PolicyResolver
+        from bsage.garden.canonicalization.resolver import TagResolver
+        from bsage.garden.canonicalization.service import CanonicalizationService
+        from bsage.garden.canonicalization.store import NoteStore as _CanonNoteStore
+        from bsage.garden.storage import FileSystemStorage
+
+        self._canon_storage = FileSystemStorage(self.vault.root)
+        self._canon_store = _CanonNoteStore(self._canon_storage)
+        self.canon_index = InMemoryCanonicalizationIndex()
+        self.canon_lock = AsyncIOMutationLock()
+        self.canon_decisions = DecisionMemory(index=self.canon_index, store=self._canon_store)
+        self.canon_policies = PolicyResolver(index=self.canon_index, store=self._canon_store)
+        self.canon_service = CanonicalizationService(
+            store=self._canon_store,
+            lock=self.canon_lock,
+            index=self.canon_index,
+            resolver=TagResolver(index=self.canon_index),
+            decisions=self.canon_decisions,
+            policies=self.canon_policies,
+            event_bus=self.event_bus,
+            safe_mode=lambda: self.runtime_config.safe_mode,
+            approval_interface=self.ws_approval_interface,
+        )
+
         # Skills
         self.skill_loader = SkillLoader(settings.skills_dir)
         self.skill_runner = SkillRunner(
@@ -236,6 +270,12 @@ class AppState:
         # Initialize knowledge graph
         await self.graph_store.initialize()
         await self.ontology.load()
+
+        # Initialize canonicalization index from vault + bootstrap default
+        # policy fixtures (idempotent). Must happen before any apply path so
+        # cannot-link Hard Blocks resolve correctly.
+        await self.canon_index.initialize(self._canon_storage)
+        await self.canon_policies.bootstrap_defaults()
 
         # Initialize vector store (always, even if embedder disabled — no-op)
         if self.embedder.enabled:

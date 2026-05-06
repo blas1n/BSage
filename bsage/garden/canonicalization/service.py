@@ -18,12 +18,15 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
 
+from bsage.core.events import EventBus, emit_event
+from bsage.core.safe_mode import ApprovalInterface, ApprovalRequest
 from bsage.garden.canonicalization import models, paths
 from bsage.garden.canonicalization.decisions import DecisionMemory
 from bsage.garden.canonicalization.index import CanonicalizationIndex
 from bsage.garden.canonicalization.lock import AsyncIOMutationLock
 from bsage.garden.canonicalization.policies import PolicyResolver
 from bsage.garden.canonicalization.resolver import TagResolver
+from bsage.garden.canonicalization.scoring import CanonicalizationScorer
 from bsage.garden.canonicalization.store import NoteStore
 
 _DEFAULT_EXPIRY = timedelta(days=1)
@@ -64,6 +67,24 @@ def _title_from_raw(raw_tag: str) -> str:
     return " ".join(part.capitalize() for part in cleaned.replace("_", " ").split())
 
 
+def _summarize_action(entry: models.ActionEntry) -> str:
+    """One-line human summary used in ApprovalRequest.action_summary."""
+    if entry.kind == "create-concept":
+        return f"create concept '{entry.params.get('concept')}'"
+    if entry.kind == "merge-concepts":
+        merge = entry.params.get("merge") or []
+        return f"merge {merge!r} into '{entry.params.get('canonical')}'"
+    if entry.kind == "retag-notes":
+        changes = entry.params.get("changes") or []
+        return f"retag {len(changes)} garden note(s)"
+    if entry.kind == "create-decision":
+        subjects = entry.params.get("subjects") or []
+        dpath = entry.params.get("decision_path", "")
+        kind = dpath.split("/")[1] if dpath.startswith("decisions/") else "?"
+        return f"record {kind} decision between {subjects!r}"
+    return f"apply {entry.kind} action"
+
+
 def _evidence(reason: str, **payload: Any) -> dict[str, Any]:
     """Minimal Hard Block evidence envelope (Handoff §2 Evidence)."""
     return {
@@ -95,6 +116,9 @@ class CanonicalizationService:
         decisions: DecisionMemory | None = None,
         policies: PolicyResolver | None = None,
         clock: Callable[[], datetime] | None = None,
+        event_bus: EventBus | None = None,
+        safe_mode: Callable[[], bool] | None = None,
+        approval_interface: ApprovalInterface | None = None,
     ) -> None:
         self._store = store
         self._lock = lock
@@ -103,6 +127,20 @@ class CanonicalizationService:
         self._decisions = decisions
         self._policies = policies
         self._clock = clock or datetime.now
+        self._event_bus = event_bus
+        # Safe Mode is a callable so a mutable RuntimeConfig flag is read
+        # at apply-time, not at service construction (per existing pattern
+        # in bsage.core.safe_mode.SafeModeGuard).
+        self._safe_mode = safe_mode or (lambda: False)
+        self._approval_interface = approval_interface
+        # Slice 4 scorer is also wired here so the apply pipeline can
+        # populate action.scoring before Safe Mode permission check.
+        if decisions is not None and policies is not None:
+            self._scorer: CanonicalizationScorer | None = CanonicalizationScorer(
+                decisions=decisions, policies=policies, clock=self._clock
+            )
+        else:
+            self._scorer = None
 
     # ---------------------------------------------------------------- drafts
 
@@ -146,6 +184,16 @@ class CanonicalizationService:
         )
         await self._store.write_action(entry)
         await self._invalidate_index([action_path])
+        await self._emit(
+            "CANONICALIZATION_ACTION_DRAFTED",
+            {
+                "schema_version": "canonicalization-event-v1",
+                "path": action_path,
+                "kind": kind,
+                "status": "draft",
+                "source_proposal": source_proposal,
+            },
+        )
         return action_path
 
     @staticmethod
@@ -205,7 +253,63 @@ class CanonicalizationService:
         async with self._lock.guard(action_path):
             return await self._apply_locked(action_path, actor=actor)
 
-    async def _apply_locked(self, action_path: str, *, actor: str) -> models.ApplyResult:
+    async def approve_action(self, action_path: str, *, actor: str) -> models.ApplyResult:
+        """Resume a pending_approval action and run the apply pipeline.
+
+        Per Handoff §13: approval MUST rerun freshness, validation, scoring,
+        and policy checks before applying. If the action became stale or
+        newly blocked while waiting, approval fails with ``expired`` or
+        ``blocked``.
+        """
+        async with self._lock.guard(action_path):
+            entry = await self._store.read_action(action_path)
+            if entry is None:
+                return models.ApplyResult(
+                    action_path=action_path,
+                    final_status="failed",
+                    affected_paths=[],
+                    error="action_note_not_found",
+                )
+            if entry.status not in {"pending_approval", "draft"}:
+                return models.ApplyResult(
+                    action_path=action_path,
+                    final_status=entry.status,
+                    affected_paths=list(entry.affected_paths),
+                )
+            return await self._apply_locked(action_path, actor=actor, force_approved=True)
+
+    async def reject_action(
+        self, action_path: str, *, actor: str, reason: str | None = None
+    ) -> None:
+        """Reject a pending_approval action without applying it (§13)."""
+        async with self._lock.guard(action_path):
+            entry = await self._store.read_action(action_path)
+            if entry is None:
+                msg = f"action not found: {action_path!r}"
+                raise FileNotFoundError(msg)
+            if entry.status not in {"pending_approval", "draft"}:
+                msg = f"action not approvable (status={entry.status!r})"
+                raise ValueError(msg)
+            previous_status = entry.status
+            now = self._clock()
+            entry.status = "rejected"
+            entry.permission.safe_mode = self._safe_mode()
+            entry.permission.decision = "rejected"
+            entry.permission.actor = actor
+            entry.permission.decided_at = now
+            entry.execution.error = reason
+            entry.updated_at = now
+            await self._store.write_action(entry)
+            await self._invalidate_index([action_path])
+            await self._emit_action_status(entry, previous_status)
+
+    async def _apply_locked(
+        self,
+        action_path: str,
+        *,
+        actor: str,
+        force_approved: bool = False,
+    ) -> models.ApplyResult:
         entry = await self._store.read_action(action_path)
         if entry is None:
             return models.ApplyResult(
@@ -215,18 +319,34 @@ class CanonicalizationService:
                 error="action_note_not_found",
             )
 
-        # Idempotency: applied actions are no-op (slice 1 simple semantic)
+        previous_status = entry.status
+
+        # Idempotency: terminal statuses are no-op
         if entry.status == "applied":
             return models.ApplyResult(
                 action_path=action_path,
                 final_status="applied",
                 affected_paths=list(entry.affected_paths),
             )
+        if entry.status == "rejected":
+            return models.ApplyResult(
+                action_path=action_path,
+                final_status="rejected",
+                affected_paths=[action_path],
+            )
 
         # Validate (deterministic Hard Blocks, Handoff §13)
         validation = await self._validate(entry)
         if validation.hard_blocks:
-            return await self._persist_blocked(entry, validation)
+            return await self._persist_blocked(entry, validation, previous_status)
+
+        # Score (Handoff §13 step 9). Safe even when scorer not wired.
+        if self._scorer is not None:
+            entry.scoring = await self._scorer.score(entry)
+
+        # Safe Mode permission policy (Handoff §13 steps 10-11)
+        if not force_approved and self._safe_mode():
+            return await self._handle_safe_mode(entry, validation, previous_status, actor)
 
         # Slice 1 has no scoring/Safe Mode/policy — go straight to effects
         try:
@@ -237,6 +357,7 @@ class CanonicalizationService:
             entry.status = "failed"
             entry.updated_at = self._clock()
             await self._store.write_action(entry)
+            await self._emit_action_status(entry, previous_status)
             return models.ApplyResult(
                 action_path=action_path,
                 final_status="failed",
@@ -258,6 +379,9 @@ class CanonicalizationService:
         entry.updated_at = now
         await self._store.write_action(entry)
         await self._invalidate_index(entry.affected_paths)
+        await self._emit_action_status(entry, previous_status)
+        await self._emit_action_applied(entry)
+        await self._emit_kind_specific_applied(entry)
 
         return models.ApplyResult(
             action_path=action_path,
@@ -275,6 +399,7 @@ class CanonicalizationService:
         self,
         entry: models.ActionEntry,
         validation: models.ValidationResult,
+        previous_status: str = "draft",
     ) -> models.ApplyResult:
         now = self._clock()
         entry.validation = validation
@@ -282,12 +407,196 @@ class CanonicalizationService:
         entry.updated_at = now
         await self._store.write_action(entry)
         await self._invalidate_index([entry.path])
+        await self._emit_action_status(entry, previous_status)
         return models.ApplyResult(
             action_path=entry.path,
             final_status="blocked",
             affected_paths=[entry.path],
             error="hard_block",
         )
+
+    # ---------------------------------------------------------- safe mode
+
+    async def _handle_safe_mode(
+        self,
+        entry: models.ActionEntry,
+        validation: models.ValidationResult,
+        previous_status: str,
+        actor: str,
+    ) -> models.ApplyResult:
+        """Safe Mode ON — request approval; if no interface, mark pending."""
+        now = self._clock()
+        entry.validation = validation
+        # No interface → cannot ask; persist pending_approval and stop.
+        if self._approval_interface is None:
+            entry.status = "pending_approval"
+            entry.permission.safe_mode = True
+            entry.permission.decision = "require_approval"
+            entry.updated_at = now
+            await self._store.write_action(entry)
+            await self._invalidate_index([entry.path])
+            await self._emit_action_status(entry, previous_status)
+            return models.ApplyResult(
+                action_path=entry.path,
+                final_status="pending_approval",
+                affected_paths=[entry.path],
+            )
+        # Interface available — request approval inline.
+        request = ApprovalRequest(
+            skill_name="canonicalization",
+            description=f"apply {entry.kind} action",
+            action_summary=_summarize_action(entry),
+            action_path=entry.path,
+            action_kind=entry.kind,
+            stability_score=entry.scoring.stability_score,
+            risk_reasons=list(entry.scoring.risk_reasons),
+            affected_paths=list(entry.affected_paths),
+            source_proposal=entry.source_proposal,
+        )
+        try:
+            approved = await self._approval_interface.request_approval(request)
+        except Exception as exc:  # noqa: BLE001 — approval failure ≠ apply failure
+            entry.status = "pending_approval"
+            entry.permission.safe_mode = True
+            entry.permission.decision = "require_approval"
+            entry.permission.actor = actor
+            entry.permission.decided_at = now
+            entry.execution.error = repr(exc)
+            entry.updated_at = now
+            await self._store.write_action(entry)
+            await self._invalidate_index([entry.path])
+            await self._emit_action_status(entry, previous_status)
+            return models.ApplyResult(
+                action_path=entry.path,
+                final_status="pending_approval",
+                affected_paths=[entry.path],
+                error=repr(exc),
+            )
+
+        if not approved:
+            entry.status = "rejected"
+            entry.permission.safe_mode = True
+            entry.permission.decision = "rejected"
+            entry.permission.actor = actor
+            entry.permission.decided_at = now
+            entry.updated_at = now
+            await self._store.write_action(entry)
+            await self._invalidate_index([entry.path])
+            await self._emit_action_status(entry, previous_status)
+            return models.ApplyResult(
+                action_path=entry.path,
+                final_status="rejected",
+                affected_paths=[entry.path],
+            )
+
+        # Approved → run effects + persist applied
+        try:
+            affected = await self._persist_effects(entry)
+        except Exception as exc:  # noqa: BLE001
+            entry.execution.status = "failed"
+            entry.execution.error = repr(exc)
+            entry.status = "failed"
+            entry.updated_at = self._clock()
+            await self._store.write_action(entry)
+            await self._emit_action_status(entry, previous_status)
+            return models.ApplyResult(
+                action_path=entry.path,
+                final_status="failed",
+                affected_paths=[],
+                error=repr(exc),
+            )
+        now = self._clock()
+        entry.execution.status = "ok"
+        entry.execution.applied_at = now
+        entry.execution.error = None
+        entry.permission.safe_mode = True
+        entry.permission.decision = "approved"
+        entry.permission.actor = actor
+        entry.permission.decided_at = now
+        entry.affected_paths = sorted({entry.path, *affected})
+        entry.status = "applied"
+        entry.updated_at = now
+        await self._store.write_action(entry)
+        await self._invalidate_index(entry.affected_paths)
+        await self._emit_action_status(entry, previous_status)
+        await self._emit_action_applied(entry)
+        await self._emit_kind_specific_applied(entry)
+        return models.ApplyResult(
+            action_path=entry.path,
+            final_status="applied",
+            affected_paths=list(entry.affected_paths),
+        )
+
+    # ----------------------------------------------------------- emit helpers
+
+    async def _emit(self, event_name: str, payload: dict[str, Any]) -> None:
+        if self._event_bus is None:
+            return
+        await emit_event(self._event_bus, event_name, payload)
+
+    async def _emit_action_status(self, entry: models.ActionEntry, previous_status: str) -> None:
+        if previous_status == entry.status:
+            return
+        await self._emit(
+            "CANONICALIZATION_ACTION_STATUS_CHANGED",
+            {
+                "schema_version": "canonicalization-event-v1",
+                "path": entry.path,
+                "kind": entry.kind,
+                "status": entry.status,
+                "previous_status": previous_status,
+            },
+        )
+
+    async def _emit_action_applied(self, entry: models.ActionEntry) -> None:
+        await self._emit(
+            "CANONICALIZATION_ACTION_APPLIED",
+            {
+                "schema_version": "canonicalization-event-v1",
+                "action_path": entry.path,
+                "kind": entry.kind,
+                "status": "applied",
+                "affected_paths": list(entry.affected_paths),
+                "source_proposal": entry.source_proposal,
+                "safe_mode": bool(entry.permission.safe_mode),
+                "actor": entry.permission.actor,
+            },
+        )
+
+    async def _emit_kind_specific_applied(self, entry: models.ActionEntry) -> None:
+        """For decision/policy creates, emit dedicated event types in addition
+        to the generic ACTION_APPLIED (Handoff §14)."""
+        if entry.kind != "create-decision":
+            return
+        params = entry.params
+        decision_path = params.get("decision_path")
+        decision_kind = (
+            decision_path.split("/")[1]
+            if isinstance(decision_path, str) and decision_path.startswith("decisions/")
+            else None
+        )
+        await self._emit(
+            "CANONICALIZATION_DECISION_CREATED",
+            {
+                "schema_version": "canonicalization-event-v1",
+                "path": decision_path,
+                "kind": decision_kind,
+                "subjects": list(params.get("subjects") or []),
+                "base_confidence": params.get("base_confidence"),
+                "source_action": entry.path,
+            },
+        )
+        # Each superseded decision also flips status — emit one event per
+        for sup in params.get("supersedes") or []:
+            await self._emit(
+                "CANONICALIZATION_DECISION_SUPERSEDED",
+                {
+                    "schema_version": "canonicalization-event-v1",
+                    "path": sup,
+                    "superseded_by": decision_path,
+                    "source_action": entry.path,
+                },
+            )
 
     # ---------------------------------------------------------------- resolve
 
@@ -395,6 +704,7 @@ class CanonicalizationService:
 
         all_applied = all(r.final_status == "applied" for r in results)
         now = self._clock()
+        previous_status = "pending"
         proposal.status = "accepted" if all_applied else "pending"
         proposal.updated_at = now
         proposal.result_actions = list(
@@ -402,6 +712,19 @@ class CanonicalizationService:
         )
         await self._store.write_proposal(proposal)
         await self._invalidate_index([proposal_path])
+        if proposal.status != previous_status:
+            await self._emit(
+                "CANONICALIZATION_PROPOSAL_STATUS_CHANGED",
+                {
+                    "schema_version": "canonicalization-event-v1",
+                    "path": proposal_path,
+                    "kind": proposal.kind,
+                    "status": proposal.status,
+                    "previous_status": previous_status,
+                    "actor": actor,
+                    "result_actions": list(proposal.result_actions),
+                },
+            )
         return results
 
     async def reject_proposal(
@@ -432,6 +755,18 @@ class CanonicalizationService:
         ]
         await self._store.write_proposal(proposal)
         await self._invalidate_index([proposal_path])
+        await self._emit(
+            "CANONICALIZATION_PROPOSAL_STATUS_CHANGED",
+            {
+                "schema_version": "canonicalization-event-v1",
+                "path": proposal_path,
+                "kind": proposal.kind,
+                "status": "rejected",
+                "previous_status": "pending",
+                "actor": actor,
+                "reason": reason,
+            },
+        )
 
     # -------------------------------------------------------------- validate
 

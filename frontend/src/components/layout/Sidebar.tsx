@@ -69,6 +69,7 @@ export function Sidebar({ currentHash, isOpen, onOpenChange, onClose }: SidebarP
     { hash: "#/", icon: "chat_bubble", label: t("nav.currentChat") },
     { hash: "#/graph", icon: "hub", label: t("nav.knowledgeBase") },
     { hash: "#/vault", icon: "folder_open", label: t("nav.vaultBrowser") },
+    { hash: "#/canonicalization", icon: "rule", label: t("nav.canonicalization", "Canon queue") },
     { hash: "#/plugins", icon: "extension", label: t("nav.plugins") },
     { hash: "#/imports", icon: "swap_horiz", label: t("nav.importsExports") },
     { hash: "#/settings", icon: "settings", label: t("nav.settings") },

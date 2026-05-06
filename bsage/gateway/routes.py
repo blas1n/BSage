@@ -1389,7 +1389,15 @@ def create_routes(state: AppState) -> APIRouter:
             "expires_at": expires_at,
         }
 
+    # Canonicalization routes (Handoff §15.1) live in their own module to
+    # keep this file small. They register their own permission deps and
+    # use ``state.canon_service`` directly.
+    from bsage.gateway.canonicalization_routes import create_canonicalization_router
+
+    canon_router = create_canonicalization_router(state)
+
     parent = APIRouter()
     parent.include_router(public)
     parent.include_router(protected)
+    parent.include_router(canon_router)
     return parent

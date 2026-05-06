@@ -49,13 +49,24 @@ class WebSocketApprovalInterface:
         future: asyncio.Future[bool] = loop.create_future()
         self._pending[request_id] = future
 
-        message = {
+        message: dict[str, Any] = {
             "type": "approval_request",
             "request_id": request_id,
             "skill_name": request.skill_name,
             "description": request.description,
             "action_summary": request.action_summary,
         }
+        # Canonicalization approvals (Handoff §13 step 11): add action_*
+        # fields so the frontend can render evidence with source-aware
+        # styling and link to the action note.
+        if request.action_path is not None:
+            message["action_path"] = request.action_path
+            message["action_kind"] = request.action_kind
+            message["stability_score"] = request.stability_score
+            message["risk_reasons"] = request.risk_reasons
+            message["affected_paths"] = request.affected_paths
+            if request.source_proposal is not None:
+                message["source_proposal"] = request.source_proposal
 
         await self._manager.broadcast(message)
         logger.info(

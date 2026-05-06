@@ -24,6 +24,7 @@ import structlog
 from mcp.server import Server
 from mcp.types import TextContent, Tool
 
+from bsage.garden.canonicalization import mcp_tools as canon_mcp_tools
 from bsage.gateway import mcp_tools
 from bsage.mcp import plugin_bridge
 
@@ -178,6 +179,7 @@ _STATIC_DISPATCH = {
     "browse_communities": mcp_tools.browse_communities,
     "browse_entity": mcp_tools.browse_entity,
     "create_note": mcp_tools.create_note,
+    **canon_mcp_tools.CANON_DISPATCH,
 }
 
 
@@ -188,6 +190,10 @@ def build_server(state: Any) -> Server:
     @server.list_tools()
     async def _list_tools() -> list[Tool]:
         tools = [_dict_to_tool(t) for t in _STATIC_TOOL_DEFS]
+        # Canonicalization read tools (always exposed)
+        tools.extend(_dict_to_tool(t) for t in canon_mcp_tools.CANON_TOOL_DEFS)
+        if _canon_mutation_enabled(state):
+            tools.extend(_dict_to_tool(t) for t in canon_mcp_tools.CANON_OPTIONAL_TOOL_DEFS)
         plugin_tools = await plugin_bridge.list_plugins_as_tools(state)
         tools.extend(_dict_to_tool(t) for t in plugin_tools)
         return tools
@@ -200,11 +206,24 @@ def build_server(state: Any) -> Server:
     return server
 
 
+def _canon_mutation_enabled(state: Any) -> bool:
+    """Per Handoff §15.2 — MCP approval/mutation tools are off by default.
+
+    Operators opt in by setting ``settings.mcp_canon_mutation_enabled``.
+    """
+    settings = getattr(state, "settings", None)
+    return bool(getattr(settings, "mcp_canon_mutation_enabled", False))
+
+
 async def _dispatch_tool(state: Any, name: str, arguments: dict[str, Any]) -> Any:
     """Route a tool name to either the static handler or the plugin bridge."""
     static = _STATIC_DISPATCH.get(name)
     if static is not None:
         return await static(state, arguments)
+    if _canon_mutation_enabled(state):
+        optional = canon_mcp_tools.CANON_OPTIONAL_DISPATCH.get(name)
+        if optional is not None:
+            return await optional(state, arguments)
     return await plugin_bridge.invoke_plugin_as_tool(state, name, arguments)
 
 

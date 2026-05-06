@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import structlog
@@ -18,11 +18,23 @@ logger = structlog.get_logger(__name__)
 
 @dataclass
 class ApprovalRequest:
-    """Data passed to an ApprovalInterface when requesting user consent."""
+    """Data passed to an ApprovalInterface when requesting user consent.
+
+    Skill approvals (legacy) populate ``skill_name`` / ``description`` /
+    ``action_summary``. Canonicalization approvals (Handoff §13 step 11)
+    additionally populate the action_* fields so the frontend can render
+    evidence with source-aware styling.
+    """
 
     skill_name: str
     description: str
     action_summary: str
+    action_path: str | None = None
+    action_kind: str | None = None
+    stability_score: float | None = None
+    risk_reasons: list[dict] = field(default_factory=list)
+    affected_paths: list[str] = field(default_factory=list)
+    source_proposal: str | None = None
 
 
 @runtime_checkable

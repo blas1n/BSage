@@ -150,6 +150,96 @@ export const api = {
   toggleEntry: (name: string) =>
     request<{ name: string; enabled: boolean }>(`/entries/${name}/toggle`, { method: "POST" }),
 
+  // Canonicalization (Handoff §15.1)
+  canonListProposals: (status: string = "pending", kind?: string) => {
+    const q = kind
+      ? `?status=${encodeURIComponent(status)}&kind=${encodeURIComponent(kind)}`
+      : `?status=${encodeURIComponent(status)}`;
+    return request<{
+      items: Array<{
+        path: string;
+        kind: string;
+        status: string;
+        strategy: string;
+        proposal_score: number;
+        evidence: Array<Record<string, unknown>>;
+        action_drafts: string[];
+      }>;
+    }>(`/canonicalization/proposals${q}`);
+  },
+
+  canonListActions: (status?: string, kind?: string) => {
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    if (kind) params.set("kind", kind);
+    const q = params.toString() ? `?${params.toString()}` : "";
+    return request<{
+      items: Array<{
+        path: string;
+        kind: string;
+        status: string;
+        params: Record<string, unknown>;
+        stability_score: number | null;
+        risk_reasons: Array<Record<string, unknown>>;
+        deterministic_evidence: Array<Record<string, unknown>>;
+        model_evidence: Array<Record<string, unknown>>;
+        human_evidence: Array<Record<string, unknown>>;
+        affected_paths: string[];
+        source_proposal: string | null;
+      }>;
+    }>(`/canonicalization/actions${q}`);
+  },
+
+  canonGetNote: (path: string) =>
+    request<{ path: string; content: string }>(
+      `/canonicalization/note?path=${encodeURIComponent(path)}`,
+    ),
+
+  canonApplyAction: (action_path: string) =>
+    request<{
+      action_path: string;
+      final_status: string;
+      affected_paths: string[];
+    }>(`/canonicalization/actions/apply`, {
+      method: "POST",
+      body: JSON.stringify({ action_path }),
+      headers: { "Content-Type": "application/json" },
+    }),
+
+  canonApproveAction: (action_path: string) =>
+    request<{
+      action_path: string;
+      final_status: string;
+      affected_paths: string[];
+    }>(`/canonicalization/actions/approve`, {
+      method: "POST",
+      body: JSON.stringify({ action_path }),
+      headers: { "Content-Type": "application/json" },
+    }),
+
+  canonRejectAction: (action_path: string, reason?: string) =>
+    request<{ action_path: string; final_status: string }>(
+      `/canonicalization/actions/reject`,
+      {
+        method: "POST",
+        body: JSON.stringify({ action_path, reason }),
+        headers: { "Content-Type": "application/json" },
+      },
+    ),
+
+  canonGenerateProposals: (
+    strategy: "deterministic" | "balanced",
+    threshold = 0.6,
+  ) =>
+    request<{ strategy: string; created: string[] }>(
+      `/canonicalization/proposals/generate`,
+      {
+        method: "POST",
+        body: JSON.stringify({ strategy, threshold }),
+        headers: { "Content-Type": "application/json" },
+      },
+    ),
+
   // Vault browser
   vaultTree: () => request<VaultTreeEntry[]>("/vault/tree"),
 
