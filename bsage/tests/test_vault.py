@@ -32,6 +32,21 @@ class TestVaultEnsureDirs:
         assert (tmp_path / "ideas").is_dir()
         assert (tmp_path / "actions").is_dir()
 
+    def test_ensure_dirs_creates_canonicalization_roots(self, tmp_path: Path) -> None:
+        """ensure_dirs should create the canonicalization layout (Handoff §1)."""
+        vault = Vault(tmp_path)
+        vault.ensure_dirs()
+
+        assert (tmp_path / "raw").is_dir()
+        assert (tmp_path / "garden" / "seedling").is_dir()
+        assert (tmp_path / "garden" / "budding").is_dir()
+        assert (tmp_path / "garden" / "evergreen").is_dir()
+        assert (tmp_path / "concepts" / "active").is_dir()
+        assert (tmp_path / "concepts" / "merged").is_dir()
+        assert (tmp_path / "concepts" / "deprecated").is_dir()
+        assert (tmp_path / "proposals").is_dir()
+        assert (tmp_path / "decisions").is_dir()
+
 
 class TestVaultResolvePath:
     """Test Vault.resolve_path validates paths within the vault boundary."""

@@ -576,3 +576,13 @@ def cli_search(query: str, top_k: int, host: str | None, port: int | None) -> No
     data = resp.json()
     for r in data.get("results", []):
         click.echo(f"{r.get('score', 0):.2f}  {r.get('path') or '-'}  {r.get('title', '')}")
+
+
+# ---------------------------------------------------------------------------
+# Canonicalization (slice 1) — `bsage canon` group.
+# Imported lazily so CLI startup stays cheap and so missing-dependency surfaces
+# happen only when the user actually invokes the subcommand.
+# ---------------------------------------------------------------------------
+from bsage.garden.canonicalization.cli import canon_group as _canon_group  # noqa: E402
+
+main.add_command(_canon_group)

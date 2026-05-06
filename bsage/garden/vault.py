@@ -12,6 +12,8 @@ from bsage.core.exceptions import VaultPathError
 logger = structlog.get_logger(__name__)
 
 VAULT_SUBDIRS = (
+    # Legacy v2.2 entity-type folders (preserved during the canonicalization
+    # transition; flatten migration moves notes into garden/<maturity>/).
     "ideas",
     "insights",
     "projects",
@@ -20,8 +22,18 @@ VAULT_SUBDIRS = (
     "tasks",
     "facts",
     "preferences",
-    "actions",
     "seeds",
+    # Canonicalization layout (Handoff §1).
+    "raw",
+    "garden/seedling",
+    "garden/budding",
+    "garden/evergreen",
+    "concepts/active",
+    "concepts/merged",
+    "concepts/deprecated",
+    "proposals",
+    "actions",
+    "decisions",
     ".bsage",
 )
 
