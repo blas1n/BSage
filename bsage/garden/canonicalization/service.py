@@ -25,12 +25,23 @@ from bsage.garden.canonicalization.resolver import TagResolver
 from bsage.garden.canonicalization.store import NoteStore
 
 _DEFAULT_EXPIRY = timedelta(days=1)
-_SLICE_1_KINDS: frozenset[str] = frozenset({"create-concept", "retag-notes"})
+# Action kinds available for ``create_action_draft`` + ``apply_action``.
+# Expands as later slices add kinds (slice 4 adds create-decision, etc.).
+_SUPPORTED_KINDS: frozenset[str] = frozenset({"create-concept", "retag-notes", "merge-concepts"})
 
 _ACTION_SCHEMA_VERSIONS: dict[str, str] = {
     "create-concept": "create-concept-v1",
     "retag-notes": "retag-notes-v1",
+    "merge-concepts": "merge-concepts-v1",
 }
+
+# Default policies for MergeConcepts when params omit them (Handoff §7.2).
+_DEFAULT_MERGE_ALIAS_POLICY = {
+    "add_merged_ids_as_aliases": True,
+    "preserve_existing_aliases": True,
+}
+_DEFAULT_MERGE_TOMBSTONE_POLICY = {"create_merged_notes": True}
+_DEFAULT_MERGE_RETAG_POLICY = {"update_garden_tags": True}
 
 
 def _title_from_raw(raw_tag: str) -> str:
@@ -93,8 +104,8 @@ class CanonicalizationService:
         source_proposal: str | None = None,
         expires_in: timedelta = _DEFAULT_EXPIRY,
     ) -> str:
-        if kind not in _SLICE_1_KINDS:
-            msg = f"action kind {kind!r} not in slice 1 (only {sorted(_SLICE_1_KINDS)})"
+        if kind not in _SUPPORTED_KINDS:
+            msg = f"action kind {kind!r} not yet supported (only {sorted(_SUPPORTED_KINDS)})"
             raise NotImplementedError(msg)
 
         if slug is None:
@@ -128,6 +139,12 @@ class CanonicalizationService:
                 msg = f"create-concept needs valid 'concept' param: {concept!r}"
                 raise ValueError(msg)
             return concept
+        if kind == "merge-concepts":
+            canonical = params.get("canonical", "")
+            if not paths.is_valid_concept_id(canonical):
+                msg = f"merge-concepts needs valid 'canonical' param: {canonical!r}"
+                raise ValueError(msg)
+            return canonical
         # retag-notes / other kinds: caller must supply slug
         msg = f"slug required for action kind {kind!r}"
         raise ValueError(msg)
@@ -303,6 +320,69 @@ class CanonicalizationService:
             await self._store.write_action(entry)
             await self._invalidate_index([draft_path])
 
+    # ------------------------------------------------------------- proposals
+
+    async def accept_proposal(self, proposal_path: str, *, actor: str) -> list[models.ApplyResult]:
+        """Accept a pending proposal — apply every linked action draft.
+
+        Per Handoff §5: proposal apply is impossible. Only actions apply.
+        ``accept_proposal`` is a convenience wrapper that applies the
+        proposal's ``action_drafts`` in order, records resulting paths in
+        ``result_actions``, and marks the proposal ``accepted`` only when
+        every linked action ends in ``applied``.
+        """
+        proposal = await self._store.read_proposal(proposal_path)
+        if proposal is None:
+            msg = f"proposal not found: {proposal_path!r}"
+            raise FileNotFoundError(msg)
+        if proposal.status != "pending":
+            msg = f"proposal not pending (status={proposal.status!r})"
+            raise ValueError(msg)
+
+        results: list[models.ApplyResult] = []
+        for action_path in proposal.action_drafts:
+            results.append(await self.apply_action(action_path, actor=actor))
+
+        all_applied = all(r.final_status == "applied" for r in results)
+        now = self._clock()
+        proposal.status = "accepted" if all_applied else "pending"
+        proposal.updated_at = now
+        proposal.result_actions = list(
+            dict.fromkeys([*proposal.result_actions, *(r.action_path for r in results)])
+        )
+        await self._store.write_proposal(proposal)
+        await self._invalidate_index([proposal_path])
+        return results
+
+    async def reject_proposal(
+        self, proposal_path: str, *, actor: str, reason: str | None = None
+    ) -> None:
+        """Mark a proposal rejected. Linked drafts are not auto-rejected."""
+        proposal = await self._store.read_proposal(proposal_path)
+        if proposal is None:
+            msg = f"proposal not found: {proposal_path!r}"
+            raise FileNotFoundError(msg)
+        if proposal.status != "pending":
+            msg = f"proposal not pending (status={proposal.status!r})"
+            raise ValueError(msg)
+        now = self._clock()
+        proposal.status = "rejected"
+        proposal.updated_at = now
+        # Audit trail evidence — actor + reason
+        proposal.evidence = [
+            *proposal.evidence,
+            {
+                "kind": "human_review",
+                "schema_version": "human-review-v1",
+                "source": "human",
+                "observed_at": now.isoformat(),
+                "producer": f"human-{actor}",
+                "payload": {"decision": "rejected", "reason": reason},
+            },
+        ]
+        await self._store.write_proposal(proposal)
+        await self._invalidate_index([proposal_path])
+
     # -------------------------------------------------------------- validate
 
     async def _validate(self, entry: models.ActionEntry) -> models.ValidationResult:
@@ -311,6 +391,8 @@ class CanonicalizationService:
             await self._validate_create_concept(entry, result)
         elif entry.kind == "retag-notes":
             await self._validate_retag_notes(entry, result)
+        elif entry.kind == "merge-concepts":
+            await self._validate_merge_concepts(entry, result)
         else:  # pragma: no cover — guarded by create_action_draft
             result.hard_blocks.append(_evidence("unsupported_action_kind", kind=entry.kind))
         if result.hard_blocks:
@@ -357,6 +439,33 @@ class CanonicalizationService:
                 if not await self._store.concept_exists(tag):
                     result.hard_blocks.append(_evidence("tag_not_active_concept", tag=tag))
 
+    async def _validate_merge_concepts(
+        self,
+        entry: models.ActionEntry,
+        result: models.ValidationResult,
+    ) -> None:
+        canonical = entry.params.get("canonical")
+        merge = entry.params.get("merge")
+        if not isinstance(canonical, str) or not paths.is_valid_concept_id(canonical):
+            result.hard_blocks.append(_evidence("invalid_canonical_id", canonical=canonical))
+            return
+        if not isinstance(merge, list) or not merge:
+            result.hard_blocks.append(_evidence("missing_merge_list"))
+            return
+        for old_id in merge:
+            if not isinstance(old_id, str) or not paths.is_valid_concept_id(old_id):
+                result.hard_blocks.append(_evidence("invalid_merge_id", merge=old_id))
+                return
+            if old_id == canonical:
+                result.hard_blocks.append(_evidence("canonical_in_merge_list", canonical=canonical))
+                return
+        if not await self._store.concept_exists(canonical):
+            result.hard_blocks.append(_evidence("canonical_not_active", canonical=canonical))
+            return
+        for old_id in merge:
+            if not await self._store.concept_exists(old_id):
+                result.hard_blocks.append(_evidence("merge_target_not_active", merge=old_id))
+
     # -------------------------------------------------------------- effects
 
     async def _persist_effects(self, entry: models.ActionEntry) -> list[str]:
@@ -364,6 +473,8 @@ class CanonicalizationService:
             return await self._effect_create_concept(entry)
         if entry.kind == "retag-notes":
             return await self._effect_retag_notes(entry)
+        if entry.kind == "merge-concepts":
+            return await self._effect_merge_concepts(entry)
         msg = f"unsupported kind: {entry.kind!r}"  # pragma: no cover
         raise NotImplementedError(msg)
 
@@ -406,4 +517,85 @@ class CanonicalizationService:
             merged.sort()
             await self._store.set_garden_tags(path, merged)
             affected.append(path)
+        return affected
+
+    async def _effect_merge_concepts(self, entry: models.ActionEntry) -> list[str]:
+        params = entry.params
+        canonical_id: str = params["canonical"]
+        merge_ids: list[str] = list(params["merge"])
+        alias_policy = {**_DEFAULT_MERGE_ALIAS_POLICY, **(params.get("alias_policy") or {})}
+        tombstone_policy = {
+            **_DEFAULT_MERGE_TOMBSTONE_POLICY,
+            **(params.get("tombstone_policy") or {}),
+        }
+        retag_policy = {
+            **_DEFAULT_MERGE_RETAG_POLICY,
+            **(params.get("retag_policy") or {}),
+        }
+
+        affected: list[str] = []
+        now = self._clock()
+
+        canonical = await self._store.read_concept(canonical_id)
+        if canonical is None:
+            msg = f"canonical concept disappeared mid-apply: {canonical_id!r}"
+            raise RuntimeError(msg)
+
+        # 1. Read all merge sources before touching anything
+        sources: dict[str, models.ConceptEntry] = {}
+        for old_id in merge_ids:
+            entry_old = await self._store.read_concept(old_id)
+            if entry_old is None:
+                msg = f"merge source disappeared mid-apply: {old_id!r}"
+                raise RuntimeError(msg)
+            sources[old_id] = entry_old
+
+        # 2. Update canonical aliases
+        new_aliases: list[str] = (
+            list(canonical.aliases) if alias_policy.get("preserve_existing_aliases", True) else []
+        )
+        if alias_policy.get("add_merged_ids_as_aliases", True):
+            for old_id, src in sources.items():
+                if old_id not in new_aliases:
+                    new_aliases.append(old_id)
+                for alias in src.aliases:
+                    if alias not in new_aliases:
+                        new_aliases.append(alias)
+        canonical.aliases = new_aliases
+        canonical.updated_at = now
+        await self._store.write_concept(canonical)
+        affected.append(canonical.path)
+
+        # 3. Tombstones + delete old active notes
+        for old_id, src in sources.items():
+            old_active_path = f"concepts/active/{old_id}.md"
+            await self._store.delete_active_concept(old_id)
+            affected.append(old_active_path)
+            if tombstone_policy.get("create_merged_notes", True):
+                tombstone_path = await self._store.write_tombstone(
+                    old_id=old_id,
+                    merged_into=canonical_id,
+                    merged_at=now,
+                    source_action=entry.path,
+                    display=src.display or old_id,
+                )
+                affected.append(tombstone_path)
+
+        # 4. Garden retag
+        if retag_policy.get("update_garden_tags", True):
+            merge_set = set(merge_ids)
+            for garden_path in await self._store.list_garden_paths():
+                tags = await self._store.read_garden_tags(garden_path)
+                if not any(t in merge_set for t in tags):
+                    continue
+                rewritten: list[str] = []
+                seen: set[str] = set()
+                for tag in tags:
+                    new = canonical_id if tag in merge_set else tag
+                    if new not in seen:
+                        seen.add(new)
+                        rewritten.append(new)
+                await self._store.set_garden_tags(garden_path, rewritten)
+                affected.append(garden_path)
+
         return affected

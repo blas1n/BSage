@@ -20,6 +20,18 @@ _ACTION_KIND_DIRS = {
     "create-decision",
 }
 
+# Per Handoff §5
+PROPOSAL_KINDS: frozenset[str] = frozenset(
+    {
+        "merge-concepts",
+        "create-concept",
+        "retag-notes",
+        "policy-update",
+        "policy-conflict",
+        "decision-review",
+    }
+)
+
 
 def is_valid_concept_id(concept_id: str) -> bool:
     """Return True if the string matches the concept id regex (Handoff §2)."""
@@ -96,3 +108,11 @@ def deprecated_concept_path(concept_id: str) -> str:
     """Vault-relative path for a deprecated concept (Handoff §3.3)."""
     validate_concept_id(concept_id)
     return f"concepts/deprecated/{concept_id}.md"
+
+
+def build_proposal_path(proposal_kind: str, dt: datetime, slug: str) -> str:
+    """Construct ``proposals/<kind>/<filename>`` (Handoff §5)."""
+    if proposal_kind not in PROPOSAL_KINDS:
+        msg = f"unknown proposal kind: {proposal_kind!r}"
+        raise ValueError(msg)
+    return f"proposals/{proposal_kind}/{build_action_filename(dt, slug)}"

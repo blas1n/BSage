@@ -45,6 +45,9 @@ class CanonicalizationIndex(ABC):
     async def get_active_concept(self, concept_id: str) -> models.ConceptEntry | None: ...
 
     @abstractmethod
+    async def list_active_concepts(self) -> list[models.ConceptEntry]: ...
+
+    @abstractmethod
     async def find_concepts_by_alias(self, alias: str) -> list[models.ConceptEntry]: ...
 
     @abstractmethod
@@ -58,6 +61,11 @@ class CanonicalizationIndex(ABC):
     async def list_actions(
         self, *, status: str | None = None, kind: str | None = None
     ) -> list[models.ActionEntry]: ...
+
+    @abstractmethod
+    async def list_proposals(
+        self, *, status: str | None = None, kind: str | None = None
+    ) -> list[models.ProposalEntry]: ...
 
     @abstractmethod
     async def find_pending_concept_draft(
@@ -83,6 +91,7 @@ class InMemoryCanonicalizationIndex(CanonicalizationIndex):
     def __init__(self) -> None:
         self._storage: StorageBackend | None = None
         self._concepts: dict[str, models.ConceptEntry] = {}
+        self._proposals: dict[str, models.ProposalEntry] = {}
         # alias_lower -> set of concept ids
         self._aliases: dict[str, set[str]] = {}
         self._tombstones: dict[str, models.TombstoneEntry] = {}
@@ -99,12 +108,16 @@ class InMemoryCanonicalizationIndex(CanonicalizationIndex):
         self._tombstones.clear()
         self._deprecated.clear()
         self._actions.clear()
+        self._proposals.clear()
         self._storage = None
 
     # --------------------------------------------------------------- queries
 
     async def get_active_concept(self, concept_id: str) -> models.ConceptEntry | None:
         return self._concepts.get(concept_id)
+
+    async def list_active_concepts(self) -> list[models.ConceptEntry]:
+        return [self._concepts[c] for c in sorted(self._concepts)]
 
     async def find_concepts_by_alias(self, alias: str) -> list[models.ConceptEntry]:
         ids = self._aliases.get(alias.casefold(), set())
@@ -138,6 +151,18 @@ class InMemoryCanonicalizationIndex(CanonicalizationIndex):
                 return entry
         return None
 
+    async def list_proposals(
+        self, *, status: str | None = None, kind: str | None = None
+    ) -> list[models.ProposalEntry]:
+        out: list[models.ProposalEntry] = []
+        for entry in self._proposals.values():
+            if status is not None and entry.status != status:
+                continue
+            if kind is not None and entry.kind != kind:
+                continue
+            out.append(entry)
+        return out
+
     # ----------------------------------------------------------- mutation
 
     async def invalidate(self, path: str) -> None:
@@ -153,6 +178,7 @@ class InMemoryCanonicalizationIndex(CanonicalizationIndex):
         self._tombstones.clear()
         self._deprecated.clear()
         self._actions.clear()
+        self._proposals.clear()
 
         store = NoteStore(storage)
         for path in await storage.list_files("concepts/active"):
@@ -172,6 +198,10 @@ class InMemoryCanonicalizationIndex(CanonicalizationIndex):
             action = await store.read_action(path)
             if action is not None:
                 self._actions[path] = action
+        for path in await storage.list_files("proposals"):
+            proposal = await store.read_proposal(path)
+            if proposal is not None:
+                self._proposals[path] = proposal
 
     # ----------------------------------------------------------- helpers
 
@@ -199,6 +229,12 @@ class InMemoryCanonicalizationIndex(CanonicalizationIndex):
                 dep = await _read_deprecated(storage, path)
                 if dep is not None:
                     self._deprecated[dep.concept_id] = dep
+        elif path.startswith("proposals/"):
+            self._proposals.pop(path, None)
+            if exists:
+                proposal = await store.read_proposal(path)
+                if proposal is not None:
+                    self._proposals[path] = proposal
         elif path.startswith("actions/"):
             self._actions.pop(path, None)
             if exists:

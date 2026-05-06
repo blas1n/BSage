@@ -99,6 +99,41 @@ RESOLVE_STATUSES: tuple[str, ...] = (
     "pending_candidate",
 )
 
+# Per Handoff §5
+PROPOSAL_STATUSES: tuple[str, ...] = (
+    "pending",
+    "accepted",
+    "rejected",
+    "superseded",
+    "expired",
+)
+
+
+@dataclass
+class ProposalEntry:
+    """Review-candidate proposal note (Handoff §5).
+
+    Proposals have no execution power — they group evidence and link to
+    one or more action drafts. Apply MUST happen on the linked action,
+    not the proposal.
+    """
+
+    path: str
+    kind: str
+    status: str
+    strategy: str
+    generator: str
+    generator_version: str
+    proposal_score: float
+    created_at: datetime
+    updated_at: datetime
+    expires_at: datetime
+    freshness: dict[str, Any] = field(default_factory=dict)
+    evidence: list[dict[str, Any]] = field(default_factory=list)
+    affected_paths: list[str] = field(default_factory=list)
+    action_drafts: list[str] = field(default_factory=list)
+    result_actions: list[str] = field(default_factory=list)
+
 
 @dataclass
 class ValidationResult:

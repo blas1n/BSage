@@ -92,10 +92,11 @@ class TestCreateActionDraft:
 
     @pytest.mark.asyncio
     async def test_unsupported_kind_raises(self, service: CanonicalizationService) -> None:
-        with pytest.raises(NotImplementedError, match="not in slice 1"):
+        # split-concept is reserved for a later slice (Vertical_Slices §9 v1.1+)
+        with pytest.raises(NotImplementedError, match="not yet supported"):
             await service.create_action_draft(
-                kind="merge-concepts",
-                params={"canonical": "ml", "merge": ["m-l"]},
+                kind="split-concept",
+                params={"source": "ml", "new_concepts": []},
             )
 
 

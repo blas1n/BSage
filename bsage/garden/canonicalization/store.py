@@ -196,6 +196,86 @@ class NoteStore:
     async def list_existing_action_paths(self, action_kind: str) -> set[str]:
         return set(await self._storage.list_files(f"actions/{action_kind}", "*.md"))
 
+    # ----------------------------------------------------------------- proposals
+
+    async def read_proposal(self, path: str) -> models.ProposalEntry | None:
+        if not await self._storage.exists(path):
+            return None
+        text = await self._storage.read(path)
+        fm = extract_frontmatter(text)
+        kind = self._proposal_kind_from_path(path)
+        return models.ProposalEntry(
+            path=path,
+            kind=kind,
+            status=fm.get("status", "pending"),
+            strategy=fm.get("strategy", ""),
+            generator=fm.get("generator", ""),
+            generator_version=fm.get("generator_version", ""),
+            proposal_score=float(fm.get("proposal_score") or 0.0),
+            created_at=_parse_iso(fm.get("created_at")) or datetime.min,
+            updated_at=_parse_iso(fm.get("updated_at")) or datetime.min,
+            expires_at=_parse_iso(fm.get("expires_at")) or datetime.min,
+            freshness=dict(fm.get("freshness") or {}),
+            evidence=list(fm.get("evidence") or []),
+            affected_paths=list(fm.get("affected_paths") or []),
+            action_drafts=list(fm.get("action_drafts") or []),
+            result_actions=list(fm.get("result_actions") or []),
+        )
+
+    async def write_proposal(self, entry: models.ProposalEntry, body: str = "") -> None:
+        # Handoff §0.2: proposal kind is path-derived. Do NOT write proposal_type.
+        # Handoff §5: proposals MUST NOT contain executable params.
+        fm: dict[str, Any] = {
+            "status": entry.status,
+            "created_at": _iso(entry.created_at),
+            "updated_at": _iso(entry.updated_at),
+            "expires_at": _iso(entry.expires_at),
+            "strategy": entry.strategy,
+            "generator": entry.generator,
+            "generator_version": entry.generator_version,
+            "proposal_score": entry.proposal_score,
+            "freshness": entry.freshness,
+            "evidence": list(entry.evidence),
+            "affected_paths": list(entry.affected_paths),
+            "action_drafts": list(entry.action_drafts),
+            "result_actions": list(entry.result_actions),
+        }
+        text = build_frontmatter(fm) + (body or "")
+        await self._storage.write(entry.path, text)
+
+    async def list_existing_proposal_paths(self, proposal_kind: str) -> set[str]:
+        return set(await self._storage.list_files(f"proposals/{proposal_kind}", "*.md"))
+
+    # ---------------------------------------------------------------- tombstones
+
+    async def write_tombstone(
+        self,
+        old_id: str,
+        merged_into: str,
+        merged_at: datetime,
+        source_action: str | None = None,
+        display: str | None = None,
+    ) -> str:
+        """Create ``concepts/merged/<old-id>.md`` (Handoff §3.2)."""
+        path = f"concepts/merged/{old_id}.md"
+        fm: dict[str, Any] = {
+            "merged_into": merged_into,
+            "merged_at": _iso(merged_at),
+        }
+        if source_action is not None:
+            fm["source_action"] = source_action
+        body = f"# {display or old_id}\n"
+        text = build_frontmatter(fm) + body
+        await self._storage.write(path, text)
+        return path
+
+    async def delete_active_concept(self, concept_id: str) -> None:
+        await self._storage.delete(f"concepts/active/{concept_id}.md")
+
+    async def list_garden_paths(self) -> list[str]:
+        """All garden notes across maturity folders."""
+        return list(await self._storage.list_files("garden", "*.md"))
+
     # ------------------------------------------------------------------- garden
 
     async def read_garden_tags(self, garden_path: str) -> list[str]:
@@ -226,5 +306,13 @@ class NoteStore:
         parts = PurePosixPath(path).parts
         if len(parts) < 3 or parts[0] != "actions":
             msg = f"not an action path: {path!r}"
+            raise ValueError(msg)
+        return parts[1]
+
+    @staticmethod
+    def _proposal_kind_from_path(path: str) -> str:
+        parts = PurePosixPath(path).parts
+        if len(parts) < 3 or parts[0] != "proposals":
+            msg = f"not a proposal path: {path!r}"
             raise ValueError(msg)
         return parts[1]
