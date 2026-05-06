@@ -1,0 +1,139 @@
+"""Domain dataclasses for canonicalization notes (Handoff §6, Class_Diagram §6).
+
+Slice 1 ships only ``ConceptEntry`` + ``ActionEntry`` + nested validation/
+execution records. Proposal/decision/policy/tombstone shapes are in scope for
+later slices but are referenced via type aliases here so import sites can
+stabilize without rewrites.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any
+
+# Per Handoff §6
+ACTION_STATUSES: tuple[str, ...] = (
+    "draft",
+    "pending_approval",
+    "applied",
+    "rejected",
+    "blocked",
+    "expired",
+    "failed",
+    "superseded",
+)
+
+# Per Handoff §6, §7 (forbidden kinds excluded — see §6 Forbidden action kinds)
+ACTION_KINDS: tuple[str, ...] = (
+    "create-concept",
+    "merge-concepts",
+    "split-concept",
+    "deprecate-concept",
+    "restore-concept",
+    "retag-notes",
+    "update-policy",
+    "create-decision",
+)
+
+
+@dataclass
+class ConceptEntry:
+    """Active concept registry entry (Handoff §3.1).
+
+    Identity is the file stem under ``concepts/active/``. ``display`` comes
+    from the H1 in the body, not frontmatter (per Handoff §0.2 — path and
+    frontmatter have different jobs).
+    """
+
+    concept_id: str
+    path: str
+    display: str
+    aliases: list[str]
+    created_at: datetime
+    updated_at: datetime
+    source_action: str | None = None
+
+
+@dataclass
+class ValidationResult:
+    """Validation outcome embedded in action frontmatter (Handoff §6, §13)."""
+
+    status: str = "not_run"
+    hard_blocks: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class ScoreResult:
+    """Scoring outcome embedded in action frontmatter (Handoff §6, §13).
+
+    Slice 1 leaves all fields at default. Slice 4 fills these from
+    deterministic + model + human evidence.
+    """
+
+    status: str = "not_run"
+    stability_score: float | None = None
+    scorer_version: str | None = None
+    policy_profile_path: str | None = None
+    risk_reasons: list[dict[str, Any]] = field(default_factory=list)
+    deterministic_evidence: list[dict[str, Any]] = field(default_factory=list)
+    model_evidence: list[dict[str, Any]] = field(default_factory=list)
+    human_evidence: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class PermissionRecord:
+    """Safe Mode permission decision (Handoff §6, §13)."""
+
+    safe_mode: bool | None = None
+    decision: str | None = None
+    actor: str | None = None
+    decided_at: datetime | None = None
+
+
+@dataclass
+class ExecutionRecord:
+    """Apply outcome embedded in action frontmatter (Handoff §6, §13)."""
+
+    status: str = "not_run"
+    applied_at: datetime | None = None
+    error: str | None = None
+
+
+@dataclass
+class ActionEntry:
+    """Typed action draft / audit record (Handoff §6).
+
+    Path and kind are derived from the file location, not from frontmatter
+    fields (per Handoff §0.2). The dataclass keeps both for in-memory
+    convenience but ``kind`` is never written to disk.
+    """
+
+    path: str
+    kind: str
+    status: str
+    action_schema_version: str
+    params: dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
+    expires_at: datetime
+    source_proposal: str | None = None
+    freshness: dict[str, Any] = field(default_factory=dict)
+    validation: ValidationResult = field(default_factory=ValidationResult)
+    scoring: ScoreResult = field(default_factory=ScoreResult)
+    permission: PermissionRecord = field(default_factory=PermissionRecord)
+    execution: ExecutionRecord = field(default_factory=ExecutionRecord)
+    affected_paths: list[str] = field(default_factory=list)
+    supersedes: list[str] = field(default_factory=list)
+    superseded_by: str | None = None
+
+
+@dataclass
+class ApplyResult:
+    """Outcome returned to the API/CLI caller (Class_Diagram §6)."""
+
+    action_path: str
+    final_status: str
+    affected_paths: list[str]
+    domain_effects: list[dict[str, Any]] = field(default_factory=list)
+    error: str | None = None
