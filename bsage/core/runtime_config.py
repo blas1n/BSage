@@ -36,11 +36,16 @@ class _ConfigState:
     safe_mode: bool
     bsgateway_url: str = ""
     disabled_entries: list[str] = field(default_factory=list)
+    # Embedding (slice 5+) — runtime-mutable so tenants can point at a
+    # local Ollama (e.g. http://bsserver:11434) without redeploy.
+    embedding_model: str = ""
+    embedding_api_key: str = ""
+    embedding_api_base: str | None = None
 
 
 # Pre-computed at import time — avoids repeated introspection.
 _STATE_FIELD_NAMES: frozenset[str] = frozenset(f.name for f in dc_fields(_ConfigState))
-_SECRET_FIELDS: frozenset[str] = frozenset({"llm_api_key"})
+_SECRET_FIELDS: frozenset[str] = frozenset({"llm_api_key", "embedding_api_key"})
 
 
 def _validate(kwargs: dict[str, Any]) -> None:

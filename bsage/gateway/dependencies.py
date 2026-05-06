@@ -173,10 +173,14 @@ class AppState:
         # Vector embeddings (opt-in via EMBEDDING_MODEL env var)
         vector_db_path = settings.vault_path / ".bsage" / "vectors.db"
         self.vector_store = VectorStore(vector_db_path)
+        # Embedding settings live on RuntimeConfig (slice 5+) so admins
+        # can point at a local Ollama (e.g. http://bsserver:11434) via the
+        # SettingsView UI without redeploying. Settings env vars become
+        # the initial values; PATCH /api/config overrides them.
         self.embedder = Embedder(
-            model=settings.embedding_model,
-            api_key=settings.embedding_api_key,
-            api_base=settings.embedding_api_base,
+            model=self.runtime_config.embedding_model,
+            api_key=self.runtime_config.embedding_api_key,
+            api_base=self.runtime_config.embedding_api_base,
         )
 
         self.retriever = VaultRetriever(

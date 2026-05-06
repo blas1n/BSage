@@ -357,16 +357,26 @@ def _actor(principal: Any) -> str:
 def _embedder_callable(state: AppState):
     """Return a callable suitable for ``BalancedProposer.embedder``.
 
-    Skips embedding when the gateway-wired Embedder is disabled (no
-    EMBEDDING_MODEL configured). The Tailscale Ollama URL (e.g.
-    ``http://bsserver:11434``) is read from
-    ``settings.embedding_api_base`` at gateway construction.
+    Builds a fresh ``Embedder`` per call from ``state.runtime_config`` so
+    admins can change embedding settings via the SettingsView UI / PATCH
+    /api/config without restarting the gateway. Tenants that want a
+    local Ollama set ``embedding_api_base`` to ``http://bsserver:11434``.
+
+    Returns None when the runtime config has no embedding model set.
     """
-    embedder = state.embedder
-    if not embedder.enabled:
+    cfg = state.runtime_config
+    if not cfg.embedding_model:
         return None
 
+    from bsage.garden.embedder import Embedder as _Embedder
+
     async def _embed(ids: list[str]) -> list[list[float]]:
+        # Re-read every call so live SettingsView edits propagate.
+        embedder = _Embedder(
+            model=cfg.embedding_model,
+            api_key=cfg.embedding_api_key,
+            api_base=cfg.embedding_api_base,
+        )
         return await embedder.embed_many(ids)
 
     return _embed
@@ -375,11 +385,12 @@ def _embedder_callable(state: AppState):
 def _verifier_callable(state: AppState):
     """Return a callable suitable for ``BalancedProposer.verifier``.
 
-    Wraps ``state.llm_client.chat`` with a short same-concept prompt and
-    parses ``verdict`` + ``confidence`` from the JSON response. Returns
-    None when no LLM model is configured.
+    Wraps ``state.llm_client.chat`` (which already reads
+    ``runtime_config.llm_*`` per call) with a short same-concept prompt
+    and parses ``verdict`` + ``confidence`` from the JSON response.
+    Returns None when the runtime config has no LLM model set.
     """
-    if not state.settings.llm_model:
+    if not state.runtime_config.llm_model:
         return None
 
     import json as _json

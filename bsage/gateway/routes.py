@@ -49,6 +49,9 @@ class ConfigUpdate(BaseModel):
     llm_model: str | None = None
     llm_api_key: str | None = None
     llm_api_base: str | None = None
+    embedding_model: str | None = None
+    embedding_api_key: str | None = None
+    embedding_api_base: str | None = None
     safe_mode: bool | None = None
     disabled_entries: list[str] | None = None
 
@@ -1235,9 +1238,10 @@ def create_routes(state: AppState) -> APIRouter:
 
     @protected.get("/config")
     async def get_config(_perm: None = Depends(config_read)) -> dict[str, Any]:
-        """Return current runtime config (api_key excluded)."""
+        """Return current runtime config (api_keys excluded)."""
         snap = state.runtime_config.snapshot()
         snap["has_llm_api_key"] = bool(state.runtime_config.llm_api_key)
+        snap["has_embedding_api_key"] = bool(state.runtime_config.embedding_api_key)
         snap["index_available"] = state.retriever.index_available
         return snap
 
@@ -1254,6 +1258,7 @@ def create_routes(state: AppState) -> APIRouter:
         if not changes:
             snap = state.runtime_config.snapshot()
             snap["has_llm_api_key"] = bool(state.runtime_config.llm_api_key)
+            snap["has_embedding_api_key"] = bool(state.runtime_config.embedding_api_key)
             snap["index_available"] = state.retriever.index_available
             return snap
         try:
@@ -1262,6 +1267,7 @@ def create_routes(state: AppState) -> APIRouter:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         snap = state.runtime_config.snapshot()
         snap["has_llm_api_key"] = bool(state.runtime_config.llm_api_key)
+        snap["has_embedding_api_key"] = bool(state.runtime_config.embedding_api_key)
         snap["index_available"] = state.retriever.index_available
         return snap
 

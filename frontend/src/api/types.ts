@@ -70,6 +70,9 @@ export interface ConfigUpdate {
   llm_model?: string;
   llm_api_key?: string;
   llm_api_base?: string | null;
+  embedding_model?: string;
+  embedding_api_key?: string;
+  embedding_api_base?: string | null;
   safe_mode?: boolean;
   disabled_entries?: string[];
 }

@@ -21,6 +21,12 @@ export function SettingsView() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<LlmTestResult | null>(null);
+  // Embedding (slice 5+): runtime-mutable so admins can point at a local
+  // Ollama (e.g. http://bsserver:11434) without redeploy.
+  const [embeddingModel, setEmbeddingModel] = useState("");
+  const [embeddingApiBase, setEmbeddingApiBase] = useState("");
+  const [embeddingApiKey, setEmbeddingApiKey] = useState("");
+  const [showEmbeddingApiKey, setShowEmbeddingApiKey] = useState(false);
 
   const refreshConfig = useCallback(async () => {
     setLoading(true);
@@ -30,6 +36,8 @@ export function SettingsView() {
       setConfig(c);
       setLlmModel(c.llm_model);
       setLlmApiBase(c.llm_api_base ?? "");
+      setEmbeddingModel(c.embedding_model ?? "");
+      setEmbeddingApiBase(c.embedding_api_base ?? "");
     } catch (exc) {
       setLoadError(exc instanceof Error ? exc.message : String(exc));
     } finally {
@@ -91,6 +99,46 @@ export function SettingsView() {
       setSaving(false);
     }
   }, [llmApiKey]);
+
+  const handleEmbeddingModelSave = useCallback(async () => {
+    setSaving(true);
+    try {
+      const updated = await api.updateConfig({
+        embedding_model: embeddingModel.trim(),
+      });
+      setConfig(updated);
+    } finally {
+      setSaving(false);
+    }
+  }, [embeddingModel]);
+
+  const handleEmbeddingApiBaseSave = useCallback(async () => {
+    setSaving(true);
+    try {
+      const updated = await api.updateConfig({
+        embedding_api_base: embeddingApiBase.trim() || null,
+      });
+      setConfig(updated);
+      setEmbeddingApiBase(updated.embedding_api_base ?? "");
+    } finally {
+      setSaving(false);
+    }
+  }, [embeddingApiBase]);
+
+  const handleEmbeddingApiKeySave = useCallback(async () => {
+    if (!embeddingApiKey.trim()) return;
+    setSaving(true);
+    try {
+      const updated = await api.updateConfig({
+        embedding_api_key: embeddingApiKey.trim(),
+      });
+      setConfig(updated);
+      setEmbeddingApiKey("");
+      setShowEmbeddingApiKey(false);
+    } finally {
+      setSaving(false);
+    }
+  }, [embeddingApiKey]);
 
   const handleTestLlm = useCallback(async () => {
     setTesting(true);
@@ -258,12 +306,105 @@ export function SettingsView() {
           </div>
         </section>
 
-        {config.embedding_model && (
-          <section>
-            <h3 className="text-sm font-medium text-gray-300 mb-2">{t("settings.embeddingModel")}</h3>
-            <p className="text-sm text-gray-500 font-mono">{config.embedding_model}</p>
-          </section>
-        )}
+        <section className="border-t border-white/5 pt-6">
+          <h3 className="text-sm font-medium text-gray-300 mb-3">
+            {t("settings.embeddingModel", "Embedding model")}
+          </h3>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={embeddingModel}
+              onChange={(e) => setEmbeddingModel(e.target.value)}
+              placeholder="e.g. ollama/nomic-embed-text"
+              className="min-h-10 flex-1 rounded-lg border border-gray-700 bg-gray-850 px-3 py-2 text-sm text-gray-100 outline-none focus:border-accent placeholder:text-gray-600"
+            />
+            <button
+              onClick={handleEmbeddingModelSave}
+              disabled={saving || embeddingModel === (config.embedding_model ?? "")}
+              className="min-h-10 px-4 py-2 text-sm rounded-lg bg-accent text-white hover:bg-accent-dark disabled:opacity-40 transition-colors"
+            >
+              {t("common.save")}
+            </button>
+          </div>
+          <p className="text-xs text-gray-600 mt-1">
+            Used by the canonicalization balanced proposer + vector
+            search. Empty disables both.
+          </p>
+        </section>
+
+        <section>
+          <h3 className="text-sm font-medium text-gray-300 mb-3">
+            Embedding API base
+          </h3>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={embeddingApiBase}
+              onChange={(e) => setEmbeddingApiBase(e.target.value)}
+              placeholder="http://bsserver:11434 (Ollama via Tailscale)"
+              className="min-h-10 flex-1 rounded-lg border border-gray-700 bg-gray-850 px-3 py-2 text-sm text-gray-100 outline-none focus:border-accent placeholder:text-gray-600"
+            />
+            <button
+              onClick={handleEmbeddingApiBaseSave}
+              disabled={
+                saving || embeddingApiBase === (config.embedding_api_base ?? "")
+              }
+              className="min-h-10 px-4 py-2 text-sm rounded-lg bg-accent text-white hover:bg-accent-dark disabled:opacity-40 transition-colors"
+            >
+              {t("common.save")}
+            </button>
+          </div>
+          <p className="text-xs text-gray-600 mt-1">
+            Override for self-hosted Ollama / OpenAI-compatible servers.
+          </p>
+        </section>
+
+        <section>
+          <h3 className="text-sm font-medium text-gray-300 mb-3">
+            Embedding API key
+          </h3>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type={showEmbeddingApiKey ? "text" : "password"}
+                value={embeddingApiKey}
+                onChange={(e) => setEmbeddingApiKey(e.target.value)}
+                placeholder="paste once; stored encrypted"
+                className="min-h-10 w-full rounded-lg border border-gray-700 bg-gray-850 px-3 py-2 pr-10 text-sm text-gray-100 outline-none focus:border-accent placeholder:text-gray-600"
+              />
+              <button
+                type="button"
+                onClick={() => setShowEmbeddingApiKey(!showEmbeddingApiKey)}
+                className="absolute right-1 top-1/2 inline-flex min-h-10 min-w-10 -translate-y-1/2 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-800/50 hover:text-gray-300"
+              >
+                {showEmbeddingApiKey ? (
+                  <EyeOff className="w-4 h-4" />
+                ) : (
+                  <Eye className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+            <button
+              onClick={handleEmbeddingApiKeySave}
+              disabled={saving || !embeddingApiKey.trim()}
+              className="min-h-10 px-4 py-2 text-sm rounded-lg bg-accent text-white hover:bg-accent-dark disabled:opacity-40 transition-colors"
+            >
+              {t("common.save")}
+            </button>
+          </div>
+          <div className="flex items-center gap-1.5 mt-2">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                config.has_embedding_api_key ? "bg-accent" : "bg-amber-500"
+              }`}
+            />
+            <span className="text-xs text-gray-500">
+              {config.has_embedding_api_key
+                ? "Configured"
+                : "Not set (leave empty for local Ollama)"}
+            </span>
+          </div>
+        </section>
 
         <McpServerSection />
 
