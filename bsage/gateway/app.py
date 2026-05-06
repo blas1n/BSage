@@ -95,8 +95,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     if is_demo_mode():
         from bsage.demo.router import demo_router
+        from bsage.demo.seed import seed_demo_vault
 
         app.include_router(demo_router)
+        # Pre-populate the shared demo vault with realistic notes so the
+        # visitor's vault tree, search, and graph aren't empty. Idempotent
+        # via a sentinel file; safe across container restarts.
+        seed_demo_vault(state.vault.root)
     app.include_router(
         create_ws_routes(
             approval_interface=state.ws_approval_interface,
