@@ -2,7 +2,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
-import type { LlmTestResult, RuntimeConfig } from "../../api/types";
+import type { ConfigUpdate, LlmTestResult, RuntimeConfig } from "../../api/types";
 import { useAuth } from "../../hooks/useAuth";
 import { Icon } from "../common/Icon";
 import { Toggle } from "../common/Toggle";
@@ -408,6 +408,12 @@ export function SettingsView() {
 
         <McpServerSection />
 
+        <CanonicalizationSection
+          config={config}
+          saving={saving}
+          onChange={(updated) => setConfig(updated)}
+        />
+
         <section className="border-t border-white/5 pt-6">
           <h3 className="text-sm font-medium text-gray-300 mb-3">{t("settings.account")}</h3>
           <button
@@ -480,5 +486,128 @@ function McpServerSection() {
 
       {open && <McpServerSetupModal onClose={() => setOpen(false)} />}
     </>
+  );
+}
+
+interface CanonicalizationSectionProps {
+  config: RuntimeConfig | null;
+  saving: boolean;
+  onChange: (updated: RuntimeConfig) => void;
+}
+
+function CanonicalizationSection({ config, saving, onChange }: CanonicalizationSectionProps) {
+  const [busy, setBusy] = useState(false);
+  const [expireCron, setExpireCron] = useState(config?.canon_expire_cron ?? "0 * * * *");
+  const [lintCron, setLintCron] = useState(config?.canon_lint_cron ?? "0 0 * * 0");
+
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      if (config?.canon_expire_cron) setExpireCron(config.canon_expire_cron);
+      if (config?.canon_lint_cron) setLintCron(config.canon_lint_cron);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [config?.canon_expire_cron, config?.canon_lint_cron]);
+
+  const patch = useCallback(async (body: ConfigUpdate) => {
+    setBusy(true);
+    try {
+      const updated = await api.updateConfig(body);
+      onChange(updated);
+    } finally {
+      setBusy(false);
+    }
+  }, [onChange]);
+
+  const disabled = busy || saving || config === null;
+
+  return (
+    <section className="border-t border-white/5 pt-6">
+      <h3 className="text-sm font-medium text-gray-300 mb-3">Canonicalization automation</h3>
+      <p className="text-xs text-gray-500 mb-4">
+        Background jobs that keep the canon layer healthy. All three are off by default —
+        enable per deployment. Watcher = filesystem daemon for external Obsidian/git edits;
+        expire/lint = scheduled cron jobs.
+      </p>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="text-sm text-gray-200">canon-watcher</div>
+            <div className="text-xs text-gray-500">Detect external edits under concepts/, proposals/, actions/, decisions/.</div>
+          </div>
+          <Toggle
+            checked={Boolean(config?.canon_watcher_enabled)}
+            onChange={(checked) => patch({ canon_watcher_enabled: checked })}
+            label="canon-watcher"
+            disabled={disabled}
+          />
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="text-sm text-gray-200">canon-expire</div>
+            <div className="text-xs text-gray-500">Mark stale draft/pending actions and proposals as expired.</div>
+          </div>
+          <Toggle
+            checked={Boolean(config?.canon_expire_enabled)}
+            onChange={(checked) => patch({ canon_expire_enabled: checked })}
+            label="canon-expire"
+            disabled={disabled}
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-gray-500 w-28">Expire cron</label>
+          <input
+            type="text"
+            value={expireCron}
+            onChange={(e) => setExpireCron(e.target.value)}
+            placeholder="0 * * * *"
+            className="flex-1 min-h-10 px-3 py-2 bg-bg-elevated border border-white/10 rounded-lg text-sm text-gray-200 font-mono"
+            disabled={disabled}
+          />
+          <button
+            type="button"
+            onClick={() => patch({ canon_expire_cron: expireCron.trim() || "0 * * * *" })}
+            disabled={disabled || !expireCron.trim()}
+            className="min-h-10 px-3 py-2 text-xs bg-accent-light/15 text-accent-light rounded-lg hover:bg-accent-light/25 transition-colors disabled:opacity-50"
+          >
+            Save
+          </button>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="text-sm text-gray-200">canon-lint</div>
+            <div className="text-xs text-gray-500">Detect orphan tags, alias collisions, and redirect anomalies.</div>
+          </div>
+          <Toggle
+            checked={Boolean(config?.canon_lint_enabled)}
+            onChange={(checked) => patch({ canon_lint_enabled: checked })}
+            label="canon-lint"
+            disabled={disabled}
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-gray-500 w-28">Lint cron</label>
+          <input
+            type="text"
+            value={lintCron}
+            onChange={(e) => setLintCron(e.target.value)}
+            placeholder="0 0 * * 0"
+            className="flex-1 min-h-10 px-3 py-2 bg-bg-elevated border border-white/10 rounded-lg text-sm text-gray-200 font-mono"
+            disabled={disabled}
+          />
+          <button
+            type="button"
+            onClick={() => patch({ canon_lint_cron: lintCron.trim() || "0 0 * * 0" })}
+            disabled={disabled || !lintCron.trim()}
+            className="min-h-10 px-3 py-2 text-xs bg-accent-light/15 text-accent-light rounded-lg hover:bg-accent-light/25 transition-colors disabled:opacity-50"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }

@@ -2,17 +2,23 @@ interface ToggleProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label: string;
+  disabled?: boolean;
 }
 
-export function Toggle({ checked, onChange, label }: ToggleProps) {
+export function Toggle({ checked, onChange, label, disabled = false }: ToggleProps) {
   return (
-    <label className="relative inline-flex min-h-10 min-w-11 items-center justify-center cursor-pointer">
+    <label
+      className={`relative inline-flex min-h-10 min-w-11 items-center justify-center ${
+        disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"
+      }`}
+    >
       <input
         type="checkbox"
         className="sr-only peer"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
         aria-label={label}
+        disabled={disabled}
       />
       <div className="relative w-10 h-5 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-accent-light" />
     </label>
