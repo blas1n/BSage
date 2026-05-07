@@ -61,6 +61,17 @@ class EventType(Enum):
     # Credentials
     CREDENTIAL_SETUP_REQUIRED = "credential_setup_required"
 
+    # Canonicalization (Handoff §14)
+    CANONICALIZATION_PROPOSAL_CREATED = "canonicalization_proposal_created"
+    CANONICALIZATION_PROPOSAL_STATUS_CHANGED = "canonicalization_proposal_status_changed"
+    CANONICALIZATION_ACTION_DRAFTED = "canonicalization_action_drafted"
+    CANONICALIZATION_ACTION_STATUS_CHANGED = "canonicalization_action_status_changed"
+    CANONICALIZATION_ACTION_APPLIED = "canonicalization_action_applied"
+    CANONICALIZATION_DECISION_CREATED = "canonicalization_decision_created"
+    CANONICALIZATION_DECISION_SUPERSEDED = "canonicalization_decision_superseded"
+    CANONICALIZATION_POLICY_UPDATED = "canonicalization_policy_updated"
+    CANONICALIZATION_POLICY_CONFLICT = "canonicalization_policy_conflict"
+
 
 @dataclass
 class Event:

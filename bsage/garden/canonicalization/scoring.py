@@ -20,7 +20,7 @@ from typing import Any
 
 import structlog
 
-from bsage.garden.canonicalization import models
+from bsage.garden.canonicalization import evidence, models
 from bsage.garden.canonicalization.decisions import DecisionMemory
 from bsage.garden.canonicalization.policies import PolicyResolver
 
@@ -161,11 +161,11 @@ class CanonicalizationScorer:
         schema_version: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
-        return {
-            "kind": kind,
-            "schema_version": schema_version,
-            "source": "deterministic",
-            "observed_at": self._clock().isoformat(),
-            "producer": _PRODUCER,
-            "payload": payload,
-        }
+        return evidence.envelope(
+            kind=kind,
+            schema_version=schema_version,
+            payload=payload,
+            source="deterministic",
+            producer=_PRODUCER,
+            clock=self._clock,
+        )

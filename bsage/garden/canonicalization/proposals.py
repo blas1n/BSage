@@ -23,8 +23,10 @@ from typing import Any
 import structlog
 
 from bsage.garden.canonicalization import models, paths
+from bsage.garden.canonicalization.evidence import envelope as _evidence_envelope
 from bsage.garden.canonicalization.index import CanonicalizationIndex
 from bsage.garden.canonicalization.store import NoteStore
+from bsage.garden.vector_store import _cosine_similarity
 
 logger = structlog.get_logger(__name__)
 
@@ -74,11 +76,17 @@ class DeterministicProposer:
         store: NoteStore,
         clock: Callable[[], datetime] | None = None,
         threshold: float = _DEFAULT_THRESHOLD,
+        index_reader: Any | None = None,
     ) -> None:
         self._index = index
         self._store = store
         self._clock = clock or datetime.now
         self._threshold = threshold
+        # Optional ``IndexReader`` (Protocol from bsage.garden.index_reader).
+        # When wired, ``_garden_tag_frequency`` uses cached NoteSummary
+        # tags instead of re-reading every garden file. Tests that don't
+        # care about perf can leave it None — the fallback scans storage.
+        self._index_reader = index_reader
 
     # -------------------------------------------------------------- API
 
@@ -203,7 +211,28 @@ class DeterministicProposer:
     # ---------------------------------------------------- vault helpers
 
     async def _garden_tag_frequency(self, concept_ids: list[str]) -> dict[str, int]:
+        """Count active concept-id usage across garden notes.
+
+        Fast path: when an ``IndexReader`` is wired (gateway boot), use
+        the in-memory ``NoteSummary`` cache — O(N) over summaries, no
+        disk IO. Fallback (tests, CLI without gateway): scan storage.
+        """
         counts: dict[str, int] = {cid: 0 for cid in concept_ids}
+        if self._index_reader is not None:
+            try:
+                summaries = await self._index_reader.get_all_summaries()
+            except Exception as exc:  # noqa: BLE001 — never abort proposer
+                logger.warning("proposer_index_reader_failed", error=str(exc))
+                summaries = None
+            if summaries is not None:
+                for s in summaries:
+                    if not s.path.startswith("garden/"):
+                        continue
+                    for tag in s.tags or []:
+                        if tag in counts:
+                            counts[tag] += 1
+                return counts
+        # Fallback: re-read every garden note from disk
         for path in await self._store.list_garden_paths():
             tags = await self._store.read_garden_tags(path)
             for tag in tags:
@@ -325,14 +354,17 @@ def _envelope(
     source: str = "deterministic",
     producer: str = _GENERATOR_NAME,
 ) -> dict[str, Any]:
-    return {
-        "kind": kind,
-        "schema_version": schema_version,
-        "source": source,
-        "observed_at": observed_at.isoformat(),
-        "producer": producer,
-        "payload": payload,
-    }
+    """Thin wrapper over evidence.envelope() — kept positional-arg
+    compatible with the in-module call sites (alias_exact / frequency /
+    embedding_knn / llm_verify)."""
+    return _evidence_envelope(
+        kind=kind,
+        schema_version=schema_version,
+        payload=payload,
+        source=source,
+        producer=producer,
+        observed_at=observed_at,
+    )
 
 
 # ============================================================================
@@ -380,8 +412,15 @@ class BalancedProposer(DeterministicProposer):
         embedding_top_k: int = _DEFAULT_EMBEDDING_TOP_K,
         embedding_threshold: float = _DEFAULT_EMBEDDING_THRESHOLD,
         cannot_link_threshold: float = _DEFAULT_CANNOT_LINK_THRESHOLD,
+        index_reader: Any | None = None,
     ) -> None:
-        super().__init__(index=index, store=store, clock=clock, threshold=threshold)
+        super().__init__(
+            index=index,
+            store=store,
+            clock=clock,
+            threshold=threshold,
+            index_reader=index_reader,
+        )
         self._embedder = embedder
         self._verifier = verifier
         self._decisions = decisions
@@ -437,15 +476,12 @@ class BalancedProposer(DeterministicProposer):
                 got=len(vectors),
             )
             return {}
-        norms = [_l2_norm(v) for v in vectors]
+        # Reuse the canonical cosine impl from vector_store rather than
+        # duplicating it (zero-norm guard included).
         pairs: dict[tuple[str, str], float] = {}
         for i in range(len(ids)):
-            if norms[i] == 0.0:
-                continue
             for j in range(i + 1, len(ids)):
-                if norms[j] == 0.0:
-                    continue
-                cos = _dot(vectors[i], vectors[j]) / (norms[i] * norms[j])
+                cos = _cosine_similarity(vectors[i], vectors[j])
                 if cos >= self._embedding_threshold:
                     key = tuple(sorted((ids[i], ids[j])))
                     pairs[key] = cos
@@ -538,11 +574,3 @@ class BalancedProposer(DeterministicProposer):
                     )
                 )
         return evidence
-
-
-def _dot(a: list[float], b: list[float]) -> float:
-    return sum(x * y for x, y in zip(a, b, strict=True))
-
-
-def _l2_norm(v: list[float]) -> float:
-    return sum(x * x for x in v) ** 0.5

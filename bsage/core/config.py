@@ -56,6 +56,13 @@ class Settings(BsvibeSettings):
     embedding_api_key: str = ""
     embedding_api_base: str | None = None
 
+    # Canonicalization (slice 5+)
+    # When True, MCP exposes the optional mutation tools
+    # (canonicalization_generate_proposals, _expire_stale, _approve_action,
+    # _reject_action). Per Handoff §15.2 these are off by default — read-only
+    # MCP is the safer deployment mode for untrusted clients.
+    mcp_canon_mutation_enabled: bool = False
+
     # Maturity lifecycle thresholds
     maturity_seedling_min_relationships: int = Field(default=2, gt=0)
     maturity_budding_min_sources: int = Field(default=3, gt=0)

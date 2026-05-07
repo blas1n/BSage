@@ -8,6 +8,7 @@ import { useApproval } from "./hooks/useApproval";
 import { consumeAuthCallback, injectDemoToken, useAuth } from "./hooks/useAuth";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { ApprovalModal } from "./components/approval/ApprovalModal";
+import { CanonicalizationQueueView } from "./components/canonicalization/CanonicalizationQueueView";
 import { EventsProvider } from "./contexts/EventsContext";
 import { ChatView } from "./components/chat/ChatView";
 import { DashboardView } from "./components/dashboard/DashboardView";
@@ -75,6 +76,9 @@ function RouteContent({ hash }: { hash: string }) {
     case "#/vault":
     case "#/actions":
       return <VaultView />;
+    case "#/canonicalization":
+    case "#/canonicalization/queue":
+      return <CanonicalizationQueueView />;
     case "#/settings":
       return <SettingsView />;
     default:
