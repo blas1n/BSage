@@ -124,6 +124,18 @@ class Settings(BsvibeSettings):
     openfga_auth_token: str = ""
     service_token_signing_secret: str = ""
 
+    # Token cutover (Phase 1, PR #5) — bootstrap admin token + RFC 7662
+    # opaque session introspection. Mirrors bsvibe_authz.Settings so the
+    # central verifier resolves the same env vars.
+    # ``bootstrap_token_hash`` is the SHA-256 hex digest of the
+    # ``bsv_admin_*`` token; empty disables the bootstrap path.
+    # Empty ``introspection_url`` disables the opaque-token path; the
+    # verifier then handles only JWT and (optionally) bootstrap tokens.
+    bootstrap_token_hash: str = ""
+    introspection_url: str = ""
+    introspection_client_id: str = ""
+    introspection_client_secret: str = ""
+
     # Default tenant id used when a write happens without an authenticated
     # principal (cron, local dev, or migration). Personal-tenant only.
     default_tenant_id: str = "tenant-default"
