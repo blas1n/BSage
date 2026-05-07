@@ -18,7 +18,7 @@ from typing import Any
 
 import structlog
 
-from bsage.garden.canonicalization import models
+from bsage.garden.canonicalization import models, paths
 from bsage.garden.canonicalization.store import NoteStore
 from bsage.garden.markdown_utils import extract_frontmatter
 from bsage.garden.storage import StorageBackend
@@ -235,21 +235,29 @@ class InMemoryCanonicalizationIndex(CanonicalizationIndex):
             dep = await _read_deprecated(storage, path)
             if dep is not None:
                 self._deprecated[dep.concept_id] = dep
+        # ``actions/`` is shared with the legacy GardenWriter agent action log
+        # (``actions/{YYYY-MM-DD}.md`` and ``actions/input-log/...``) so we
+        # MUST filter to canon paths only — kind-subdir under a known action
+        # kind. Same defensive filter for proposals/ and decisions/.
         for path in await storage.list_files("actions"):
+            if not _is_canon_action_path(path):
+                continue
             action = await store.read_action(path)
             if action is not None:
                 self._actions[path] = action
         for path in await storage.list_files("proposals"):
+            if not _is_canon_proposal_path(path):
+                continue
             proposal = await store.read_proposal(path)
             if proposal is not None:
                 self._proposals[path] = proposal
         # decisions/<kind>/... AND decisions/policy/<kind>/<profile>.md
         for path in await storage.list_files("decisions"):
-            if path.startswith("decisions/policy/"):
+            if _is_canon_policy_path(path):
                 policy = await store.read_policy(path)
                 if policy is not None:
                     self._policies[path] = policy
-            else:
+            elif _is_canon_decision_path(path):
                 decision = await store.read_decision(path)
                 if decision is not None:
                     self._decisions[path] = decision
@@ -281,24 +289,34 @@ class InMemoryCanonicalizationIndex(CanonicalizationIndex):
                 if dep is not None:
                     self._deprecated[dep.concept_id] = dep
         elif path.startswith("proposals/"):
+            if not _is_canon_proposal_path(path):
+                return
             self._proposals.pop(path, None)
             if exists:
                 proposal = await store.read_proposal(path)
                 if proposal is not None:
                     self._proposals[path] = proposal
         elif path.startswith("decisions/policy/"):
+            if not _is_canon_policy_path(path):
+                return
             self._policies.pop(path, None)
             if exists:
                 policy = await store.read_policy(path)
                 if policy is not None:
                     self._policies[path] = policy
         elif path.startswith("decisions/"):
+            if not _is_canon_decision_path(path):
+                return
             self._decisions.pop(path, None)
             if exists:
                 decision = await store.read_decision(path)
                 if decision is not None:
                     self._decisions[path] = decision
         elif path.startswith("actions/"):
+            if not _is_canon_action_path(path):
+                # Legacy GardenWriter action log (actions/{YYYY-MM-DD}.md
+                # or actions/input-log/...) — never indexed, never raised.
+                return
             self._actions.pop(path, None)
             if exists:
                 action = await store.read_action(path)
@@ -367,3 +385,61 @@ def _parse_iso(value: Any) -> datetime | None:
         except ValueError:
             return None
     return None
+
+
+# --------------------------------------------------------- canon path predicates
+
+# These filters MUST be applied before calling NoteStore.read_*.
+# ``actions/`` is shared with the legacy GardenWriter agent action log
+# (``actions/{YYYY-MM-DD}.md`` and ``actions/input-log/{YYYY-MM-DD}.md``);
+# slices 1-4 missed this collision and the canon index crashed at boot
+# whenever the vault contained any pre-existing agent log. Future canon
+# top-level dirs that share a legacy root MUST go through these predicates.
+
+_KNOWN_ACTION_KINDS: frozenset[str] = frozenset(models.ACTION_KINDS)
+
+
+def _is_canon_action_path(path: str) -> bool:
+    """``actions/<kind>/...md`` where ``<kind>`` is a known action kind."""
+    parts = PurePosixPath(path).parts
+    if len(parts) < 3 or parts[0] != "actions":
+        return False
+    if parts[1] not in _KNOWN_ACTION_KINDS:
+        return False
+    if not path.endswith(".md"):
+        return False
+    # ``create-decision`` has an extra ``<decision-kind>/`` segment per §7.8.
+    return not (
+        parts[1] == "create-decision" and (len(parts) < 4 or parts[2] not in paths.DECISION_KINDS)
+    )
+
+
+def _is_canon_proposal_path(path: str) -> bool:
+    parts = PurePosixPath(path).parts
+    return (
+        len(parts) >= 3
+        and parts[0] == "proposals"
+        and parts[1] in paths.PROPOSAL_KINDS
+        and path.endswith(".md")
+    )
+
+
+def _is_canon_decision_path(path: str) -> bool:
+    parts = PurePosixPath(path).parts
+    return (
+        len(parts) >= 3
+        and parts[0] == "decisions"
+        and parts[1] in paths.DECISION_KINDS
+        and path.endswith(".md")
+    )
+
+
+def _is_canon_policy_path(path: str) -> bool:
+    parts = PurePosixPath(path).parts
+    return (
+        len(parts) >= 4
+        and parts[0] == "decisions"
+        and parts[1] == "policy"
+        and parts[2] in paths.POLICY_KINDS
+        and path.endswith(".md")
+    )
