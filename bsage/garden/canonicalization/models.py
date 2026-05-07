@@ -226,6 +226,14 @@ class ApplyResult:
     error: str | None = None
 
 
+@dataclass
+class ExpireResult:
+    """Outcome of ``service.expire_stale()`` (Handoff §15.3 canon-expire)."""
+
+    expired_actions: list[str] = field(default_factory=list)
+    expired_proposals: list[str] = field(default_factory=list)
+
+
 # Per Handoff §8.1
 DECISION_STATUSES: tuple[str, ...] = (
     "active",

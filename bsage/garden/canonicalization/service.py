@@ -46,6 +46,19 @@ _ACTION_SCHEMA_VERSIONS: dict[str, str] = {
 
 _VALID_DECISION_MATURITIES: frozenset[str] = frozenset({"seedling", "budding", "evergreen"})
 
+# Per Handoff §6 — these statuses are eligible for expire_stale rewrite.
+# applied / rejected / expired / superseded / failed / blocked are terminal
+# from the staleness perspective.
+_NON_TERMINAL_ACTION_STATUSES: frozenset[str] = frozenset({"draft", "pending_approval"})
+
+
+def _aware_dt(dt: datetime) -> datetime:
+    """Coerce naive datetimes to UTC so comparisons across naive/aware work."""
+    from datetime import UTC
+
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
+
+
 # Default policies for MergeConcepts when params omit them (Handoff §7.2).
 _DEFAULT_MERGE_ALIAS_POLICY = {
     "add_merged_ids_as_aliases": True,
@@ -296,6 +309,64 @@ class CanonicalizationService:
             await self._store.write_action(entry)
             await self._invalidate_index([action_path])
             await self._emit_action_status(entry, previous_status)
+
+    # ---------------------------------------------------------- expiry
+
+    async def expire_stale(self, *, now: datetime | None = None) -> models.ExpireResult:
+        """Flip non-terminal actions/proposals past their expires_at to expired.
+
+        Per Handoff §15.3 (canon-expire plugin) and §13 step 3 — staleness
+        gating happens before apply. This sweep is safe to call from cron;
+        it acquires the per-action lock before mutating each action note.
+        Proposals don't have a lock (no apply-via-proposal), so they're
+        updated directly through the store.
+        """
+        result = models.ExpireResult()
+        cutoff = _aware_dt(now or self._clock())
+
+        # Actions
+        for entry in await self._index.list_actions():
+            if entry.status not in _NON_TERMINAL_ACTION_STATUSES:
+                continue
+            if _aware_dt(entry.expires_at) > cutoff:
+                continue
+            previous_status = entry.status
+            async with self._lock.guard(entry.path):
+                # Re-read under lock — another writer may have already applied/rejected.
+                fresh = await self._store.read_action(entry.path)
+                if fresh is None or fresh.status not in _NON_TERMINAL_ACTION_STATUSES:
+                    continue
+                if _aware_dt(fresh.expires_at) > cutoff:
+                    continue
+                fresh.status = "expired"
+                fresh.updated_at = self._clock()
+                await self._store.write_action(fresh)
+                await self._invalidate_index([fresh.path])
+                await self._emit_action_status(fresh, previous_status)
+                result.expired_actions.append(fresh.path)
+
+        # Proposals
+        for prop in await self._index.list_proposals(status="pending"):
+            if _aware_dt(prop.expires_at) > cutoff:
+                continue
+            previous_status = prop.status
+            prop.status = "expired"
+            prop.updated_at = self._clock()
+            await self._store.write_proposal(prop)
+            await self._invalidate_index([prop.path])
+            await self._emit(
+                "CANONICALIZATION_PROPOSAL_STATUS_CHANGED",
+                {
+                    "schema_version": "canonicalization-event-v1",
+                    "path": prop.path,
+                    "kind": prop.kind,
+                    "status": "expired",
+                    "previous_status": previous_status,
+                },
+            )
+            result.expired_proposals.append(prop.path)
+
+        return result
 
     async def _apply_locked(
         self,

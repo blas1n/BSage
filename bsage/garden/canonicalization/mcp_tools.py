@@ -345,8 +345,11 @@ async def generate_proposals(state: Any, args: dict[str, Any]) -> dict[str, Any]
 
 
 async def expire_stale(state: Any, args: dict[str, Any]) -> dict[str, Any]:
-    # Slice 5 placeholder — see comment in REST stale/expire handler.
-    return {"expired_proposals": [], "expired_actions": []}
+    result = await state.canon_service.expire_stale()
+    return {
+        "expired_actions": list(result.expired_actions),
+        "expired_proposals": list(result.expired_proposals),
+    }
 
 
 async def approve_action(state: Any, args: dict[str, Any]) -> dict[str, Any]:
