@@ -207,12 +207,14 @@ def create_canonicalization_router(state: AppState) -> APIRouter:
                 decisions=state.canon_decisions,
                 embedder=_embedder_callable(state),
                 verifier=_verifier_callable(state),
+                index_reader=state.index_reader,
             )
         else:
             proposer = DeterministicProposer(
                 index=state.canon_index,
                 store=state.canon_service._store,  # noqa: SLF001
                 threshold=body.threshold,
+                index_reader=state.index_reader,
             )
         paths = await proposer.generate()
         return {"strategy": body.strategy, "created": paths}

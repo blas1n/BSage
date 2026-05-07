@@ -20,6 +20,7 @@ from typing import Any
 
 from bsage.core.events import EventBus, emit_event
 from bsage.core.safe_mode import ApprovalInterface, ApprovalRequest
+from bsage.garden.canonicalization import evidence as evidence_module
 from bsage.garden.canonicalization import models, paths
 from bsage.garden.canonicalization.decisions import DecisionMemory
 from bsage.garden.canonicalization.index import CanonicalizationIndex
@@ -86,15 +87,8 @@ def _summarize_action(entry: models.ActionEntry) -> str:
 
 
 def _evidence(reason: str, **payload: Any) -> dict[str, Any]:
-    """Minimal Hard Block evidence envelope (Handoff §2 Evidence)."""
-    return {
-        "kind": "deterministic_check",
-        "schema_version": "deterministic-check-v1",
-        "source": "deterministic",
-        "observed_at": datetime.now().isoformat(),
-        "producer": "canonicalization.service-v1",
-        "payload": {"reason": reason, **payload},
-    }
+    """Hard Block evidence envelope. Thin wrapper over evidence.hard_block."""
+    return evidence_module.hard_block(reason, **payload)
 
 
 class CanonicalizationService:

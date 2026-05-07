@@ -331,12 +331,14 @@ async def generate_proposals(state: Any, args: dict[str, Any]) -> dict[str, Any]
             decisions=state.canon_decisions,
             embedder=_embedder_callable(state),
             verifier=_verifier_callable(state),
+            index_reader=getattr(state, "index_reader", None),
         )
     else:
         proposer = DeterministicProposer(
             index=state.canon_index,
             store=state.canon_service._store,  # noqa: SLF001
             threshold=threshold,
+            index_reader=getattr(state, "index_reader", None),
         )
     paths = await proposer.generate()
     return {"strategy": strategy, "created": paths}

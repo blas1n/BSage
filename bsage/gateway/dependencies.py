@@ -225,6 +225,17 @@ class AppState:
             approval_interface=self.ws_approval_interface,
         )
 
+        # CanonicalizationIndexSubscriber (Class_Diagram §10.2): keep the
+        # canon index fresh from CANONICALIZATION_* events + canon-rooted
+        # NOTE_UPDATED events (slice 6 canon-watcher). Service direct
+        # invalidate is defense in depth; this is the spec-compliant seam.
+        from bsage.garden.canonicalization.index_subscriber import (
+            CanonicalizationIndexSubscriber,
+        )
+
+        self.canon_index_subscriber = CanonicalizationIndexSubscriber(self.canon_index)
+        self.event_bus.subscribe(self.canon_index_subscriber)
+
         # Skills
         self.skill_loader = SkillLoader(settings.skills_dir)
         self.skill_runner = SkillRunner(
