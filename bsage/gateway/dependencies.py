@@ -222,7 +222,6 @@ class AppState:
             policies=self.canon_policies,
             event_bus=self.event_bus,
             safe_mode=lambda: self.runtime_config.safe_mode,
-            approval_interface=self.ws_approval_interface,
         )
 
         # CanonicalizationIndexSubscriber (Class_Diagram §10.2): keep the
@@ -235,6 +234,13 @@ class AppState:
 
         self.canon_index_subscriber = CanonicalizationIndexSubscriber(self.canon_index)
         self.event_bus.subscribe(self.canon_index_subscriber)
+
+        # canon-watcher (Handoff §15.3) — opt-in via
+        # runtime_config.canon_watcher_enabled. Constructed eagerly,
+        # started in initialize() so the asyncio loop is available.
+        from bsage.garden.canonicalization.watcher import CanonWatcher
+
+        self.canon_watcher = CanonWatcher(vault_root=self.vault.root, event_bus=self.event_bus)
 
         # Skills
         self.skill_loader = SkillLoader(settings.skills_dir)
@@ -400,8 +406,68 @@ class AppState:
         )
         self.scheduler.register_maintenance(maintenance)
 
+        # canon plugin gates (Handoff §15.3) — opt-in per RuntimeConfig.
+        # Watcher = filesystem daemon. Expire/lint = cron jobs.
+        # Re-applied on PATCH /api/config so flags toggle without restart.
+        self.apply_canon_runtime()
+
         self.scheduler.start()
         logger.info("gateway_initialized")
+
+    async def _canon_expire_job(self) -> None:
+        try:
+            result = await self.canon_service.expire_stale()
+            logger.info(
+                "canon_expire_run",
+                expired_actions=len(result.expired_actions),
+                expired_proposals=len(result.expired_proposals),
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("canon_expire_failed", exc_info=True)
+
+    async def _canon_lint_job(self) -> None:
+        try:
+            from bsage.garden.canonicalization.lint import run_lint as _run_canon_lint
+
+            report = await _run_canon_lint(self.canon_index, self._canon_store)
+            logger.info(
+                "canon_lint_run",
+                findings=len(report.findings),
+                orphan_tags=report.orphan_tag_count,
+                alias_collisions=report.alias_collision_count,
+                redirect_anomalies=report.redirect_anomaly_count,
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("canon_lint_failed", exc_info=True)
+
+    def apply_canon_runtime(self) -> None:
+        """Apply RuntimeConfig.canon_*_enabled to the live watcher + scheduler.
+
+        Idempotent — safe to call from both ``initialize()`` and the
+        ``PATCH /api/config`` handler so toggles take effect without
+        restart.
+        """
+        if self.runtime_config.canon_watcher_enabled:
+            try:
+                self.canon_watcher.start()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("canon_watcher_start_failed", error=str(exc))
+        else:
+            try:
+                self.canon_watcher.stop()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("canon_watcher_stop_failed", error=str(exc))
+
+        self.scheduler.register_canon_jobs(
+            expire_callback=(
+                self._canon_expire_job if self.runtime_config.canon_expire_enabled else None
+            ),
+            lint_callback=(
+                self._canon_lint_job if self.runtime_config.canon_lint_enabled else None
+            ),
+            expire_schedule=self.runtime_config.canon_expire_cron,
+            lint_schedule=self.runtime_config.canon_lint_cron,
+        )
 
     async def _background_reindex(self) -> None:
         """Reconcile index with vault contents on startup.

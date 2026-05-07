@@ -63,6 +63,15 @@ class Settings(BsvibeSettings):
     # MCP is the safer deployment mode for untrusted clients.
     mcp_canon_mutation_enabled: bool = False
 
+    # Canonicalization plugin gates (slice 6, Handoff §15.3) — these are
+    # the initial seeds for RuntimeConfig.canon_*_enabled. Operators can
+    # also flip them via PATCH /api/config without restart.
+    canon_watcher_enabled: bool = False
+    canon_expire_enabled: bool = False
+    canon_lint_enabled: bool = False
+    canon_expire_cron: str = "0 * * * *"
+    canon_lint_cron: str = "0 0 * * 0"
+
     # Maturity lifecycle thresholds
     maturity_seedling_min_relationships: int = Field(default=2, gt=0)
     maturity_budding_min_sources: int = Field(default=3, gt=0)

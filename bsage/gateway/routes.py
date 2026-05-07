@@ -54,6 +54,12 @@ class ConfigUpdate(BaseModel):
     embedding_api_base: str | None = None
     safe_mode: bool | None = None
     disabled_entries: list[str] | None = None
+    # Canonicalization plugin gates (slice 6, Handoff §15.3)
+    canon_watcher_enabled: bool | None = None
+    canon_expire_enabled: bool | None = None
+    canon_lint_enabled: bool | None = None
+    canon_expire_cron: str | None = None
+    canon_lint_cron: str | None = None
 
 
 class CredentialStoreRequest(BaseModel):
@@ -1265,6 +1271,20 @@ def create_routes(state: AppState) -> APIRouter:
             state.runtime_config.update(**changes)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        # Re-apply canon runtime gates (watcher + scheduler) when any
+        # canon_*_enabled / canon_*_cron field changed.
+        canon_keys = {
+            "canon_watcher_enabled",
+            "canon_expire_enabled",
+            "canon_lint_enabled",
+            "canon_expire_cron",
+            "canon_lint_cron",
+        }
+        if canon_keys & changes.keys():
+            try:
+                state.apply_canon_runtime()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("canon_runtime_reapply_failed", error=str(exc))
         snap = state.runtime_config.snapshot()
         snap["has_llm_api_key"] = bool(state.runtime_config.llm_api_key)
         snap["has_embedding_api_key"] = bool(state.runtime_config.embedding_api_key)

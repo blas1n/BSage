@@ -332,10 +332,11 @@ def create_canonicalization_router(state: AppState) -> APIRouter:
 
     @router.post("/stale/expire", dependencies=[Depends(canon_apply)])
     async def expire_stale(_body: ExpireBody | None = None) -> dict[str, Any]:
-        # Slice 5 placeholder — `service.expire_stale` is implemented in
-        # the watcher/cron plugin work (slice 6). For now this endpoint is
-        # a no-op stub returning empty results so frontend/CI can wire it.
-        return {"expired_proposals": [], "expired_actions": []}
+        result = await state.canon_service.expire_stale()
+        return {
+            "expired_actions": list(result.expired_actions),
+            "expired_proposals": list(result.expired_proposals),
+        }
 
     # ---------------------------------------------------- governance + policies
 

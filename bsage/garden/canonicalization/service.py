@@ -19,7 +19,6 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from bsage.core.events import EventBus, emit_event
-from bsage.core.safe_mode import ApprovalInterface, ApprovalRequest
 from bsage.garden.canonicalization import evidence as evidence_module
 from bsage.garden.canonicalization import models, paths
 from bsage.garden.canonicalization.decisions import DecisionMemory
@@ -46,6 +45,19 @@ _ACTION_SCHEMA_VERSIONS: dict[str, str] = {
 
 _VALID_DECISION_MATURITIES: frozenset[str] = frozenset({"seedling", "budding", "evergreen"})
 
+# Per Handoff §6 — these statuses are eligible for expire_stale rewrite.
+# applied / rejected / expired / superseded / failed / blocked are terminal
+# from the staleness perspective.
+_NON_TERMINAL_ACTION_STATUSES: frozenset[str] = frozenset({"draft", "pending_approval"})
+
+
+def _aware_dt(dt: datetime) -> datetime:
+    """Coerce naive datetimes to UTC so comparisons across naive/aware work."""
+    from datetime import UTC
+
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
+
+
 # Default policies for MergeConcepts when params omit them (Handoff §7.2).
 _DEFAULT_MERGE_ALIAS_POLICY = {
     "add_merged_ids_as_aliases": True,
@@ -66,24 +78,6 @@ def _title_from_raw(raw_tag: str) -> str:
     if not cleaned:
         return "Untitled Concept"
     return " ".join(part.capitalize() for part in cleaned.replace("_", " ").split())
-
-
-def _summarize_action(entry: models.ActionEntry) -> str:
-    """One-line human summary used in ApprovalRequest.action_summary."""
-    if entry.kind == "create-concept":
-        return f"create concept '{entry.params.get('concept')}'"
-    if entry.kind == "merge-concepts":
-        merge = entry.params.get("merge") or []
-        return f"merge {merge!r} into '{entry.params.get('canonical')}'"
-    if entry.kind == "retag-notes":
-        changes = entry.params.get("changes") or []
-        return f"retag {len(changes)} garden note(s)"
-    if entry.kind == "create-decision":
-        subjects = entry.params.get("subjects") or []
-        dpath = entry.params.get("decision_path", "")
-        kind = dpath.split("/")[1] if dpath.startswith("decisions/") else "?"
-        return f"record {kind} decision between {subjects!r}"
-    return f"apply {entry.kind} action"
 
 
 def _evidence(reason: str, **payload: Any) -> dict[str, Any]:
@@ -112,7 +106,6 @@ class CanonicalizationService:
         clock: Callable[[], datetime] | None = None,
         event_bus: EventBus | None = None,
         safe_mode: Callable[[], bool] | None = None,
-        approval_interface: ApprovalInterface | None = None,
     ) -> None:
         self._store = store
         self._lock = lock
@@ -125,8 +118,11 @@ class CanonicalizationService:
         # Safe Mode is a callable so a mutable RuntimeConfig flag is read
         # at apply-time, not at service construction (per existing pattern
         # in bsage.core.safe_mode.SafeModeGuard).
+        # Canonicalization deliberately does NOT take an ApprovalInterface
+        # — typed actions are persisted as ``pending_approval`` and
+        # reviewed via the pull-based queue UI. Push-based round-trips
+        # silently auto-rejected whenever the operator was offline.
         self._safe_mode = safe_mode or (lambda: False)
-        self._approval_interface = approval_interface
         # Slice 4 scorer is also wired here so the apply pipeline can
         # populate action.scoring before Safe Mode permission check.
         if decisions is not None and policies is not None:
@@ -297,6 +293,64 @@ class CanonicalizationService:
             await self._invalidate_index([action_path])
             await self._emit_action_status(entry, previous_status)
 
+    # ---------------------------------------------------------- expiry
+
+    async def expire_stale(self, *, now: datetime | None = None) -> models.ExpireResult:
+        """Flip non-terminal actions/proposals past their expires_at to expired.
+
+        Per Handoff §15.3 (canon-expire plugin) and §13 step 3 — staleness
+        gating happens before apply. This sweep is safe to call from cron;
+        it acquires the per-action lock before mutating each action note.
+        Proposals don't have a lock (no apply-via-proposal), so they're
+        updated directly through the store.
+        """
+        result = models.ExpireResult()
+        cutoff = _aware_dt(now or self._clock())
+
+        # Actions
+        for entry in await self._index.list_actions():
+            if entry.status not in _NON_TERMINAL_ACTION_STATUSES:
+                continue
+            if _aware_dt(entry.expires_at) > cutoff:
+                continue
+            previous_status = entry.status
+            async with self._lock.guard(entry.path):
+                # Re-read under lock — another writer may have already applied/rejected.
+                fresh = await self._store.read_action(entry.path)
+                if fresh is None or fresh.status not in _NON_TERMINAL_ACTION_STATUSES:
+                    continue
+                if _aware_dt(fresh.expires_at) > cutoff:
+                    continue
+                fresh.status = "expired"
+                fresh.updated_at = self._clock()
+                await self._store.write_action(fresh)
+                await self._invalidate_index([fresh.path])
+                await self._emit_action_status(fresh, previous_status)
+                result.expired_actions.append(fresh.path)
+
+        # Proposals
+        for prop in await self._index.list_proposals(status="pending"):
+            if _aware_dt(prop.expires_at) > cutoff:
+                continue
+            previous_status = prop.status
+            prop.status = "expired"
+            prop.updated_at = self._clock()
+            await self._store.write_proposal(prop)
+            await self._invalidate_index([prop.path])
+            await self._emit(
+                "CANONICALIZATION_PROPOSAL_STATUS_CHANGED",
+                {
+                    "schema_version": "canonicalization-event-v1",
+                    "path": prop.path,
+                    "kind": prop.kind,
+                    "status": "expired",
+                    "previous_status": previous_status,
+                },
+            )
+            result.expired_proposals.append(prop.path)
+
+        return result
+
     async def _apply_locked(
         self,
         action_path: str,
@@ -364,8 +418,15 @@ class CanonicalizationService:
         entry.execution.status = "ok"
         entry.execution.applied_at = now
         entry.execution.error = None
-        entry.permission.safe_mode = False
-        entry.permission.decision = "auto_apply"
+        # Distinguish reviewer-approved (Safe Mode was on, queue picked it
+        # up) from straight auto-apply (Safe Mode was off). The persisted
+        # permission record is the audit trail for §13.
+        if force_approved:
+            entry.permission.safe_mode = True
+            entry.permission.decision = "approved"
+        else:
+            entry.permission.safe_mode = False
+            entry.permission.decision = "auto_apply"
         entry.permission.actor = actor
         entry.permission.decided_at = now
         entry.affected_paths = sorted({action_path, *affected})
@@ -418,107 +479,26 @@ class CanonicalizationService:
         previous_status: str,
         actor: str,
     ) -> models.ApplyResult:
-        """Safe Mode ON — request approval; if no interface, mark pending."""
+        """Safe Mode ON — persist as ``pending_approval`` for the queue.
+
+        Canonicalization typed actions are durable: the action file lives
+        in the vault, so we never need a synchronous approver round-trip.
+        Approve via :meth:`approve_action` (called by the queue UI's
+        Approve & apply button); reject via :meth:`reject_action`.
+        """
         now = self._clock()
         entry.validation = validation
-        # No interface → cannot ask; persist pending_approval and stop.
-        if self._approval_interface is None:
-            entry.status = "pending_approval"
-            entry.permission.safe_mode = True
-            entry.permission.decision = "require_approval"
-            entry.updated_at = now
-            await self._store.write_action(entry)
-            await self._invalidate_index([entry.path])
-            await self._emit_action_status(entry, previous_status)
-            return models.ApplyResult(
-                action_path=entry.path,
-                final_status="pending_approval",
-                affected_paths=[entry.path],
-            )
-        # Interface available — request approval inline.
-        request = ApprovalRequest(
-            skill_name="canonicalization",
-            description=f"apply {entry.kind} action",
-            action_summary=_summarize_action(entry),
-            action_path=entry.path,
-            action_kind=entry.kind,
-            stability_score=entry.scoring.stability_score,
-            risk_reasons=list(entry.scoring.risk_reasons),
-            affected_paths=list(entry.affected_paths),
-            source_proposal=entry.source_proposal,
-        )
-        try:
-            approved = await self._approval_interface.request_approval(request)
-        except Exception as exc:  # noqa: BLE001 — approval failure ≠ apply failure
-            entry.status = "pending_approval"
-            entry.permission.safe_mode = True
-            entry.permission.decision = "require_approval"
-            entry.permission.actor = actor
-            entry.permission.decided_at = now
-            entry.execution.error = repr(exc)
-            entry.updated_at = now
-            await self._store.write_action(entry)
-            await self._invalidate_index([entry.path])
-            await self._emit_action_status(entry, previous_status)
-            return models.ApplyResult(
-                action_path=entry.path,
-                final_status="pending_approval",
-                affected_paths=[entry.path],
-                error=repr(exc),
-            )
-
-        if not approved:
-            entry.status = "rejected"
-            entry.permission.safe_mode = True
-            entry.permission.decision = "rejected"
-            entry.permission.actor = actor
-            entry.permission.decided_at = now
-            entry.updated_at = now
-            await self._store.write_action(entry)
-            await self._invalidate_index([entry.path])
-            await self._emit_action_status(entry, previous_status)
-            return models.ApplyResult(
-                action_path=entry.path,
-                final_status="rejected",
-                affected_paths=[entry.path],
-            )
-
-        # Approved → run effects + persist applied
-        try:
-            affected = await self._persist_effects(entry)
-        except Exception as exc:  # noqa: BLE001
-            entry.execution.status = "failed"
-            entry.execution.error = repr(exc)
-            entry.status = "failed"
-            entry.updated_at = self._clock()
-            await self._store.write_action(entry)
-            await self._emit_action_status(entry, previous_status)
-            return models.ApplyResult(
-                action_path=entry.path,
-                final_status="failed",
-                affected_paths=[],
-                error=repr(exc),
-            )
-        now = self._clock()
-        entry.execution.status = "ok"
-        entry.execution.applied_at = now
-        entry.execution.error = None
+        entry.status = "pending_approval"
         entry.permission.safe_mode = True
-        entry.permission.decision = "approved"
-        entry.permission.actor = actor
-        entry.permission.decided_at = now
-        entry.affected_paths = sorted({entry.path, *affected})
-        entry.status = "applied"
+        entry.permission.decision = "require_approval"
         entry.updated_at = now
         await self._store.write_action(entry)
-        await self._invalidate_index(entry.affected_paths)
+        await self._invalidate_index([entry.path])
         await self._emit_action_status(entry, previous_status)
-        await self._emit_action_applied(entry)
-        await self._emit_kind_specific_applied(entry)
         return models.ApplyResult(
             action_path=entry.path,
-            final_status="applied",
-            affected_paths=list(entry.affected_paths),
+            final_status="pending_approval",
+            affected_paths=[entry.path],
         )
 
     # ----------------------------------------------------------- emit helpers

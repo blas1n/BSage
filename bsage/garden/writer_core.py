@@ -619,20 +619,42 @@ class _WriterMutationMixin:
         return new_path
 
     async def _set_frontmatter_field(self, path: Path, key: str, value: Any) -> None:
-        """Set a single frontmatter field, preserving body and other fields."""
+        """Set a single frontmatter field, preserving body and other fields.
+
+        Raises :class:`ValueError` if the file's existing frontmatter is
+        malformed (corrupted YAML, missing closing ``---``, or non-dict
+        root) — silently no-op'ing on these conditions hid maturity
+        promotions and other status flips that the caller believed had
+        succeeded. If the file has no frontmatter at all, one is
+        injected ahead of the existing body.
+        """
         async with self._garden_lock:
             text = await asyncio.to_thread(path.read_text, "utf-8")
             if not text.startswith("---\n"):
+                # No frontmatter — inject one rather than silently dropping
+                # the caller's intent.
+                fm = {key: value}
+                new_text = build_frontmatter(fm) + text
+                await asyncio.to_thread(path.write_text, new_text, encoding="utf-8")
                 return
             closing = text.find("\n---\n", 4)
             if closing == -1:
-                return
+                msg = (
+                    f"malformed frontmatter in {path}: opening '---' present "
+                    f"but no closing '---' found — refusing to silently rewrite"
+                )
+                raise ValueError(msg)
             try:
                 fm = yaml.safe_load(text[4:closing]) or {}
-            except yaml.YAMLError:
-                return
+            except yaml.YAMLError as exc:
+                msg = f"corrupted YAML frontmatter in {path}: {exc}"
+                raise ValueError(msg) from exc
             if not isinstance(fm, dict):
-                return
+                msg = (
+                    f"frontmatter root in {path} is {type(fm).__name__}, "
+                    f"expected dict — cannot set field {key!r}"
+                )
+                raise ValueError(msg)
             fm[key] = value
             new_text = build_frontmatter(fm) + text[closing + 5 :]
             await asyncio.to_thread(path.write_text, new_text, encoding="utf-8")
@@ -664,10 +686,20 @@ class _WriterMutationMixin:
             if existing.startswith("---\n"):
                 try:
                     end_idx = existing.index("\n---\n", 4)
-                    frontmatter = existing[: end_idx + 5]
-                    content = frontmatter + "\n" + content
-                except ValueError:
-                    pass
+                except ValueError as exc:
+                    # Opening '---' present but closing not found — the
+                    # existing frontmatter is malformed. Silently dropping
+                    # it (the prior behaviour) destroys metadata; raising
+                    # surfaces the corruption to the caller (LLM tool
+                    # handler / API client) so it can decide whether to
+                    # overwrite explicitly with preserve_frontmatter=False.
+                    msg = (
+                        f"cannot preserve frontmatter for {path}: opening "
+                        f"'---' present but no closing '---' found"
+                    )
+                    raise ValueError(msg) from exc
+                frontmatter = existing[: end_idx + 5]
+                content = frontmatter + "\n" + content
 
         await asyncio.to_thread(resolved.write_text, content, encoding="utf-8")
         logger.info("note_updated", path=str(resolved))

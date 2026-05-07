@@ -145,6 +145,54 @@ class Scheduler:
             self._jobs[name] = job.id
             logger.info("trigger_hot_registered", name=name, schedule=schedule)
 
+    def register_canon_jobs(
+        self,
+        *,
+        expire_callback: Any | None = None,
+        lint_callback: Any | None = None,
+        expire_schedule: str = "0 * * * *",
+        lint_schedule: str = "0 0 * * 0",
+    ) -> None:
+        """Register cron jobs for canon-expire / canon-lint (Handoff §15.3).
+
+        Each callback is an async no-arg function. Pass None to skip
+        that job (lets RuntimeConfig flags gate registration without
+        constructing dummy callables).
+
+        Idempotent: existing canon-expire / canon-lint jobs are removed
+        first, so this can be called repeatedly when ``RuntimeConfig``
+        flags toggle at runtime via ``PATCH /api/config``.
+        """
+        # Remove any prior canon job so toggles take effect immediately.
+        import contextlib
+
+        for name in ("canon-expire", "canon-lint"):
+            prior = self._jobs.pop(name, None)
+            if prior is not None:
+                with contextlib.suppress(Exception):
+                    self._scheduler.remove_job(prior)
+
+        bindings: list[tuple[str, str, Any]] = []
+        if expire_callback is not None:
+            bindings.append(("canon-expire", expire_schedule, expire_callback))
+        if lint_callback is not None:
+            bindings.append(("canon-lint", lint_schedule, lint_callback))
+        for name, schedule, callback in bindings:
+            try:
+                cron_kwargs = self._parse_cron(schedule)
+            except ValueError:
+                logger.warning("invalid_canon_job_schedule", name=name, schedule=schedule)
+                continue
+            trigger = CronTrigger(**cron_kwargs)
+            job = self._scheduler.add_job(
+                callback,
+                trigger=trigger,
+                id=f"bsage-{name}",
+                name=f"BSage: {name}",
+            )
+            self._jobs[name] = job.id
+            logger.info("canon_job_registered", name=name, schedule=schedule)
+
     def register_maintenance(self, tasks: MaintenanceTasks) -> None:
         """Register built-in maintenance tasks on fixed schedules.
 

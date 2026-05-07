@@ -98,6 +98,30 @@ class TestSafeModeGuard:
         assert result is False
         mock_interface.request_approval.assert_called_once()
 
+    async def test_dangerous_skill_approval_deferred_raises_safe_mode_error(self) -> None:
+        """When the interface raises ApprovalDeferred (e.g. WS has no clients
+        or response timeout), SafeModeGuard MUST surface a SafeModeError to
+        the caller — earlier behaviour silently denied which auto-rejected
+        every dangerous run while the operator was offline."""
+        from bsage.core.safe_mode import ApprovalDeferred
+
+        mock_interface = AsyncMock()
+        mock_interface.request_approval = AsyncMock(side_effect=ApprovalDeferred("no clients"))
+
+        guard = SafeModeGuard(
+            runtime_config=_make_config(True),
+            interface=mock_interface,
+            danger_fn=lambda name: name == "email-sender",
+        )
+        skill = _FakeSkillMeta(
+            name="email-sender",
+            description="Send emails",
+            category="output",
+        )
+
+        with pytest.raises(SafeModeError, match="No approver available"):
+            await guard.check(skill)
+
     async def test_safe_mode_disabled_always_passes(self) -> None:
         mock_interface = AsyncMock()
         mock_interface.request_approval = AsyncMock(return_value=False)

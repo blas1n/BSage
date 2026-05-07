@@ -681,6 +681,76 @@ class TestUpdateNote:
         events = [c.args[0] for c in sub.on_event.call_args_list]
         assert any(e.event_type == EventType.NOTE_UPDATED for e in events)
 
+    @pytest.mark.asyncio
+    async def test_update_note_preserve_raises_on_malformed_frontmatter(
+        self, tmp_path: Path
+    ) -> None:
+        """Earlier behaviour silently dropped existing frontmatter when the
+        closing ``---`` was missing — caller thought metadata was preserved
+        while title/status/related disappeared. Now we raise so the caller
+        knows the on-disk state is corrupt."""
+        vault = Vault(tmp_path)
+        vault.ensure_dirs()
+        writer = GardenWriter(vault)
+
+        # Hand-craft a malformed file: opening fence, no closing fence.
+        broken = vault.root / "garden" / "idea" / "broken.md"
+        broken.parent.mkdir(parents=True, exist_ok=True)
+        broken.write_text("---\ntitle: Broken\nstatus: active\n\nbody only", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="no closing '---' found"):
+            await writer.update_note("garden/idea/broken.md", "new body", preserve_frontmatter=True)
+        # File untouched
+        assert broken.read_text() == "---\ntitle: Broken\nstatus: active\n\nbody only"
+
+
+class TestSetFrontmatterField:
+    """Regression: silent no-ops on `_set_frontmatter_field` masked failed
+    maturity promotions and other status flips. The caller MUST observe
+    success vs failure of its mutation."""
+
+    @pytest.mark.asyncio
+    async def test_injects_frontmatter_when_note_has_none(self, tmp_path: Path) -> None:
+        from bsage.garden.markdown_utils import extract_frontmatter
+
+        vault = Vault(tmp_path)
+        vault.ensure_dirs()
+        writer = GardenWriter(vault)
+
+        plain = vault.root / "garden" / "idea" / "plain.md"
+        plain.parent.mkdir(parents=True, exist_ok=True)
+        plain.write_text("# Plain note\n\nBody.\n", encoding="utf-8")
+
+        await writer._set_frontmatter_field(plain, "maturity", "evergreen")
+        fm = extract_frontmatter(plain.read_text(encoding="utf-8"))
+        assert fm["maturity"] == "evergreen"
+
+    @pytest.mark.asyncio
+    async def test_raises_on_missing_closing_fence(self, tmp_path: Path) -> None:
+        vault = Vault(tmp_path)
+        vault.ensure_dirs()
+        writer = GardenWriter(vault)
+
+        broken = vault.root / "garden" / "idea" / "broken.md"
+        broken.parent.mkdir(parents=True, exist_ok=True)
+        broken.write_text("---\nfoo: bar\n\nbody only", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="no closing '---' found"):
+            await writer._set_frontmatter_field(broken, "maturity", "budding")
+
+    @pytest.mark.asyncio
+    async def test_raises_on_corrupted_yaml(self, tmp_path: Path) -> None:
+        vault = Vault(tmp_path)
+        vault.ensure_dirs()
+        writer = GardenWriter(vault)
+
+        broken = vault.root / "garden" / "idea" / "yamlbroken.md"
+        broken.parent.mkdir(parents=True, exist_ok=True)
+        broken.write_text("---\nfoo: [unclosed\n---\n\nbody\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="corrupted YAML"):
+            await writer._set_frontmatter_field(broken, "maturity", "budding")
+
 
 class TestAppendToNote:
     """Test GardenWriter.append_to_note."""

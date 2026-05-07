@@ -1,4 +1,11 @@
-"""Tests for Safe Mode integration in canonicalization apply (Handoff §13 step 11)."""
+"""Tests for Safe Mode integration in canonicalization apply (Handoff §13 step 11).
+
+The canonicalization layer is queue-based: when Safe Mode is ON, every
+applied action persists as ``pending_approval`` and the reviewer picks
+it up via the canon-queue UI (``approve_action`` / ``reject_action``
+RPCs). There is no synchronous approver round-trip — see
+:class:`bsage.core.safe_mode.ApprovalDeferred` for the rationale.
+"""
 
 from __future__ import annotations
 
@@ -20,39 +27,20 @@ from bsage.garden.markdown_utils import extract_frontmatter
 from bsage.garden.storage import FileSystemStorage
 
 
-class _StubApproval:
-    """Records ApprovalRequests and returns a configurable response."""
-
-    def __init__(self, *, approve: bool) -> None:
-        self.approve = approve
-        self.requests: list[ApprovalRequest] = []
-
-    async def request_approval(self, request: ApprovalRequest) -> bool:
-        self.requests.append(request)
-        return self.approve
-
-
 @pytest.fixture
 def storage(tmp_path: Path) -> FileSystemStorage:
     return FileSystemStorage(tmp_path)
 
 
-def _make_service(
+async def _make_service(
     storage: FileSystemStorage,
     *,
     safe_mode_on: bool,
-    approval: _StubApproval | None,
     event_bus: EventBus | None = None,
 ) -> CanonicalizationService:
     fixed_now = datetime(2026, 5, 7, 14, 0, 0)
     index = InMemoryCanonicalizationIndex()
-
-    async def _init() -> None:
-        await index.initialize(storage)
-
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(_init())
+    await index.initialize(storage)
     store = NoteStore(storage)
     return CanonicalizationService(
         store=store,
@@ -64,75 +52,14 @@ def _make_service(
         clock=lambda: fixed_now,
         event_bus=event_bus,
         safe_mode=lambda: safe_mode_on,
-        approval_interface=approval,
-    )
-
-
-@pytest.fixture
-async def service_safe_off(storage: FileSystemStorage) -> CanonicalizationService:
-    fixed_now = datetime(2026, 5, 7, 14, 0, 0)
-    index = InMemoryCanonicalizationIndex()
-    await index.initialize(storage)
-    store = NoteStore(storage)
-    return CanonicalizationService(
-        store=store,
-        lock=AsyncIOMutationLock(),
-        index=index,
-        resolver=TagResolver(index=index),
-        decisions=DecisionMemory(index=index, store=store),
-        policies=PolicyResolver(index=index, store=store, clock=lambda: fixed_now),
-        clock=lambda: fixed_now,
-        safe_mode=lambda: False,
-    )
-
-
-@pytest.fixture
-async def service_safe_on_approve(
-    storage: FileSystemStorage,
-) -> tuple[CanonicalizationService, _StubApproval]:
-    fixed_now = datetime(2026, 5, 7, 14, 0, 0)
-    index = InMemoryCanonicalizationIndex()
-    await index.initialize(storage)
-    store = NoteStore(storage)
-    approval = _StubApproval(approve=True)
-    svc = CanonicalizationService(
-        store=store,
-        lock=AsyncIOMutationLock(),
-        index=index,
-        resolver=TagResolver(index=index),
-        decisions=DecisionMemory(index=index, store=store),
-        policies=PolicyResolver(index=index, store=store, clock=lambda: fixed_now),
-        clock=lambda: fixed_now,
-        safe_mode=lambda: True,
-        approval_interface=approval,
-    )
-    return svc, approval
-
-
-@pytest.fixture
-async def service_safe_on_no_interface(
-    storage: FileSystemStorage,
-) -> CanonicalizationService:
-    fixed_now = datetime(2026, 5, 7, 14, 0, 0)
-    index = InMemoryCanonicalizationIndex()
-    await index.initialize(storage)
-    store = NoteStore(storage)
-    return CanonicalizationService(
-        store=store,
-        lock=AsyncIOMutationLock(),
-        index=index,
-        resolver=TagResolver(index=index),
-        decisions=DecisionMemory(index=index, store=store),
-        policies=PolicyResolver(index=index, store=store, clock=lambda: fixed_now),
-        clock=lambda: fixed_now,
-        safe_mode=lambda: True,
-        approval_interface=None,
     )
 
 
 class TestApprovalRequestExtension:
     def test_carries_action_metadata(self) -> None:
-        # Per Handoff §13 — frontend needs action_path/kind/safe_mode/etc.
+        # Per Handoff §13 — the request envelope (still used by the
+        # plugin Safe Mode path via WebSocketApprovalInterface) carries
+        # action_* fields so the frontend can render evidence.
         req = ApprovalRequest(
             skill_name="canonicalization",
             description="merge self-host into self-hosting",
@@ -149,86 +76,35 @@ class TestApprovalRequestExtension:
 
 class TestSafeModeOff:
     @pytest.mark.asyncio
-    async def test_off_means_auto_apply(
-        self, service_safe_off: CanonicalizationService, storage: FileSystemStorage
-    ) -> None:
-        path = await service_safe_off.create_action_draft(
+    async def test_off_means_auto_apply(self, storage: FileSystemStorage) -> None:
+        svc = await _make_service(storage, safe_mode_on=False)
+        path = await svc.create_action_draft(
             kind="create-concept", params={"concept": "ml", "title": "ML"}
         )
-        result = await service_safe_off.apply_action(path, actor="cli")
+        result = await svc.apply_action(path, actor="cli")
         assert result.final_status == "applied"
 
 
 class TestSafeModeOn:
     @pytest.mark.asyncio
-    async def test_on_with_approve_applies(
-        self,
-        service_safe_on_approve: tuple[CanonicalizationService, _StubApproval],
-        storage: FileSystemStorage,
-    ) -> None:
-        svc, approval = service_safe_on_approve
+    async def test_on_yields_pending_approval(self, storage: FileSystemStorage) -> None:
+        """Safe Mode ON ALWAYS parks the action in pending_approval —
+        never auto-rejects, never tries to push for synchronous human
+        consent. The reviewer pulls from the queue when they're online.
+        """
+        svc = await _make_service(storage, safe_mode_on=True)
         path = await svc.create_action_draft(
             kind="create-concept", params={"concept": "ml", "title": "ML"}
         )
         result = await svc.apply_action(path, actor="cli")
-        assert result.final_status == "applied"
-        # Approval was requested with action metadata
-        assert len(approval.requests) == 1
-        req = approval.requests[0]
-        assert req.action_path == path
-        assert req.action_kind == "create-concept"
-        # Permission record reflects approval
-        fm = extract_frontmatter(await storage.read(path))
-        assert fm["permission"]["safe_mode"] is True
-        assert fm["permission"]["decision"] == "approved"
-
-    @pytest.mark.asyncio
-    async def test_on_no_interface_yields_pending_approval(
-        self,
-        service_safe_on_no_interface: CanonicalizationService,
-        storage: FileSystemStorage,
-    ) -> None:
-        path = await service_safe_on_no_interface.create_action_draft(
-            kind="create-concept", params={"concept": "ml", "title": "ML"}
-        )
-        result = await service_safe_on_no_interface.apply_action(path, actor="cli")
         assert result.final_status == "pending_approval"
         fm = extract_frontmatter(await storage.read(path))
         assert fm["status"] == "pending_approval"
-
-    @pytest.mark.asyncio
-    async def test_on_with_reject_yields_rejected(self, storage: FileSystemStorage) -> None:
-        fixed_now = datetime(2026, 5, 7, 14, 0, 0)
-        index = InMemoryCanonicalizationIndex()
-        await index.initialize(storage)
-        store = NoteStore(storage)
-        approval = _StubApproval(approve=False)
-        svc = CanonicalizationService(
-            store=store,
-            lock=AsyncIOMutationLock(),
-            index=index,
-            resolver=TagResolver(index=index),
-            decisions=DecisionMemory(index=index, store=store),
-            policies=PolicyResolver(index=index, store=store, clock=lambda: fixed_now),
-            clock=lambda: fixed_now,
-            safe_mode=lambda: True,
-            approval_interface=approval,
-        )
-        path = await svc.create_action_draft(
-            kind="create-concept", params={"concept": "ml", "title": "ML"}
-        )
-        result = await svc.apply_action(path, actor="cli")
-        assert result.final_status == "rejected"
-        fm = extract_frontmatter(await storage.read(path))
-        assert fm["status"] == "rejected"
+        assert fm["permission"]["safe_mode"] is True
+        assert fm["permission"]["decision"] == "require_approval"
 
     @pytest.mark.asyncio
     async def test_pending_approval_emits_status_event(self, storage: FileSystemStorage) -> None:
-        fixed_now = datetime(2026, 5, 7, 14, 0, 0)
-        index = InMemoryCanonicalizationIndex()
-        await index.initialize(storage)
-        store = NoteStore(storage)
-
         captured: list = []
 
         class _Cap:
@@ -238,18 +114,7 @@ class TestSafeModeOn:
         bus = EventBus()
         bus.subscribe(_Cap())
 
-        svc = CanonicalizationService(
-            store=store,
-            lock=AsyncIOMutationLock(),
-            index=index,
-            resolver=TagResolver(index=index),
-            decisions=DecisionMemory(index=index, store=store),
-            policies=PolicyResolver(index=index, store=store, clock=lambda: fixed_now),
-            clock=lambda: fixed_now,
-            safe_mode=lambda: True,
-            approval_interface=None,
-            event_bus=bus,
-        )
+        svc = await _make_service(storage, safe_mode_on=True, event_bus=bus)
         path = await svc.create_action_draft(
             kind="create-concept", params={"concept": "ml", "title": "ML"}
         )
@@ -263,32 +128,32 @@ class TestSafeModeOn:
 
 class TestApproveActionRpc:
     @pytest.mark.asyncio
-    async def test_approve_action_applies(
-        self, service_safe_on_no_interface: CanonicalizationService
-    ) -> None:
-        svc = service_safe_on_no_interface
+    async def test_approve_action_applies(self, storage: FileSystemStorage) -> None:
+        svc = await _make_service(storage, safe_mode_on=True)
         path = await svc.create_action_draft(
             kind="create-concept", params={"concept": "ml", "title": "ML"}
         )
-        # First apply leaves status=pending_approval
         first = await svc.apply_action(path, actor="cli")
         assert first.final_status == "pending_approval"
 
-        # Approve via RPC
         approved = await svc.approve_action(path, actor="reviewer")
         assert approved.final_status == "applied"
+        fm = extract_frontmatter(await storage.read(path))
+        assert fm["status"] == "applied"
+        assert fm["permission"]["decision"] == "approved"
+        assert fm["permission"]["actor"] == "reviewer"
 
     @pytest.mark.asyncio
-    async def test_reject_action_rpc(
-        self, service_safe_on_no_interface: CanonicalizationService
-    ) -> None:
-        svc = service_safe_on_no_interface
+    async def test_reject_action_rpc(self, storage: FileSystemStorage) -> None:
+        svc = await _make_service(storage, safe_mode_on=True)
         path = await svc.create_action_draft(
             kind="create-concept", params={"concept": "ml", "title": "ML"}
         )
         await svc.apply_action(path, actor="cli")
 
         await svc.reject_action(path, actor="reviewer", reason="not now")
-        # Now applying again should return rejected (terminal)
+        # Re-applying a rejected action is a no-op (terminal status).
         result = await svc.apply_action(path, actor="cli")
         assert result.final_status == "rejected"
+        fm = extract_frontmatter(await storage.read(path))
+        assert fm["status"] == "rejected"

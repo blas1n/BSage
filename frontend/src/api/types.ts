@@ -63,6 +63,12 @@ export interface RuntimeConfig {
   embedding_api_base?: string | null;
   has_embedding_api_key?: boolean;
   vault_path?: string;
+  // Canonicalization plugin gates (slice 6, Handoff §15.3).
+  canon_watcher_enabled?: boolean;
+  canon_expire_enabled?: boolean;
+  canon_lint_enabled?: boolean;
+  canon_expire_cron?: string;
+  canon_lint_cron?: string;
 }
 
 /** PATCH /api/config request body. */
@@ -75,6 +81,11 @@ export interface ConfigUpdate {
   embedding_api_base?: string | null;
   safe_mode?: boolean;
   disabled_entries?: string[];
+  canon_watcher_enabled?: boolean;
+  canon_expire_enabled?: boolean;
+  canon_lint_enabled?: boolean;
+  canon_expire_cron?: string;
+  canon_lint_cron?: string;
 }
 
 /** GET /api/entries/{name}/credentials/fields response. */

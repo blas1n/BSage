@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from bsage.core.safe_mode import ApprovalRequest
+from bsage.core.safe_mode import ApprovalDeferred, ApprovalRequest
 from bsage.interface.ws_interface import WebSocketApprovalInterface
 
 
@@ -67,24 +67,29 @@ async def test_request_approval_returns_false_when_rejected(
     assert result is False
 
 
-async def test_request_approval_returns_false_on_timeout(
+async def test_request_approval_raises_deferred_on_timeout(
     mock_manager: MagicMock,
 ) -> None:
-    """Approval returns False when no response within timeout."""
+    """Approval raises ApprovalDeferred when no response within timeout —
+    the caller decides whether to retry, queue, or surface an error.
+    Earlier behaviour silently returned False, which auto-rejected every
+    dangerous run while the operator was offline."""
     iface = WebSocketApprovalInterface(manager=mock_manager, timeout=0.05)
-    result = await iface.request_approval(_make_request())
-    assert result is False
+    with pytest.raises(ApprovalDeferred):
+        await iface.request_approval(_make_request())
     assert len(iface._pending) == 0  # cleaned up
 
 
-async def test_request_approval_returns_false_when_no_clients(
+async def test_request_approval_raises_deferred_when_no_clients(
     mock_manager: MagicMock,
 ) -> None:
-    """Approval returns False immediately when no WS clients are connected."""
+    """Approval raises ApprovalDeferred immediately when no WS clients are
+    connected. Distinguishing "no approver online" from "approver said no"
+    is the whole point — see ApprovalDeferred docstring."""
     mock_manager.has_connections.return_value = False
     iface = WebSocketApprovalInterface(manager=mock_manager)
-    result = await iface.request_approval(_make_request())
-    assert result is False
+    with pytest.raises(ApprovalDeferred):
+        await iface.request_approval(_make_request())
     mock_manager.broadcast.assert_not_awaited()
 
 
@@ -120,12 +125,14 @@ async def test_broadcast_message_format(
     interface: WebSocketApprovalInterface,
     mock_manager: MagicMock,
 ) -> None:
-    """Verify broadcast message has the correct structure."""
+    """Verify broadcast message has the correct structure. The request will
+    raise ApprovalDeferred on timeout (no client responded) — we still
+    expect the broadcast itself to have happened with the right payload."""
     request = _make_request("test-plugin")
 
-    # Use a short timeout so we don't wait long
     interface._timeout = 0.05
-    await interface.request_approval(request)
+    with pytest.raises(ApprovalDeferred):
+        await interface.request_approval(request)
 
     mock_manager.broadcast.assert_awaited_once()
     msg = mock_manager.broadcast.call_args[0][0]

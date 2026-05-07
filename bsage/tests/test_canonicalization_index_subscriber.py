@@ -136,6 +136,35 @@ class TestNoteUpdatedFiltering:
         assert await index.get_active_concept("ml") is not None
 
     @pytest.mark.asyncio
+    async def test_absolute_canon_path_invalidates(
+        self,
+        index: InMemoryCanonicalizationIndex,
+        store: NoteStore,
+    ) -> None:
+        """canon-watcher (slice 6) emits absolute paths. Subscriber MUST
+        normalize abs → rel so ``index.invalidate`` always sees the
+        vault-relative form the index was built with."""
+        await store.write_concept(
+            models.ConceptEntry(
+                concept_id="ml",
+                path="concepts/active/ml.md",
+                display="ML",
+                aliases=[],
+                created_at=datetime(2026, 5, 7),
+                updated_at=datetime(2026, 5, 7),
+            )
+        )
+        sub = CanonicalizationIndexSubscriber(index)
+        index.invalidate = AsyncMock()  # type: ignore[method-assign]
+        await sub.on_event(
+            Event(
+                event_type=EventType.NOTE_UPDATED,
+                payload={"path": "/srv/vault/concepts/active/ml.md"},
+            )
+        )
+        index.invalidate.assert_awaited_once_with("concepts/active/ml.md")
+
+    @pytest.mark.asyncio
     async def test_non_canon_path_ignored(self, index: InMemoryCanonicalizationIndex) -> None:
         # Garden path NOTE_UPDATED — subscriber does nothing.
         sub = CanonicalizationIndexSubscriber(index)
