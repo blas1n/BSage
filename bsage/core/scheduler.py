@@ -145,6 +145,41 @@ class Scheduler:
             self._jobs[name] = job.id
             logger.info("trigger_hot_registered", name=name, schedule=schedule)
 
+    def register_canon_jobs(
+        self,
+        *,
+        expire_callback: Any | None = None,
+        lint_callback: Any | None = None,
+        expire_schedule: str = "0 * * * *",
+        lint_schedule: str = "0 0 * * 0",
+    ) -> None:
+        """Register cron jobs for canon-expire / canon-lint (Handoff §15.3).
+
+        Each callback is an async no-arg function. Pass None to skip
+        that job (lets RuntimeConfig flags gate registration without
+        constructing dummy callables).
+        """
+        bindings: list[tuple[str, str, Any]] = []
+        if expire_callback is not None:
+            bindings.append(("canon-expire", expire_schedule, expire_callback))
+        if lint_callback is not None:
+            bindings.append(("canon-lint", lint_schedule, lint_callback))
+        for name, schedule, callback in bindings:
+            try:
+                cron_kwargs = self._parse_cron(schedule)
+            except ValueError:
+                logger.warning("invalid_canon_job_schedule", name=name, schedule=schedule)
+                continue
+            trigger = CronTrigger(**cron_kwargs)
+            job = self._scheduler.add_job(
+                callback,
+                trigger=trigger,
+                id=f"bsage-{name}",
+                name=f"BSage: {name}",
+            )
+            self._jobs[name] = job.id
+            logger.info("canon_job_registered", name=name, schedule=schedule)
+
     def register_maintenance(self, tasks: MaintenanceTasks) -> None:
         """Register built-in maintenance tasks on fixed schedules.
 

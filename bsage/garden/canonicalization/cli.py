@@ -536,6 +536,58 @@ def list_decisions_cmd(kind: str | None, status: str) -> None:
         )
 
 
+@canon_group.command("expire")
+def expire_cmd() -> None:
+    """Expire stale draft/pending actions and pending proposals (Handoff §15.3)."""
+
+    async def _go(service, _storage):
+        return await service.expire_stale()
+
+    result = _run_with_service(_go)
+    click.echo(
+        f"expired {len(result.expired_actions)} action(s), "
+        f"{len(result.expired_proposals)} proposal(s)."
+    )
+    for path in result.expired_actions:
+        click.echo(f"  action  {path}")
+    for path in result.expired_proposals:
+        click.echo(f"  proposal {path}")
+
+
+@canon_group.command("lint")
+@click.option(
+    "--severity",
+    type=click.Choice(["all", "warning", "error"]),
+    default="all",
+    show_default=True,
+    help="Filter findings by severity.",
+)
+def lint_cmd(severity: str) -> None:
+    """Run canon lint detectors (orphan tags, alias collisions, redirect anomalies)."""
+    from bsage.garden.canonicalization.lint import run_lint
+
+    async def _go(service, _storage):
+        return await run_lint(service._index, service._store)
+
+    report = _run_with_service(_go)
+    findings = report.findings
+    if severity != "all":
+        findings = [f for f in findings if f.severity == severity]
+    if not findings:
+        click.echo("clean — no findings.")
+        return
+    click.echo(
+        f"{len(findings)} finding(s) — orphan_tags={report.orphan_tag_count}, "
+        f"alias_collisions={report.alias_collision_count}, "
+        f"redirect_anomalies={report.redirect_anomaly_count}"
+    )
+    for f in findings:
+        click.echo(f"  [{f.severity}] {f.kind}: {f.payload}")
+    has_error = any(f.severity == "error" for f in findings)
+    if has_error:
+        raise SystemExit(1)
+
+
 @canon_group.command("decision-stats")
 def decision_stats_cmd() -> None:
     """Summarize active decisions + average effective strength."""

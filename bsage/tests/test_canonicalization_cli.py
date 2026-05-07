@@ -269,3 +269,22 @@ class TestApply:
         foo = (vault / "garden" / "seedling" / "foo.md").read_text()
         fm = extract_frontmatter(foo)
         assert fm["tags"] == ["machine-learning"]
+
+
+class TestExpireCli:
+    def test_expire_empty_vault(self, runner: CliRunner, vault: Path) -> None:
+        result = runner.invoke(main, ["canon", "expire"])
+        assert result.exit_code == 0, result.output
+        assert "expired 0 action(s)" in result.output
+        assert "0 proposal(s)" in result.output
+
+
+class TestLintCli:
+    def test_lint_clean_vault(self, runner: CliRunner, vault: Path) -> None:
+        result = runner.invoke(main, ["canon", "lint"])
+        assert result.exit_code == 0, result.output
+        assert "clean" in result.output
+
+    def test_lint_severity_filter_accepts(self, runner: CliRunner, vault: Path) -> None:
+        result = runner.invoke(main, ["canon", "lint", "--severity", "error"])
+        assert result.exit_code == 0, result.output

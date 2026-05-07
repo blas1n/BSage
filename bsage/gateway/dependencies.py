@@ -236,6 +236,13 @@ class AppState:
         self.canon_index_subscriber = CanonicalizationIndexSubscriber(self.canon_index)
         self.event_bus.subscribe(self.canon_index_subscriber)
 
+        # canon-watcher (Handoff §15.3) — opt-in via
+        # runtime_config.canon_watcher_enabled. Constructed eagerly,
+        # started in initialize() so the asyncio loop is available.
+        from bsage.garden.canonicalization.watcher import CanonWatcher
+
+        self.canon_watcher = CanonWatcher(vault_root=self.vault.root, event_bus=self.event_bus)
+
         # Skills
         self.skill_loader = SkillLoader(settings.skills_dir)
         self.skill_runner = SkillRunner(
@@ -399,6 +406,49 @@ class AppState:
             settings=self.settings,
         )
         self.scheduler.register_maintenance(maintenance)
+
+        # canon plugin gates (Handoff §15.3) — opt-in per RuntimeConfig.
+        # Watcher = filesystem daemon. Expire/lint = cron jobs.
+        if self.runtime_config.canon_watcher_enabled:
+            try:
+                self.canon_watcher.start()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("canon_watcher_start_failed", error=str(exc))
+
+        from bsage.garden.canonicalization.lint import run_lint as _run_canon_lint
+
+        async def _canon_expire_job() -> None:
+            try:
+                result = await self.canon_service.expire_stale()
+                logger.info(
+                    "canon_expire_run",
+                    expired_actions=len(result.expired_actions),
+                    expired_proposals=len(result.expired_proposals),
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("canon_expire_failed", exc_info=True)
+
+        async def _canon_lint_job() -> None:
+            try:
+                report = await _run_canon_lint(self.canon_index, self._canon_store)
+                logger.info(
+                    "canon_lint_run",
+                    findings=len(report.findings),
+                    orphan_tags=report.orphan_tag_count,
+                    alias_collisions=report.alias_collision_count,
+                    redirect_anomalies=report.redirect_anomaly_count,
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("canon_lint_failed", exc_info=True)
+
+        self.scheduler.register_canon_jobs(
+            expire_callback=(
+                _canon_expire_job if self.runtime_config.canon_expire_enabled else None
+            ),
+            lint_callback=(_canon_lint_job if self.runtime_config.canon_lint_enabled else None),
+            expire_schedule=self.runtime_config.canon_expire_cron,
+            lint_schedule=self.runtime_config.canon_lint_cron,
+        )
 
         self.scheduler.start()
         logger.info("gateway_initialized")

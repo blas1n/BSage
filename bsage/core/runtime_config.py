@@ -41,6 +41,14 @@ class _ConfigState:
     embedding_model: str = ""
     embedding_api_key: str = ""
     embedding_api_base: str | None = None
+    # Canonicalization plugin gates (slice 6, Handoff §15.3) — opt-in
+    # per-deployment. These are process plugins, not core background tasks.
+    canon_watcher_enabled: bool = False
+    canon_expire_enabled: bool = False
+    canon_lint_enabled: bool = False
+    # Cron expressions for canon-expire / canon-lint (Scheduler-compatible)
+    canon_expire_cron: str = "0 * * * *"  # hourly
+    canon_lint_cron: str = "0 0 * * 0"  # weekly Sunday 00:00
 
 
 # Pre-computed at import time — avoids repeated introspection.
