@@ -70,6 +70,7 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "A", "SIM"]
 "bsage/gateway/routes.py" = ["B008"]
 "bsage/gateway/authz.py" = ["B008"]
 "bsage/mcp/sse.py" = ["B008"]
+"bsage/tests/test_combined_principal_dispatch.py" = ["B008"]
 
 [tool.coverage.run]
 source = ["bsage"]
