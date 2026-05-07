@@ -37,9 +37,31 @@ class ApprovalRequest:
     source_proposal: str | None = None
 
 
+class ApprovalDeferred(Exception):  # noqa: N818 — "Deferred" reads cleaner than "DeferredError" at call sites
+    """Raised by an :class:`ApprovalInterface` when it cannot reach a human
+    decision-maker right now (no client connected, response timeout, etc.).
+
+    This is *not* a rejection. Callers that have a persistent queue
+    (canonicalization typed actions) should park the work and let the
+    user pick it up later. Callers that need a synchronous decision
+    (plugin Safe Mode) should surface a clear "no approver online"
+    error to the requester rather than silently denying.
+    """
+
+
 @runtime_checkable
 class ApprovalInterface(Protocol):
-    """Protocol that any approval UI (CLI, web, etc.) must implement."""
+    """Protocol that any approval UI (CLI, web, etc.) must implement.
+
+    Implementations MUST distinguish three outcomes:
+
+    - return ``True``  — approver explicitly approved
+    - return ``False`` — approver explicitly rejected
+    - raise :class:`ApprovalDeferred` — no human decision available right
+      now (e.g. WebSocket has no clients, request timed out before any
+      client responded). Treating "deferred" as "rejected" silently
+      destroys work whenever the approver happens to be offline.
+    """
 
     async def request_approval(self, request: ApprovalRequest) -> bool: ...
 
@@ -93,7 +115,17 @@ class SafeModeGuard:
             action_summary=f"Execute dangerous skill '{skill_meta.name}' ({skill_meta.category})",
         )
 
-        approved = await self._interface.request_approval(request)
+        try:
+            approved = await self._interface.request_approval(request)
+        except ApprovalDeferred:
+            # No approver online — synchronous plugin runs cannot wait
+            # forever. Surface a clear, actionable error to the caller
+            # rather than silently denying the run.
+            logger.warning("safe_mode_deferred_no_approver", skill=skill_meta.name)
+            raise SafeModeError(
+                f"No approver available to authorize dangerous skill "
+                f"'{skill_meta.name}'. Connect to BSage and retry."
+            ) from None
 
         if approved:
             logger.info("safe_mode_approved", skill=skill_meta.name)

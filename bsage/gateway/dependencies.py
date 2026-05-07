@@ -222,7 +222,6 @@ class AppState:
             policies=self.canon_policies,
             event_bus=self.event_bus,
             safe_mode=lambda: self.runtime_config.safe_mode,
-            approval_interface=self.ws_approval_interface,
         )
 
         # CanonicalizationIndexSubscriber (Class_Diagram §10.2): keep the

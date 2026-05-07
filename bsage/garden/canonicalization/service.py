@@ -19,7 +19,6 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from bsage.core.events import EventBus, emit_event
-from bsage.core.safe_mode import ApprovalInterface, ApprovalRequest
 from bsage.garden.canonicalization import evidence as evidence_module
 from bsage.garden.canonicalization import models, paths
 from bsage.garden.canonicalization.decisions import DecisionMemory
@@ -81,24 +80,6 @@ def _title_from_raw(raw_tag: str) -> str:
     return " ".join(part.capitalize() for part in cleaned.replace("_", " ").split())
 
 
-def _summarize_action(entry: models.ActionEntry) -> str:
-    """One-line human summary used in ApprovalRequest.action_summary."""
-    if entry.kind == "create-concept":
-        return f"create concept '{entry.params.get('concept')}'"
-    if entry.kind == "merge-concepts":
-        merge = entry.params.get("merge") or []
-        return f"merge {merge!r} into '{entry.params.get('canonical')}'"
-    if entry.kind == "retag-notes":
-        changes = entry.params.get("changes") or []
-        return f"retag {len(changes)} garden note(s)"
-    if entry.kind == "create-decision":
-        subjects = entry.params.get("subjects") or []
-        dpath = entry.params.get("decision_path", "")
-        kind = dpath.split("/")[1] if dpath.startswith("decisions/") else "?"
-        return f"record {kind} decision between {subjects!r}"
-    return f"apply {entry.kind} action"
-
-
 def _evidence(reason: str, **payload: Any) -> dict[str, Any]:
     """Hard Block evidence envelope. Thin wrapper over evidence.hard_block."""
     return evidence_module.hard_block(reason, **payload)
@@ -125,7 +106,6 @@ class CanonicalizationService:
         clock: Callable[[], datetime] | None = None,
         event_bus: EventBus | None = None,
         safe_mode: Callable[[], bool] | None = None,
-        approval_interface: ApprovalInterface | None = None,
     ) -> None:
         self._store = store
         self._lock = lock
@@ -138,8 +118,11 @@ class CanonicalizationService:
         # Safe Mode is a callable so a mutable RuntimeConfig flag is read
         # at apply-time, not at service construction (per existing pattern
         # in bsage.core.safe_mode.SafeModeGuard).
+        # Canonicalization deliberately does NOT take an ApprovalInterface
+        # — typed actions are persisted as ``pending_approval`` and
+        # reviewed via the pull-based queue UI. Push-based round-trips
+        # silently auto-rejected whenever the operator was offline.
         self._safe_mode = safe_mode or (lambda: False)
-        self._approval_interface = approval_interface
         # Slice 4 scorer is also wired here so the apply pipeline can
         # populate action.scoring before Safe Mode permission check.
         if decisions is not None and policies is not None:
@@ -435,8 +418,15 @@ class CanonicalizationService:
         entry.execution.status = "ok"
         entry.execution.applied_at = now
         entry.execution.error = None
-        entry.permission.safe_mode = False
-        entry.permission.decision = "auto_apply"
+        # Distinguish reviewer-approved (Safe Mode was on, queue picked it
+        # up) from straight auto-apply (Safe Mode was off). The persisted
+        # permission record is the audit trail for §13.
+        if force_approved:
+            entry.permission.safe_mode = True
+            entry.permission.decision = "approved"
+        else:
+            entry.permission.safe_mode = False
+            entry.permission.decision = "auto_apply"
         entry.permission.actor = actor
         entry.permission.decided_at = now
         entry.affected_paths = sorted({action_path, *affected})
@@ -489,107 +479,26 @@ class CanonicalizationService:
         previous_status: str,
         actor: str,
     ) -> models.ApplyResult:
-        """Safe Mode ON — request approval; if no interface, mark pending."""
+        """Safe Mode ON — persist as ``pending_approval`` for the queue.
+
+        Canonicalization typed actions are durable: the action file lives
+        in the vault, so we never need a synchronous approver round-trip.
+        Approve via :meth:`approve_action` (called by the queue UI's
+        Approve & apply button); reject via :meth:`reject_action`.
+        """
         now = self._clock()
         entry.validation = validation
-        # No interface → cannot ask; persist pending_approval and stop.
-        if self._approval_interface is None:
-            entry.status = "pending_approval"
-            entry.permission.safe_mode = True
-            entry.permission.decision = "require_approval"
-            entry.updated_at = now
-            await self._store.write_action(entry)
-            await self._invalidate_index([entry.path])
-            await self._emit_action_status(entry, previous_status)
-            return models.ApplyResult(
-                action_path=entry.path,
-                final_status="pending_approval",
-                affected_paths=[entry.path],
-            )
-        # Interface available — request approval inline.
-        request = ApprovalRequest(
-            skill_name="canonicalization",
-            description=f"apply {entry.kind} action",
-            action_summary=_summarize_action(entry),
-            action_path=entry.path,
-            action_kind=entry.kind,
-            stability_score=entry.scoring.stability_score,
-            risk_reasons=list(entry.scoring.risk_reasons),
-            affected_paths=list(entry.affected_paths),
-            source_proposal=entry.source_proposal,
-        )
-        try:
-            approved = await self._approval_interface.request_approval(request)
-        except Exception as exc:  # noqa: BLE001 — approval failure ≠ apply failure
-            entry.status = "pending_approval"
-            entry.permission.safe_mode = True
-            entry.permission.decision = "require_approval"
-            entry.permission.actor = actor
-            entry.permission.decided_at = now
-            entry.execution.error = repr(exc)
-            entry.updated_at = now
-            await self._store.write_action(entry)
-            await self._invalidate_index([entry.path])
-            await self._emit_action_status(entry, previous_status)
-            return models.ApplyResult(
-                action_path=entry.path,
-                final_status="pending_approval",
-                affected_paths=[entry.path],
-                error=repr(exc),
-            )
-
-        if not approved:
-            entry.status = "rejected"
-            entry.permission.safe_mode = True
-            entry.permission.decision = "rejected"
-            entry.permission.actor = actor
-            entry.permission.decided_at = now
-            entry.updated_at = now
-            await self._store.write_action(entry)
-            await self._invalidate_index([entry.path])
-            await self._emit_action_status(entry, previous_status)
-            return models.ApplyResult(
-                action_path=entry.path,
-                final_status="rejected",
-                affected_paths=[entry.path],
-            )
-
-        # Approved → run effects + persist applied
-        try:
-            affected = await self._persist_effects(entry)
-        except Exception as exc:  # noqa: BLE001
-            entry.execution.status = "failed"
-            entry.execution.error = repr(exc)
-            entry.status = "failed"
-            entry.updated_at = self._clock()
-            await self._store.write_action(entry)
-            await self._emit_action_status(entry, previous_status)
-            return models.ApplyResult(
-                action_path=entry.path,
-                final_status="failed",
-                affected_paths=[],
-                error=repr(exc),
-            )
-        now = self._clock()
-        entry.execution.status = "ok"
-        entry.execution.applied_at = now
-        entry.execution.error = None
+        entry.status = "pending_approval"
         entry.permission.safe_mode = True
-        entry.permission.decision = "approved"
-        entry.permission.actor = actor
-        entry.permission.decided_at = now
-        entry.affected_paths = sorted({entry.path, *affected})
-        entry.status = "applied"
+        entry.permission.decision = "require_approval"
         entry.updated_at = now
         await self._store.write_action(entry)
-        await self._invalidate_index(entry.affected_paths)
+        await self._invalidate_index([entry.path])
         await self._emit_action_status(entry, previous_status)
-        await self._emit_action_applied(entry)
-        await self._emit_kind_specific_applied(entry)
         return models.ApplyResult(
             action_path=entry.path,
-            final_status="applied",
-            affected_paths=list(entry.affected_paths),
+            final_status="pending_approval",
+            affected_paths=[entry.path],
         )
 
     # ----------------------------------------------------------- emit helpers
