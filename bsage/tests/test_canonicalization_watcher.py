@@ -100,7 +100,7 @@ class TestEventDispatchToBus:
         assert len(captured) == 1
         e = captured[0]
         assert e.event_type == EventType.NOTE_UPDATED
-        assert e.payload["path"] == "concepts/active/ml.md"
+        assert e.payload["path"] == str(canon_file.resolve())
 
     @pytest.mark.asyncio
     async def test_deleted_emits_note_deleted(self, tmp_path: Path) -> None:

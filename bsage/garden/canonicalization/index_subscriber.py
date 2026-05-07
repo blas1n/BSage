@@ -39,6 +39,23 @@ _CANON_PATH_PREFIXES: tuple[str, ...] = (
 )
 
 
+def _normalize_canon_path(path: str) -> str | None:
+    """Return the vault-relative form of ``path`` if it sits under a canon
+    root; ``None`` otherwise.
+
+    Accepts both vault-relative (``concepts/active/foo.md``) and absolute
+    (``/srv/vault/concepts/active/foo.md``) forms — the canon-watcher
+    emits absolute paths, while service-side ``CANONICALIZATION_*``
+    events carry relative ones. Matches whichever canon prefix appears
+    either at the start of the string or immediately after a ``/``.
+    """
+    for prefix in _CANON_PATH_PREFIXES:
+        idx = path.find(prefix)
+        if idx == 0 or (idx > 0 and path[idx - 1] == "/"):
+            return path[idx:]
+    return None
+
+
 class CanonicalizationIndexSubscriber:
     """EventSubscriber that invalidates the canon index on relevant events.
 
@@ -67,8 +84,10 @@ class CanonicalizationIndexSubscriber:
         # External vault edits — only canon-rooted paths matter to us.
         if event.event_type in (EventType.NOTE_UPDATED, EventType.NOTE_DELETED):
             path = payload.get("path")
-            if isinstance(path, str) and self._is_canon_path(path):
-                await self._safe_invalidate(path)
+            if isinstance(path, str):
+                normalized = _normalize_canon_path(path)
+                if normalized is not None:
+                    await self._safe_invalidate(normalized)
 
     @staticmethod
     def _extract_canon_paths(payload: dict[str, Any]) -> list[str]:
@@ -84,18 +103,19 @@ class CanonicalizationIndexSubscriber:
             v = payload.get(key)
             if isinstance(v, list):
                 out.extend(p for p in v if isinstance(p, str))
-        # Dedupe while preserving order
+        # Dedupe while preserving order — and normalize abs → rel.
         seen: set[str] = set()
         unique: list[str] = []
         for p in out:
-            if p not in seen and CanonicalizationIndexSubscriber._is_canon_path(p):
-                seen.add(p)
-                unique.append(p)
+            normalized = _normalize_canon_path(p)
+            if normalized is not None and normalized not in seen:
+                seen.add(normalized)
+                unique.append(normalized)
         return unique
 
     @staticmethod
     def _is_canon_path(path: str) -> bool:
-        return path.startswith(_CANON_PATH_PREFIXES)
+        return _normalize_canon_path(path) is not None
 
     async def _safe_invalidate(self, path: str) -> None:
         try:

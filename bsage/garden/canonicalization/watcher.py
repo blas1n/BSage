@@ -141,9 +141,15 @@ class _CanonFsEventHandler:
         rel = self._watcher.relativize(src)
         if rel is None or not is_canon_path(rel):
             return
+        # Emit absolute path so existing event consumers
+        # (GraphSubscriber / IndexSubscriber / VectorSubscriber) — which
+        # are tuned to GardenWriter's ``str(resolved)`` convention — can
+        # process the event uniformly. The canon subscriber normalizes
+        # both forms via :func:`is_canon_path` substring detection.
+        abs_src = str(Path(src).resolve())
         if kind == "deleted":
             self._watcher._enqueue_emit(  # noqa: SLF001 — sister module
-                EventType.NOTE_DELETED, {"path": rel}
+                EventType.NOTE_DELETED, {"path": abs_src}
             )
         elif kind in {"created", "modified", "moved"}:
             # ``moved`` also has dest_path; emit for the dest
@@ -152,11 +158,11 @@ class _CanonFsEventHandler:
                 rel_dest = self._watcher.relativize(dest) if dest else None
                 if rel_dest and is_canon_path(rel_dest):
                     self._watcher._enqueue_emit(  # noqa: SLF001
-                        EventType.NOTE_UPDATED, {"path": rel_dest}
+                        EventType.NOTE_UPDATED, {"path": str(Path(dest).resolve())}
                     )
             else:
                 self._watcher._enqueue_emit(  # noqa: SLF001
-                    EventType.NOTE_UPDATED, {"path": rel}
+                    EventType.NOTE_UPDATED, {"path": abs_src}
                 )
 
     # Watchdog also dispatches via these handler hooks on some Observer

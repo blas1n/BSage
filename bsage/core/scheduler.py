@@ -158,7 +158,20 @@ class Scheduler:
         Each callback is an async no-arg function. Pass None to skip
         that job (lets RuntimeConfig flags gate registration without
         constructing dummy callables).
+
+        Idempotent: existing canon-expire / canon-lint jobs are removed
+        first, so this can be called repeatedly when ``RuntimeConfig``
+        flags toggle at runtime via ``PATCH /api/config``.
         """
+        # Remove any prior canon job so toggles take effect immediately.
+        import contextlib
+
+        for name in ("canon-expire", "canon-lint"):
+            prior = self._jobs.pop(name, None)
+            if prior is not None:
+                with contextlib.suppress(Exception):
+                    self._scheduler.remove_job(prior)
+
         bindings: list[tuple[str, str, Any]] = []
         if expire_callback is not None:
             bindings.append(("canon-expire", expire_schedule, expire_callback))
