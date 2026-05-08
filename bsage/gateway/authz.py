@@ -32,6 +32,8 @@ from functools import lru_cache
 import structlog
 from bsvibe_authz import (
     AuthError,
+    IntrospectionCache,
+    IntrospectionClient,
     OpenFGAError,
     PermissionCache,
     ServiceTokenPayload,
@@ -39,7 +41,11 @@ from bsvibe_authz import (
     get_current_user,
 )
 from bsvibe_authz.auth import verify_service_jwt
-from bsvibe_authz.deps import FGAClientProtocol
+from bsvibe_authz.deps import (
+    FGAClientProtocol,
+    get_introspection_cache,
+    get_introspection_client,
+)
 from bsvibe_authz.settings import Settings as AuthzSettings
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -134,6 +140,22 @@ def _settings_dep() -> AuthzSettings:
     return get_authz_settings()
 
 
+# RFC 7662 introspection deps re-rooted on our local ``_settings_dep`` so the
+# BSage-overridden Settings flow through the whole 3-way dispatch chain
+# instead of the upstream ``bsvibe_authz.get_settings_dep`` (which calls
+# ``Settings()`` and 500s on a partially-configured deployment).
+def _get_introspection_client_dep(
+    settings: AuthzSettings = Depends(_settings_dep),
+) -> IntrospectionClient | None:
+    return get_introspection_client(settings)
+
+
+def _get_introspection_cache_dep(
+    settings: AuthzSettings = Depends(_settings_dep),
+) -> IntrospectionCache:
+    return get_introspection_cache(settings)
+
+
 # Audience for every service JWT BSage accepts.
 BSAGE_AUDIENCE = "bsage"
 
@@ -191,22 +213,31 @@ async def combined_principal(
     request: Request,
     service: User | None = Depends(get_service_principal_dep),
     settings: AuthzSettings = Depends(_settings_dep),
+    introspection_client: IntrospectionClient | None = Depends(_get_introspection_client_dep),
+    introspection_cache: IntrospectionCache = Depends(_get_introspection_cache_dep),
 ) -> User:
-    """Resolve the request principal from either a user JWT or a service JWT
-    audience-scoped to ``bsage``.
+    """Resolve the request principal from one of four token shapes.
 
     Resolution order:
-    1. If ``Authorization`` carries a valid ``aud=bsage`` service JWT
-       (verified by :func:`get_service_principal_dep`), use it.
-    2. Otherwise, fall through to the user-JWT verifier
-       (``bsvibe_authz.get_current_user``). 401 on missing / invalid.
+    1. ``aud=bsage`` service JWT (Phase 0 P0.5 invariant).
+    2. ``bsv_admin_*`` bootstrap admin token (constant-time digest match).
+    3. ``bsv_sk_*`` opaque session token (RFC 7662 introspection).
+    4. User session JWT.
+
+    Steps 2-4 are dispatched by ``bsvibe_authz.get_current_user``. Token
+    introspection state (client + cache) is resolved here via FastAPI DI and
+    forwarded explicitly so the underlying verifier doesn't see unresolved
+    ``Depends`` defaults when called from this wrapper.
     """
     if service is not None:
         return service
-    # Reuse the underlying user-JWT verifier directly so the dep can keep its
-    # exception semantics. We pass the Authorization header through.
     auth_header = request.headers.get("Authorization")
-    return await get_current_user(authorization=auth_header, settings=settings)
+    return await get_current_user(
+        authorization=auth_header,
+        settings=settings,
+        introspection_client=introspection_client,
+        introspection_cache=introspection_cache,
+    )
 
 
 # ---------------------------------------------------------------------------

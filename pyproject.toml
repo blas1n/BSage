@@ -22,7 +22,7 @@ dependencies = [
     "aiosqlite>=0.19.0",
     "jsonschema>=4.0.0",
     "bsvibe-auth[fastapi] @ git+https://github.com/BSVibe/BSVibe-Auth.git@v0.5.0#subdirectory=python",
-    "bsvibe-authz @ git+https://github.com/BSVibe/bsvibe-python.git@84c393f6#subdirectory=packages/bsvibe-authz",
+    "bsvibe-authz @ git+https://github.com/BSVibe/bsvibe-python.git@67da60e#subdirectory=packages/bsvibe-authz",
     "bsvibe-core @ git+https://github.com/BSVibe/bsvibe-python.git@main#subdirectory=packages/bsvibe-core",
     "bsvibe-fastapi @ git+https://github.com/BSVibe/bsvibe-python.git@main#subdirectory=packages/bsvibe-fastapi",
     "bsvibe-audit @ git+https://github.com/BSVibe/bsvibe-python.git@main#subdirectory=packages/bsvibe-audit",
@@ -70,7 +70,8 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "A", "SIM"]
 "bsage/gateway/routes.py" = ["B008"]
 "bsage/gateway/authz.py" = ["B008"]
 "bsage/mcp/sse.py" = ["B008"]
-"bsage/gateway/mcp_api_keys_routes.py" = ["B008"]
+"bsage/tests/test_combined_principal_dispatch.py" = ["B008"]
+"bsage/tests/test_token_cutover_mcp.py" = ["B008"]
 
 [tool.coverage.run]
 source = ["bsage"]
