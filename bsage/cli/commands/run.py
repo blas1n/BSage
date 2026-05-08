@@ -1,8 +1,8 @@
 """``bsage run`` Typer command — server boot.
 
 Phase 4 retires the threaded ``uvicorn.Server`` + ``ChatBridge`` REPL
-"mount trick" the legacy Click CLI used (``bsage._cli_legacy:run``).
-This rewrite is a clean ``uvicorn.run(create_app(...))`` hand-off:
+"mount trick" the legacy Click CLI used. This rewrite is a clean
+``uvicorn.run(create_app(...))`` hand-off:
 
 * No background thread, no health-poll, no in-process REPL — those
   responsibilities move to a dedicated ``bsage chat`` sub-app later.

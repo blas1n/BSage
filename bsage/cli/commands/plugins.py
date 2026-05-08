@@ -4,9 +4,8 @@ Subcommands:
 
 * ``list`` → ``GET /api/plugins`` — emit via :class:`OutputFormatter`.
 * ``install NAME`` — in-process ``uv pip install -r <plugins_dir>/<name>/
-  requirements.txt`` (legacy parity with
-  :func:`bsage._cli_legacy.install`). Honours ``--dry-run`` by skipping
-  the subprocess and emitting a planned-payload.
+  requirements.txt``. Honours ``--dry-run`` by skipping the subprocess
+  and emitting a planned-payload.
 * ``enable NAME`` / ``disable NAME`` — *idempotent* wrappers around the
   toggle endpoint. Because ``POST /api/entries/{name}/toggle`` is a flip
   (not an absolute set), the command first probes ``GET /api/plugins``

@@ -8,9 +8,10 @@ moves notes from legacy entity-type folders (``ideas/``, ``insights/``,
 into a tag, and stamps each migrated file with ``_pre_migration_path``
 so a future ``--revert`` can put everything back.
 
-Stayed factored as a library function so unit tests can drive it without
-spinning up the click runner — the CLI wrapper is a thin shim in
-``bsage._cli_legacy``.
+Stayed factored as a library function so unit tests can drive it
+directly. The Phase 4 Typer CLI no longer ships a ``migrate-flatten-vault``
+subcommand; importing :func:`migrate_flatten_vault` (or the
+plan/apply/revert helpers) from this module is the supported entry point.
 """
 
 from __future__ import annotations

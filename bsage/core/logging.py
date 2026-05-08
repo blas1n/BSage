@@ -3,7 +3,7 @@
 Phase A migration (2026-04-26): the structlog setup pipeline now lives in
 ``bsvibe_core.configure_logging``. This module keeps the BSage-specific
 positional signature (``configure_logging(log_level)``) so existing call
-sites in ``bsage._cli_legacy`` / ``bsage.gateway.app`` and the
+sites in ``bsage.cli.commands.run`` / ``bsage.gateway.app`` and the
 ``test_logging.py`` regression suite migrate without churn, and forwards
 to the shared implementation with ``service_name="bsage"`` for log fan-in.
 """

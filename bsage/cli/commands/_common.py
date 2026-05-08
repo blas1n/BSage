@@ -12,8 +12,7 @@ Centralises a small set of primitives every HTTP-backed sub-app needs:
   ``asyncio.run`` so subcommands stay sync-style while ``CliHttpClient``
   remains async-only.
 * :func:`validate_entry_name` — enforce the same lowercase-with-hyphens
-  pattern used by Plugin/Skill loaders (mirrors
-  :func:`bsage._cli_legacy._validate_skill_name`).
+  pattern used by Plugin/Skill loaders.
 
 The helpers mirror the ``bsgateway`` precedent (PR #43) so both CLIs
 have the same dry-run / error / name-validation shape.
@@ -80,11 +79,7 @@ def run_async(coro_factory: Callable[[], Awaitable[Any]]) -> Any:
 
 
 def validate_entry_name(name: str) -> str:
-    """Validate Plugin/Skill name — lowercase alphanumeric + hyphens.
-
-    Mirrors :func:`bsage._cli_legacy._validate_skill_name` so the new
-    Typer CLI accepts the exact same names as the legacy Click CLI.
-    """
+    """Validate Plugin/Skill name — lowercase alphanumeric + hyphens."""
 
     if not _NAME_RE.match(name):
         raise typer.BadParameter(

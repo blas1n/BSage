@@ -3,8 +3,7 @@
 Sub-app surface:
 
 * ``list``    → ``GET  /api/plugins``
-* ``install`` → in-process ``uv pip install -r <plugin>/requirements.txt``
-                (legacy parity — :mod:`bsage._cli_legacy.install`).
+* ``install`` → in-process ``uv pip install -r <plugin>/requirements.txt``.
 * ``enable``  → ``POST /api/entries/{name}/toggle`` *only when needed*.
 * ``disable`` → ``POST /api/entries/{name}/toggle`` *only when needed*.
 

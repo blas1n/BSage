@@ -1,6 +1,6 @@
 """Tests for ``bsage run`` Typer command (TASK-003).
 
-The legacy Click ``bsage run`` (in :mod:`bsage._cli_legacy`) wrapped a
+The legacy Click ``bsage run`` (deleted in TASK-007) wrapped a
 threaded ``uvicorn.Server`` plus an in-process ChatBridge REPL — the
 "mount trick" the Phase 4 plan calls out for retirement. The new Typer
 command is a clean ``uvicorn.run(create_app(...))`` call:
