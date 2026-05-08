@@ -20,9 +20,22 @@ a fully-resolved :class:`~bsvibe_cli_base.cli.CliContext` on
 
 from __future__ import annotations
 
+import sys
+
+import structlog
 from bsvibe_cli_base import cli_app
 
 from bsage.cli.commands import run as run_cmd
+from bsage.cli.commands.plugins import app as plugins_app
+from bsage.cli.commands.skills import app as skills_app
+
+# Route structlog to stderr so subcommands keep stdout clean for the
+# OutputFormatter (JSON / YAML / TSV / table) — operators piping output
+# through ``jq`` shouldn't see log lines mixed into the data stream.
+structlog.configure(
+    processors=structlog.get_config()["processors"],
+    logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
+)
 
 app = cli_app(
     name="bsage",
@@ -30,6 +43,8 @@ app = cli_app(
 )
 
 run_cmd.register(app)
+app.add_typer(skills_app, name="skills")
+app.add_typer(plugins_app, name="plugins")
 
 
 __all__ = ["app"]
