@@ -22,10 +22,14 @@ from __future__ import annotations
 
 from bsvibe_cli_base import cli_app
 
+from bsage.cli.commands import run as run_cmd
+
 app = cli_app(
     name="bsage",
     help="BSage — Personal AI Agent control plane CLI.",
 )
+
+run_cmd.register(app)
 
 
 __all__ = ["app"]
