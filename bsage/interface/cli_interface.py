@@ -1,8 +1,11 @@
-"""CLI-based interfaces: approval via click."""
+"""CLI-based interfaces: SafeMode approval via stdin prompt.
+
+Uses stdlib ``input``/``print`` (no click dependency) so the BSage
+codebase can drop click entirely after the Phase 4 CLI migration.
+"""
 
 from __future__ import annotations
 
-import click
 import structlog
 
 from bsage.core.safe_mode import ApprovalRequest
@@ -11,9 +14,12 @@ logger = structlog.get_logger(__name__)
 
 
 class CLIApprovalInterface:
-    """Interactive terminal approval via click.confirm.
+    """Interactive terminal approval via stdin y/n prompt.
 
     Implements the ApprovalInterface protocol expected by SafeModeGuard.
+    Defaults to deny — empty input, EOF, and any non-affirmative answer
+    all return ``False`` so an unattended terminal never silently
+    approves a dangerous action.
     """
 
     async def request_approval(self, request: ApprovalRequest) -> bool:
@@ -24,10 +30,14 @@ class CLIApprovalInterface:
             f"  Description: {request.description}\n"
             f"  Action:      {request.action_summary}\n"
         )
+        print(message)  # noqa: T201 — interactive prompt, not logging
 
-        click.echo(message)
+        try:
+            answer = input("Do you approve this action? [y/N]: ").strip().lower()
+        except EOFError:
+            answer = ""
 
-        approved = click.confirm("Do you approve this action?", default=False)
+        approved = answer in {"y", "yes"}
 
         logger.info(
             "cli_approval_result",
