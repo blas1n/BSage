@@ -122,6 +122,16 @@ def _build_registry(state: Any) -> ToolRegistry:
     return registry
 
 
+def build_registry(state: Any) -> ToolRegistry:
+    """Public alias for :func:`_build_registry`.
+
+    Other transports (HTTP ``/mcp/health``, ``bsage mcp list-tools``)
+    introspect the same registry the SSE server serves — exposing the
+    builder as a public symbol keeps that contract explicit.
+    """
+    return _build_registry(state)
+
+
 def _canon_mutation_enabled(state: Any) -> bool:
     """Per Handoff §15.2 — MCP approval/mutation tools are off by default.
 

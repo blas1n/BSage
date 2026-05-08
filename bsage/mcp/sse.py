@@ -24,11 +24,29 @@ logger = structlog.get_logger(__name__)
 
 def create_sse_routes(state: Any) -> APIRouter:
     """Mount MCP-over-SSE endpoints on the gateway."""
-    from bsage.mcp.server import build_server
+    from bsage.mcp import plugin_bridge
+    from bsage.mcp.server import build_registry, build_server
 
     router = APIRouter(prefix="/mcp", tags=["mcp"])
     transport = SseServerTransport("/mcp/messages/")
     server = build_server(state)
+
+    @router.get("/health")
+    async def health() -> dict[str, Any]:
+        """Liveness probe + tool count — unauthenticated by design.
+
+        Deploy probes (Cursor, Claude Desktop bridges, k8s readiness)
+        run before the auth backend is reachable. We expose the same
+        registry ``build_server`` wires into the SSE transport so the
+        count is honest rather than a stub.
+        """
+        registry = build_registry(state)
+        plugin_tools = await plugin_bridge.list_plugins_as_tools(state)
+        return {
+            "status": "ok",
+            "server": "bsage",
+            "tool_count": len(list(registry.list_tools())) + len(plugin_tools),
+        }
 
     async def _resolve_principal(
         request: Request,
