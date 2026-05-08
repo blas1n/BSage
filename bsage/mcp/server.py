@@ -33,6 +33,7 @@ from mcp.types import TextContent, Tool
 
 from bsage.garden.canonicalization import mcp_tools as canon_mcp_tools
 from bsage.mcp import plugin_bridge
+from bsage.mcp.admin_tools import register_admin_tools
 from bsage.mcp.api import ToolContext, ToolError, ToolRegistry
 from bsage.mcp.domain_tools import register_domain_tools
 
@@ -117,6 +118,7 @@ def _build_registry(state: Any) -> ToolRegistry:
         registry,
         mutation_enabled=_canon_mutation_enabled(state),
     )
+    register_admin_tools(registry)
     return registry
 
 
