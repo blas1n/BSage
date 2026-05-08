@@ -224,7 +224,7 @@ def test_extract_typed_relations_with_ontology():
             await registry.load()
             return registry
 
-    registry = asyncio.get_event_loop().run_until_complete(_run())
+    registry = asyncio.run(_run())
 
     content = (
         "---\n"
