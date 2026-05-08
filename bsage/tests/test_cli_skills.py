@@ -1,17 +1,16 @@
-"""Tests for ``bsage skills`` Typer sub-app (TASK-004).
+"""Tests for ``bsage skills`` Typer sub-app (TASK-004 + REVIEW-004A).
 
-The sub-app wraps the existing skills REST surface where one exists:
+The sub-app wraps the skills REST surface:
 
 * ``list``  → ``GET  /api/skills``
 * ``run``   → ``POST /api/run/{name}``
 
-``add``/``update``/``delete`` have no REST surface today (skills are
-file-backed YAML+Markdown). Per ``.agent/cli-inventory.md`` they ship as
-planned-payload stubs that emit the *would-be* request via the formatter
-and exit 0 — operators get a machine-readable preview while a follow-up
-REVIEW task tracks the endpoints that need to land before live mode is
-useful. Tests here pin that contract so the stub doesn't silently grow
-into a half-broken HTTP call.
+There are deliberately no ``add``/``update``/``delete`` commands —
+skills are file-backed YAML+Markdown and authored via git under
+``skills/``. Exposing write-via-HTTP would create a prompt-injection
+vector since skills are LLM system prompts that the agent then
+executes. REVIEW-004A resolved this by removing the planned-payload
+stubs that earlier shipped under TASK-004.
 
 Help-text checks strip ANSI escapes per the Phase 3 lesson — rich/Typer
 splits flag tokens across colour escapes in non-TTY CI runs and a plain
@@ -73,14 +72,28 @@ def _base_args(*extra: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def test_skills_subapp_help_lists_all_subcommands(runner: CliRunner) -> None:
+def test_skills_subapp_help_lists_supported_subcommands(runner: CliRunner) -> None:
     from bsage.cli.main import app
 
     result = runner.invoke(app, ["skills", "--help"])
     assert result.exit_code == 0, result.stderr
     plain = _strip_ansi(result.stdout)
-    for sub in ("list", "add", "update", "run", "delete"):
+    for sub in ("list", "run"):
         assert sub in plain, f"missing skills subcommand {sub!r}:\n{plain}"
+
+
+def test_skills_subapp_does_not_expose_write_commands(runner: CliRunner) -> None:
+    """Authoring is git-based — REST mutation surface is intentionally absent.
+
+    REVIEW-004A: dropping ``add``/``update``/``delete`` keeps prompt-
+    injection out of the LLM system-prompt surface. Pin so a future
+    refactor doesn't quietly re-introduce them.
+    """
+    from bsage.cli.main import app
+
+    for sub in ("add", "update", "delete"):
+        result = runner.invoke(app, ["skills", sub, "demo"])
+        assert result.exit_code != 0, f"{sub!r} should be rejected: {result.stdout}"
 
 
 # ---------------------------------------------------------------------------
@@ -174,58 +187,6 @@ def test_skills_run_dry_run_skips_http(runner: CliRunner, fake_client: MagicMock
     plain = _strip_ansi(result.stdout)
     assert "/api/run/weekly-digest" in plain
     assert '"a"' in plain
-
-
-# ---------------------------------------------------------------------------
-# add / update / delete — stubs (no REST surface yet)
-# ---------------------------------------------------------------------------
-
-
-def test_skills_add_emits_planned_payload_no_http(
-    runner: CliRunner, fake_client: MagicMock
-) -> None:
-    from bsage.cli.main import app
-
-    result = runner.invoke(
-        app,
-        _base_args(
-            "skills",
-            "add",
-            "demo",
-            "--from-file",
-            "/tmp/demo.md",
-        ),
-    )
-    assert result.exit_code == 0, result.stderr
-    fake_client.post.assert_not_called()
-    fake_client.get.assert_not_called()
-    plain = _strip_ansi(result.stdout)
-    assert "demo" in plain
-    assert "stub" in plain.lower() or "planned" in plain.lower()
-
-
-def test_skills_update_emits_planned_payload_no_http(
-    runner: CliRunner, fake_client: MagicMock
-) -> None:
-    from bsage.cli.main import app
-
-    result = runner.invoke(
-        app, _base_args("skills", "update", "demo", "--from-file", "/tmp/demo.md")
-    )
-    assert result.exit_code == 0, result.stderr
-    fake_client.post.assert_not_called()
-
-
-def test_skills_delete_emits_planned_payload_no_http(
-    runner: CliRunner, fake_client: MagicMock
-) -> None:
-    from bsage.cli.main import app
-
-    result = runner.invoke(app, _base_args("skills", "delete", "demo"))
-    assert result.exit_code == 0, result.stderr
-    fake_client.post.assert_not_called()
-    plain = _strip_ansi(result.stdout)
-    assert "demo" in plain
 
 
 # ---------------------------------------------------------------------------

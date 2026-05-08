@@ -14,8 +14,9 @@ acceptance criteria:
 * ``bsage settings set llm_model X`` then ``bsage settings get
   llm_model`` returns ``X`` — RuntimeConfig PATCH/GET round-trip is
   fully live (real ``RuntimeConfig`` instance, real route handlers).
-* ``bsage skills list`` shows a seeded skill — ``skills add`` is still
-  a stub (REVIEW-004A); the listing path is live and proves the CLI's
+* ``bsage skills list`` shows a seeded skill — there is intentionally
+  no ``skills add`` (REVIEW-004A: skills are git-authored under
+  ``skills/``); the listing path is live and proves the CLI's
   GET /api/skills wiring is correct end-to-end.
 """
 

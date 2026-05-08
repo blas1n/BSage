@@ -4,7 +4,7 @@ This module exposes the ``app`` object that the ``bsage`` console
 script entry point resolves to. Sub-apps land here in TASK-003..007:
 
 * ``bsage run``      — server boot (TASK-003)
-* ``bsage skills``   — skills CRUD + run (TASK-004)
+* ``bsage skills``   — skills list + run (TASK-004 / REVIEW-004A)
 * ``bsage plugins``  — plugin install / enable / disable (TASK-004)
 * ``bsage ingest``   — compile_batch ingest (TASK-005)
 * ``bsage garden``   — garden list / prune / recompile (TASK-005)
