@@ -28,11 +28,134 @@ Read-only deployment is a valid mode (set
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 import structlog
+from pydantic import BaseModel, ConfigDict, Field
+
+from bsage.mcp.api import Tool, ToolContext, ToolRegistry
 
 logger = structlog.get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Pydantic schemas — first-class API contract for canon MCP tools.
+# Output models intentionally allow ``extra`` so handler-supplied error
+# envelopes (``{"error": "not_found", ...}``) round-trip cleanly through
+# the dispatcher without bloating the typed surface.
+# ---------------------------------------------------------------------------
+class _PermissiveOutput(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+
+# --- read tools ----------------------------------------------------------------
+class ResolveTagInput(BaseModel):
+    raw_tag: str
+    raw_source: str | None = None
+    auto_apply: bool = False
+
+
+class ResolveTagOutput(_PermissiveOutput):
+    raw_tag: str
+    canonical: Any | None = None
+
+
+class ListProposalsInput(BaseModel):
+    status: str = "pending"
+    kind: str | None = None
+
+
+class _ProposalItem(_PermissiveOutput):
+    path: str
+    kind: str
+    status: str
+    score: float | None = None
+    action_drafts: list[str] = Field(default_factory=list)
+
+
+class ListProposalsOutput(_PermissiveOutput):
+    items: list[_ProposalItem]
+
+
+class GetProposalInput(BaseModel):
+    path: str
+
+
+class GetProposalOutput(_PermissiveOutput):
+    """Read-tool output — covers both the success and ``not_found`` shape."""
+
+
+class CreateActionDraftInput(BaseModel):
+    kind: str
+    params: dict[str, Any]
+    slug: str | None = None
+    source_proposal: str | None = None
+
+
+class CreateActionDraftOutput(_PermissiveOutput):
+    path: str
+    status: str
+
+
+class ActionPathInput(BaseModel):
+    action_path: str
+
+
+class ValidateActionOutput(_PermissiveOutput):
+    """``{status, hard_blocks}`` on success / ``{error,...}`` on miss."""
+
+
+class ScoreActionOutput(_PermissiveOutput):
+    """Scorer envelope — wraps stability_score, risk_kinds, version, errors."""
+
+
+class ApplyActionOutput(_PermissiveOutput):
+    """Result envelope — action_path, final_status, affected_paths."""
+
+
+class ListPoliciesInput(BaseModel):
+    kind: str | None = None
+
+
+class _PolicyItem(_PermissiveOutput):
+    path: str
+    kind: str
+    profile_name: str
+    priority: int
+
+
+class ListPoliciesOutput(_PermissiveOutput):
+    items: list[_PolicyItem]
+
+
+# --- mutation tools -----------------------------------------------------------
+class GenerateProposalsInput(BaseModel):
+    strategy: Literal["deterministic", "balanced"] = "deterministic"
+    threshold: float = 0.6
+
+
+class GenerateProposalsOutput(_PermissiveOutput):
+    strategy: str
+    created: list[str]
+
+
+class ExpireStaleInput(BaseModel):
+    pass
+
+
+class ExpireStaleOutput(_PermissiveOutput):
+    expired_actions: list[str]
+    expired_proposals: list[str]
+
+
+class RejectActionInput(BaseModel):
+    action_path: str
+    reason: str | None = None
+
+
+class RejectActionOutput(_PermissiveOutput):
+    action_path: str
+    final_status: str
 
 
 CANON_TOOL_DEFS: list[dict[str, Any]] = [
@@ -385,3 +508,178 @@ CANON_OPTIONAL_DISPATCH = {
     "canonicalization_approve_action": approve_action,
     "canonicalization_reject_action": reject_action,
 }
+
+
+# ---------------------------------------------------------------------------
+# First-class :class:`Tool` registration. Handlers thinly wrap the
+# existing ``(state, args)`` dispatchers above so we never rebuild the
+# canonicalization service contract — only the wire schema and the
+# audit/scope plumbing live here.
+# ---------------------------------------------------------------------------
+def _wrap(fn: Any) -> Any:
+    """Adapt a legacy ``(state, dict) -> dict`` canon dispatcher to the
+    first-class ``(BaseModel, ToolContext) -> dict`` handler signature.
+    """
+
+    async def _handler(args: BaseModel, ctx: ToolContext) -> dict[str, Any]:
+        return await fn(ctx.state, args.model_dump())
+
+    return _handler
+
+
+_CANON_READ_TOOLS: list[Tool] = [
+    Tool(
+        name="canonicalization_resolve_tag",
+        description=(
+            "Resolve a raw tag against the concept registry. Returns "
+            "{canonical, status} where status is one of resolved / "
+            "new_candidate / pending_candidate / ambiguous / blocked."
+        ),
+        input_schema=ResolveTagInput,
+        output_schema=ResolveTagOutput,
+        handler=_wrap(resolve_tag),
+    ),
+    Tool(
+        name="canonicalization_list_proposals",
+        description=(
+            "List proposal notes by status/kind. Output: list of "
+            "{path, kind, status, score, action_drafts}. Read full "
+            "evidence via get_note."
+        ),
+        input_schema=ListProposalsInput,
+        output_schema=ListProposalsOutput,
+        handler=_wrap(list_proposals),
+    ),
+    Tool(
+        name="canonicalization_get_proposal",
+        description=(
+            "Read a single proposal note as a structured summary "
+            "(score, evidence kinds, linked action drafts). For full "
+            "markdown body, use get_note."
+        ),
+        input_schema=GetProposalInput,
+        output_schema=GetProposalOutput,
+        handler=_wrap(get_proposal),
+    ),
+    Tool(
+        name="canonicalization_create_action_draft",
+        description=(
+            "Create a typed action draft. Apply requires a separate "
+            "canonicalization_apply_action call. Supported kinds: "
+            "create-concept, retag-notes, merge-concepts, create-decision."
+        ),
+        input_schema=CreateActionDraftInput,
+        output_schema=CreateActionDraftOutput,
+        handler=_wrap(create_action_draft),
+        audit_event="bsage.mcp.canon.action_draft.created",
+    ),
+    Tool(
+        name="canonicalization_validate_action",
+        description=(
+            "Run deterministic validation on an action draft. Returns "
+            "{status, hard_blocks: list of envelope-shaped reasons}."
+        ),
+        input_schema=ActionPathInput,
+        output_schema=ValidateActionOutput,
+        handler=_wrap(validate_action),
+    ),
+    Tool(
+        name="canonicalization_score_action",
+        description=(
+            "Compute scoring + envelope-shaped risk_reasons for an "
+            "action. Source separation: deterministic vs model vs human."
+        ),
+        input_schema=ActionPathInput,
+        output_schema=ScoreActionOutput,
+        handler=_wrap(score_action),
+    ),
+    Tool(
+        name="canonicalization_apply_action",
+        description=(
+            "Apply a typed action. Honors Safe Mode — when ON without "
+            "interface available, returns final_status=pending_approval "
+            "and no domain mutations occur."
+        ),
+        input_schema=ActionPathInput,
+        output_schema=ApplyActionOutput,
+        handler=_wrap(apply_action),
+        audit_event="bsage.mcp.canon.action.applied",
+    ),
+    Tool(
+        name="canonicalization_list_policies",
+        description=("List active policy profiles ({path, kind, profile_name, priority, params})."),
+        input_schema=ListPoliciesInput,
+        output_schema=ListPoliciesOutput,
+        handler=_wrap(list_policies),
+    ),
+]
+
+
+_CANON_OPTIONAL_TOOLS: list[Tool] = [
+    Tool(
+        name="canonicalization_generate_proposals",
+        description=(
+            "Run the proposal generator (deterministic | balanced) and "
+            "return the list of created proposal paths. Cost-gated — "
+            "balanced consumes embedding/LLM credits."
+        ),
+        input_schema=GenerateProposalsInput,
+        output_schema=GenerateProposalsOutput,
+        handler=_wrap(generate_proposals),
+        audit_event="bsage.mcp.canon.proposals.generated",
+    ),
+    Tool(
+        name="canonicalization_expire_stale",
+        description=("Mark stale draft/proposal notes as expired (slice 6 plugin)."),
+        input_schema=ExpireStaleInput,
+        output_schema=ExpireStaleOutput,
+        handler=_wrap(expire_stale),
+        audit_event="bsage.mcp.canon.stale.expired",
+    ),
+    Tool(
+        name="canonicalization_approve_action",
+        description=(
+            "Approve a pending_approval action. Disabled by default — "
+            "MCP clients are not approval actors unless explicitly "
+            "trusted."
+        ),
+        input_schema=ActionPathInput,
+        output_schema=ApplyActionOutput,
+        handler=_wrap(approve_action),
+        audit_event="bsage.mcp.canon.action.approved",
+    ),
+    Tool(
+        name="canonicalization_reject_action",
+        description="Reject a pending_approval action with optional reason.",
+        input_schema=RejectActionInput,
+        output_schema=RejectActionOutput,
+        handler=_wrap(reject_action),
+        audit_event="bsage.mcp.canon.action.rejected",
+    ),
+]
+
+
+def register_canon_tools(
+    registry: ToolRegistry,
+    *,
+    mutation_enabled: bool,
+) -> None:
+    """Register canonicalization tools as first-class MCP tools.
+
+    Always registers the eight read tools. The four mutation tools are
+    only registered when ``mutation_enabled=True`` — preserving the
+    Handoff §15.2 contract that MCP approval/mutation tools default OFF.
+    """
+    for tool in _CANON_READ_TOOLS:
+        registry.register(tool)
+    if mutation_enabled:
+        for tool in _CANON_OPTIONAL_TOOLS:
+            registry.register(tool)
+
+
+def canon_tool_names(*, mutation_enabled: bool) -> list[str]:
+    """Names of canon tools that would be registered for the given gate."""
+    names = [t.name for t in _CANON_READ_TOOLS]
+    if mutation_enabled:
+        names.extend(t.name for t in _CANON_OPTIONAL_TOOLS)
+    return names
