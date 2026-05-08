@@ -26,6 +26,9 @@ import structlog
 from bsvibe_cli_base import cli_app
 
 from bsage.cli.commands import run as run_cmd
+from bsage.cli.commands.canon import app as canon_app
+from bsage.cli.commands.garden import app as garden_app
+from bsage.cli.commands.ingest import app as ingest_app
 from bsage.cli.commands.plugins import app as plugins_app
 from bsage.cli.commands.skills import app as skills_app
 
@@ -45,6 +48,9 @@ app = cli_app(
 run_cmd.register(app)
 app.add_typer(skills_app, name="skills")
 app.add_typer(plugins_app, name="plugins")
+app.add_typer(ingest_app, name="ingest")
+app.add_typer(garden_app, name="garden")
+app.add_typer(canon_app, name="canon")
 
 
 __all__ = ["app"]
