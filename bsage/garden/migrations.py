@@ -10,7 +10,7 @@ so a future ``--revert`` can put everything back.
 
 Stayed factored as a library function so unit tests can drive it without
 spinning up the click runner — the CLI wrapper is a thin shim in
-``bsage.cli``.
+``bsage._cli_legacy``.
 """
 
 from __future__ import annotations

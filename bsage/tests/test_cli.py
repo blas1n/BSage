@@ -1,4 +1,4 @@
-"""Tests for bsage.cli — Click CLI commands."""
+"""Tests for bsage._cli_legacy — Click CLI commands."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -6,7 +6,7 @@ import httpx
 import pytest
 from click.testing import CliRunner
 
-from bsage.cli import _chat_repl, _wait_for_server, main
+from bsage._cli_legacy import _chat_repl, _wait_for_server, main
 
 
 @pytest.fixture()
@@ -27,8 +27,8 @@ class TestRunCommand:
     """Test `bsage run` command."""
 
     @patch("bsage.gateway.app.create_app", return_value=MagicMock())
-    @patch("bsage.cli.uvicorn")
-    @patch("bsage.cli.get_settings")
+    @patch("bsage._cli_legacy.uvicorn")
+    @patch("bsage._cli_legacy.get_settings")
     def test_run_no_chat_starts_server_blocking(
         self, mock_settings, mock_uvicorn, mock_create_app, runner
     ) -> None:
@@ -41,10 +41,10 @@ class TestRunCommand:
         assert result.exit_code == 0
         mock_server.run.assert_called_once()
 
-    @patch("bsage.cli._chat_repl")
-    @patch("bsage.cli._wait_for_server", return_value=True)
-    @patch("bsage.cli.uvicorn")
-    @patch("bsage.cli.get_settings")
+    @patch("bsage._cli_legacy._chat_repl")
+    @patch("bsage._cli_legacy._wait_for_server", return_value=True)
+    @patch("bsage._cli_legacy.uvicorn")
+    @patch("bsage._cli_legacy.get_settings")
     def test_run_starts_server_and_repl(
         self, mock_settings, mock_uvicorn, mock_wait, mock_repl, runner
     ) -> None:
@@ -85,7 +85,7 @@ class TestRunCommand:
                 pass
 
         with (
-            patch("bsage.cli.threading.Thread", _FakeThread),
+            patch("bsage._cli_legacy.threading.Thread", _FakeThread),
             patch("bsage.gateway.app.create_app", return_value=mock_app),
         ):
             result = runner.invoke(main, ["run"])
@@ -96,9 +96,9 @@ class TestRunCommand:
         assert mock_server.should_exit is True
 
     @patch("bsage.gateway.app.create_app", return_value=MagicMock())
-    @patch("bsage.cli._wait_for_server", return_value=False)
-    @patch("bsage.cli.uvicorn")
-    @patch("bsage.cli.get_settings")
+    @patch("bsage._cli_legacy._wait_for_server", return_value=False)
+    @patch("bsage._cli_legacy.uvicorn")
+    @patch("bsage._cli_legacy.get_settings")
     def test_run_exits_if_server_fails(
         self, mock_settings, mock_uvicorn, mock_wait, mock_create_app, runner
     ) -> None:
@@ -116,8 +116,8 @@ class TestRunCommand:
 class TestWaitForServer:
     """Test _wait_for_server health-check polling."""
 
-    @patch("bsage.cli.time.sleep")
-    @patch("bsage.cli.httpx.get")
+    @patch("bsage._cli_legacy.time.sleep")
+    @patch("bsage._cli_legacy.httpx.get")
     def test_returns_true_when_healthy(self, mock_get, mock_sleep) -> None:
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -125,9 +125,9 @@ class TestWaitForServer:
 
         assert _wait_for_server("http://localhost:8000") is True
 
-    @patch("bsage.cli.time.monotonic", side_effect=[0, 0.5, 1.0, 31.0])
-    @patch("bsage.cli.time.sleep")
-    @patch("bsage.cli.httpx.get", side_effect=httpx.ConnectError("refused"))
+    @patch("bsage._cli_legacy.time.monotonic", side_effect=[0, 0.5, 1.0, 31.0])
+    @patch("bsage._cli_legacy.time.sleep")
+    @patch("bsage._cli_legacy.httpx.get", side_effect=httpx.ConnectError("refused"))
     def test_returns_false_on_timeout(self, mock_get, mock_sleep, mock_time) -> None:
         assert _wait_for_server("http://localhost:8000") is False
 
@@ -144,8 +144,8 @@ class TestChatRepl:
         loop = MagicMock(spec=asyncio.AbstractEventLoop)
         return chat_bridge, loop
 
-    @patch("bsage.cli.asyncio.run_coroutine_threadsafe")
-    @patch("bsage.cli.click.prompt", side_effect=["Hello", "/quit"])
+    @patch("bsage._cli_legacy.asyncio.run_coroutine_threadsafe")
+    @patch("bsage._cli_legacy.click.prompt", side_effect=["Hello", "/quit"])
     def test_send_and_quit(self, mock_prompt, mock_coro) -> None:
         chat_bridge, loop = self._make_bridge_and_loop()
         mock_future = MagicMock()
@@ -175,18 +175,18 @@ class TestChatRepl:
         assert captured_calls[0]["history"] == []
         assert mock_coro.call_args[0][1] is loop
 
-    @patch("bsage.cli.click.prompt", side_effect=["/quit"])
+    @patch("bsage._cli_legacy.click.prompt", side_effect=["/quit"])
     def test_quit_immediately(self, mock_prompt) -> None:
         chat_bridge, loop = self._make_bridge_and_loop()
         _chat_repl(chat_bridge, loop)
 
-    @patch("bsage.cli.click.prompt", side_effect=EOFError)
+    @patch("bsage._cli_legacy.click.prompt", side_effect=EOFError)
     def test_eof_exits_gracefully(self, mock_prompt) -> None:
         chat_bridge, loop = self._make_bridge_and_loop()
         _chat_repl(chat_bridge, loop)
 
-    @patch("bsage.cli.asyncio.run_coroutine_threadsafe")
-    @patch("bsage.cli.click.prompt", side_effect=["Hello", "/quit"])
+    @patch("bsage._cli_legacy.asyncio.run_coroutine_threadsafe")
+    @patch("bsage._cli_legacy.click.prompt", side_effect=["Hello", "/quit"])
     def test_connection_lost_continues(self, mock_prompt, mock_coro) -> None:
         chat_bridge, loop = self._make_bridge_and_loop()
         mock_coro.return_value = MagicMock()
@@ -195,8 +195,8 @@ class TestChatRepl:
         _chat_repl(chat_bridge, loop)
         # Error is caught, user can /quit
 
-    @patch("bsage.cli.asyncio.run_coroutine_threadsafe")
-    @patch("bsage.cli.click.prompt", side_effect=["Hello", "World", "/quit"])
+    @patch("bsage._cli_legacy.asyncio.run_coroutine_threadsafe")
+    @patch("bsage._cli_legacy.click.prompt", side_effect=["Hello", "World", "/quit"])
     def test_history_accumulates(self, mock_prompt, mock_coro) -> None:
         chat_bridge, loop = self._make_bridge_and_loop()
         mock_future = MagicMock()
@@ -236,7 +236,7 @@ class TestInitCommand:
     """Test `bsage init` command."""
 
     def test_init_creates_vault_dirs(self, runner, tmp_path) -> None:
-        with patch("bsage.cli.get_settings") as mock_settings:
+        with patch("bsage._cli_legacy.get_settings") as mock_settings:
             settings = MagicMock()
             settings.vault_path = tmp_path / "vault"
             mock_settings.return_value = settings
@@ -251,8 +251,8 @@ class TestInitCommand:
 class TestSkillsCommand:
     """Test `bsage skills` command."""
 
-    @patch("bsage.cli.httpx")
-    @patch("bsage.cli.get_settings")
+    @patch("bsage._cli_legacy.httpx")
+    @patch("bsage._cli_legacy.get_settings")
     def test_skills_lists_all(self, mock_settings, mock_httpx, runner) -> None:
         settings = MagicMock()
         settings.gateway_host = "127.0.0.1"
@@ -275,8 +275,8 @@ class TestSkillsCommand:
         assert result.exit_code == 0
         assert "garden-writer" in result.output
 
-    @patch("bsage.cli.httpx")
-    @patch("bsage.cli.get_settings")
+    @patch("bsage._cli_legacy.httpx")
+    @patch("bsage._cli_legacy.get_settings")
     def test_skills_empty(self, mock_settings, mock_httpx, runner) -> None:
         settings = MagicMock()
         settings.gateway_host = "127.0.0.1"
@@ -292,8 +292,8 @@ class TestSkillsCommand:
         assert result.exit_code == 0
         assert "No skills loaded" in result.output
 
-    @patch("bsage.cli.httpx")
-    @patch("bsage.cli.get_settings")
+    @patch("bsage._cli_legacy.httpx")
+    @patch("bsage._cli_legacy.get_settings")
     def test_skills_connection_error(self, mock_settings, mock_httpx, runner) -> None:
         import httpx
 
@@ -313,8 +313,8 @@ class TestSkillsCommand:
 class TestRunSkillCommand:
     """Test `bsage run-skill` command."""
 
-    @patch("bsage.cli.httpx")
-    @patch("bsage.cli.get_settings")
+    @patch("bsage._cli_legacy.httpx")
+    @patch("bsage._cli_legacy.get_settings")
     def test_run_skill_success(self, mock_settings, mock_httpx, runner) -> None:
         settings = MagicMock()
         settings.gateway_host = "127.0.0.1"
@@ -335,8 +335,8 @@ class TestRunSkillCommand:
             "http://127.0.0.1:8000/api/run/garden-writer", timeout=30.0
         )
 
-    @patch("bsage.cli.httpx")
-    @patch("bsage.cli.get_settings")
+    @patch("bsage._cli_legacy.httpx")
+    @patch("bsage._cli_legacy.get_settings")
     def test_run_skill_connection_error(self, mock_settings, mock_httpx, runner) -> None:
         import httpx
 
@@ -353,8 +353,8 @@ class TestRunSkillCommand:
         assert result.exit_code == 1
         assert "Cannot connect" in result.output
 
-    @patch("bsage.cli.httpx")
-    @patch("bsage.cli.get_settings")
+    @patch("bsage._cli_legacy.httpx")
+    @patch("bsage._cli_legacy.get_settings")
     def test_run_skill_http_error(self, mock_settings, mock_httpx, runner) -> None:
         import httpx
 
@@ -388,8 +388,8 @@ class TestRunSkillCommand:
 class TestHealthCommand:
     """Test `bsage health` command."""
 
-    @patch("bsage.cli.httpx")
-    @patch("bsage.cli.get_settings")
+    @patch("bsage._cli_legacy.httpx")
+    @patch("bsage._cli_legacy.get_settings")
     def test_health_ok(self, mock_settings, mock_httpx, runner) -> None:
         settings = MagicMock()
         settings.gateway_host = "127.0.0.1"
@@ -405,8 +405,8 @@ class TestHealthCommand:
         assert result.exit_code == 0
         assert "ok" in result.output
 
-    @patch("bsage.cli.httpx")
-    @patch("bsage.cli.get_settings")
+    @patch("bsage._cli_legacy.httpx")
+    @patch("bsage._cli_legacy.get_settings")
     def test_health_connection_error(self, mock_settings, mock_httpx, runner) -> None:
         import httpx
 
@@ -450,7 +450,7 @@ class TestRotateCredentialsCommand:
 
         return _ctx()
 
-    @patch("bsage.cli.get_settings")
+    @patch("bsage._cli_legacy.get_settings")
     def test_rotate_credentials_re_encrypts_all(self, mock_settings, runner, tmp_path) -> None:
         import asyncio
         import json
@@ -500,7 +500,7 @@ class TestRotateCredentialsCommand:
 
         _run_async(_verify())
 
-    @patch("bsage.cli.get_settings")
+    @patch("bsage._cli_legacy.get_settings")
     def test_rotate_credentials_without_key_errors(self, mock_settings, runner, tmp_path) -> None:
         s = MagicMock()
         s.credentials_dir = tmp_path / ".credentials"

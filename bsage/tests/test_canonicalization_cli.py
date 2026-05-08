@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
-from bsage.cli import main
+from bsage._cli_legacy import main
 
 
 @pytest.fixture

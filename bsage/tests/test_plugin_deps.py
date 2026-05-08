@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from click.testing import CliRunner
 
-from bsage.cli import main
+from bsage._cli_legacy import main
 from bsage.core.plugin_loader import PluginLoader, PluginMeta
 
 # ---------------------------------------------------------------------------
@@ -167,7 +167,7 @@ class TestInstallCLI:
         (plugins_dir / "my-plugin").mkdir()
 
         runner = CliRunner()
-        with patch("bsage.cli.get_settings") as mock_settings:
+        with patch("bsage._cli_legacy.get_settings") as mock_settings:
             s = MagicMock()
             s.plugins_dir = plugins_dir
             mock_settings.return_value = s
@@ -179,7 +179,7 @@ class TestInstallCLI:
 
     def test_plugin_not_found(self, tmp_path) -> None:
         runner = CliRunner()
-        with patch("bsage.cli.get_settings") as mock_settings:
+        with patch("bsage._cli_legacy.get_settings") as mock_settings:
             s = MagicMock()
             s.plugins_dir = tmp_path / "plugins"
             (s.plugins_dir).mkdir()
@@ -189,7 +189,7 @@ class TestInstallCLI:
         assert result.exit_code != 0
         assert "not found" in result.output.lower()
 
-    @patch("bsage.cli.subprocess.run")
+    @patch("bsage._cli_legacy.subprocess.run")
     def test_runs_uv_pip_install(self, mock_run, tmp_path) -> None:
         plugins_dir = tmp_path / "plugins"
         plugins_dir.mkdir()
@@ -201,7 +201,7 @@ class TestInstallCLI:
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
         runner = CliRunner()
-        with patch("bsage.cli.get_settings") as mock_settings:
+        with patch("bsage._cli_legacy.get_settings") as mock_settings:
             s = MagicMock()
             s.plugins_dir = plugins_dir
             mock_settings.return_value = s
@@ -215,7 +215,7 @@ class TestInstallCLI:
         assert call_args[2] == "install"
         assert str(req_file) in call_args
 
-    @patch("bsage.cli.subprocess.run")
+    @patch("bsage._cli_legacy.subprocess.run")
     def test_install_failure(self, mock_run, tmp_path) -> None:
         plugins_dir = tmp_path / "plugins"
         plugins_dir.mkdir()
@@ -226,7 +226,7 @@ class TestInstallCLI:
         mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="some error")
 
         runner = CliRunner()
-        with patch("bsage.cli.get_settings") as mock_settings:
+        with patch("bsage._cli_legacy.get_settings") as mock_settings:
             s = MagicMock()
             s.plugins_dir = plugins_dir
             mock_settings.return_value = s
@@ -307,9 +307,9 @@ class TestSetupCLIWithSetupFn:
 
         runner = CliRunner()
         with (
-            patch("bsage.cli.get_settings") as mock_settings,
-            patch("bsage.cli.SkillLoader") as mock_skill_loader,
-            patch("bsage.cli.PluginLoader") as mock_plugin_loader,
+            patch("bsage._cli_legacy.get_settings") as mock_settings,
+            patch("bsage._cli_legacy.SkillLoader") as mock_skill_loader,
+            patch("bsage._cli_legacy.PluginLoader") as mock_plugin_loader,
         ):
             s = MagicMock()
             s.plugins_dir = tmp_path / "plugins"
@@ -341,9 +341,9 @@ class TestSetupCLIWithSetupFn:
 
         runner = CliRunner()
         with (
-            patch("bsage.cli.get_settings") as mock_settings,
-            patch("bsage.cli.SkillLoader") as mock_skill_loader,
-            patch("bsage.cli.PluginLoader") as mock_plugin_loader,
+            patch("bsage._cli_legacy.get_settings") as mock_settings,
+            patch("bsage._cli_legacy.SkillLoader") as mock_skill_loader,
+            patch("bsage._cli_legacy.PluginLoader") as mock_plugin_loader,
         ):
             s = MagicMock()
             s.plugins_dir = tmp_path / "plugins"

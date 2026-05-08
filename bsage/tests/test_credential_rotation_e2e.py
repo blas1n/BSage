@@ -35,7 +35,7 @@ import pytest
 from click.testing import CliRunner
 from cryptography.fernet import Fernet, InvalidToken
 
-from bsage.cli import main
+from bsage._cli_legacy import main
 from bsage.core.credential_store import CredentialStore
 
 
@@ -72,7 +72,7 @@ def _isolate_event_loop():
 class TestMultiGenerationRotation:
     """Chain rotations across multiple credentials, multiple generations."""
 
-    @patch("bsage.cli.get_settings")
+    @patch("bsage._cli_legacy.get_settings")
     def test_two_consecutive_rotations_preserve_all_payloads(
         self, mock_settings, runner: CliRunner, tmp_path: Path
     ) -> None:
@@ -145,7 +145,7 @@ class TestMultiGenerationRotation:
         finally:
             loop.close()
 
-    @patch("bsage.cli.get_settings")
+    @patch("bsage._cli_legacy.get_settings")
     def test_rotation_re_encrypts_legacy_plaintext(
         self, mock_settings, runner: CliRunner, tmp_path: Path
     ) -> None:
@@ -247,7 +247,7 @@ class TestRotateCredentialsCLISurface:
     """The CLI is the operator-facing surface — locking in its UX so
     runbook changes (or accidental refactors) cannot break ops."""
 
-    @patch("bsage.cli.get_settings")
+    @patch("bsage._cli_legacy.get_settings")
     def test_zero_credentials_reports_zero_rotated(
         self, mock_settings, runner: CliRunner, tmp_path: Path
     ) -> None:
@@ -266,7 +266,7 @@ class TestRotateCredentialsCLISurface:
         assert result.exit_code == 0, result.output
         assert "Re-encrypted 0" in result.output
 
-    @patch("bsage.cli.get_settings")
+    @patch("bsage._cli_legacy.get_settings")
     def test_rotation_idempotent(self, mock_settings, runner: CliRunner, tmp_path: Path) -> None:
         """Running rotate-credentials twice in a row with the same key
         must not corrupt anything — the second pass is a no-op rewrite."""

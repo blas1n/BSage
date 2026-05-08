@@ -47,7 +47,7 @@ s3 = ["boto3>=1.28.0"]
 all-plugins = ["boto3>=1.28.0", "python-dateutil>=2.8.0"]
 
 [project.scripts]
-bsage = "bsage.cli:main"
+bsage = "bsage.cli.main:app"
 bsage-mcp = "bsage.mcp.stdio:main"
 
 [tool.hatch.metadata]
