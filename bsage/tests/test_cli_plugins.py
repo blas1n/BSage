@@ -116,6 +116,15 @@ def test_plugins_list_403_friendly(runner: CliRunner, fake_client: MagicMock) ->
     assert "missing scope" in result.stderr
 
 
+def test_plugins_list_empty_table_does_not_crash(runner: CliRunner, fake_client: MagicMock) -> None:
+    """`-o table` with an empty registry must not crash the formatter (REVIEW-001)."""
+    from bsage.cli.main import app
+
+    fake_client.get.return_value = _resp(200, [])
+    result = runner.invoke(app, ["--url", "http://x", "-o", "table", "plugins", "list"])
+    assert result.exit_code == 0, result.stderr
+
+
 # ---------------------------------------------------------------------------
 # install (in-process subprocess)
 # ---------------------------------------------------------------------------
