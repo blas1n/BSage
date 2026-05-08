@@ -1,16 +1,23 @@
-"""``bsage garden`` Typer sub-app — vault tree + (stub) maintenance.
+"""``bsage garden`` Typer sub-app — vault tree listing.
 
 Subcommands:
 
 * ``list`` → ``GET /api/vault/tree`` — emit via :class:`OutputFormatter`.
-* ``prune [--older-than DAYS]`` — *stub* (no REST surface yet). Mirrors
-  the ``skills add/update/delete`` precedent: emits a planned-payload
-  preview and exits 0; follow-up REVIEW promotes to live REST.
-* ``recompile [--ids A,B,C]`` — *stub* (no REST surface yet).
 
-``--dry-run`` short-circuits ``list`` BEFORE :func:`build_client` so
-the HTTP layer is never reached when no profile URL is configured.
-Stubs are inherently HTTP-free and emit unconditionally.
+Mutation operations (``prune`` / ``recompile``) are intentionally absent.
+REVIEW-005A resolved the planned-payload stubs that earlier shipped under
+TASK-005: the BSage Gateway has no REST surface for vault prune /
+recompile today, and exposing one prematurely would let any caller with a
+valid token destructively mutate vault state. When operators need to
+prune or recompile they invoke the in-process pipelines via the running
+``bsage`` daemon (``compile_batch`` runs through
+:class:`bsage.garden.ingest_compiler.IngestCompiler`; reindex /prune live
+in :mod:`bsage.garden.migrations` + :class:`~bsage.garden.vault.Vault`).
+A future task will add the REST endpoints together with the CLI commands
+that wrap them — paired, never decoupled.
+
+``--dry-run`` short-circuits ``list`` BEFORE :func:`build_client` so the
+HTTP layer is never reached when no profile URL is configured.
 """
 
 from __future__ import annotations
@@ -31,15 +38,10 @@ logger = structlog.get_logger(__name__)
 
 app = typer.Typer(
     name="garden",
-    help="Inspect the vault tree and (stub) prune / recompile garden notes.",
+    help="Inspect the vault tree (mutation ops are git/in-process only).",
     no_args_is_help=True,
     add_completion=False,
 )
-
-
-# ---------------------------------------------------------------------------
-# list
-# ---------------------------------------------------------------------------
 
 
 @app.command("list", help="List the vault tree (GET /api/vault/tree).")
@@ -63,52 +65,3 @@ def list_cmd(ctx: typer.Context) -> None:
         raise typer.Exit(code=1)
 
     obj.formatter.emit(resp.json() or [])
-
-
-# ---------------------------------------------------------------------------
-# prune / recompile — stubs (no REST surface yet)
-# ---------------------------------------------------------------------------
-
-
-def _stub_payload(action: str, **fields: Any) -> dict[str, Any]:
-    return {
-        "stub": True,
-        "note": (
-            f"`bsage garden {action}` has no REST endpoint yet. This is a "
-            "planned-request preview; see follow-up REVIEW task."
-        ),
-        "action": action,
-        **fields,
-    }
-
-
-@app.command(
-    "prune",
-    help="(stub) Preview the planned garden prune — no REST surface yet.",
-)
-def prune_cmd(
-    ctx: typer.Context,
-    older_than: int | None = typer.Option(
-        None,
-        "--older-than",
-        help="Prune notes older than N days.",
-    ),
-) -> None:
-    ctx.obj.formatter.emit(_stub_payload("prune", older_than_days=older_than))
-
-
-@app.command(
-    "recompile",
-    help="(stub) Preview the planned garden recompile — no REST surface yet.",
-)
-def recompile_cmd(
-    ctx: typer.Context,
-    ids: str | None = typer.Option(
-        None,
-        "--ids",
-        help="Comma-separated note ids to recompile (default: all).",
-    ),
-) -> None:
-    parsed = [s.strip() for s in ids.split(",")] if ids else []
-    parsed = [s for s in parsed if s]
-    ctx.obj.formatter.emit(_stub_payload("recompile", ids=parsed))

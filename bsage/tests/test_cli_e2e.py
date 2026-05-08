@@ -149,9 +149,9 @@ def patched_build_client(
 
     proxy = _SharedClient(shared)
 
-    # Only sub-app modules that actually import ``build_client`` are
-    # patched — ``ingest`` is a stub today (REVIEW-005A) and never builds
-    # an HTTP client.
+    # Patch every sub-app module that imports ``build_client``. The
+    # ``ingest`` sub-app was removed in REVIEW-005A (no REST surface);
+    # ``garden`` keeps only the live ``list`` command.
     for module in (
         "bsage.cli.commands.settings",
         "bsage.cli.commands.skills",
@@ -254,5 +254,5 @@ def test_bsage_help_renders_with_all_subapps(runner: CliRunner) -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0, result.stderr
     plain = _strip_ansi(result.stdout)
-    for sub in ("run", "skills", "plugins", "ingest", "garden", "canon", "settings"):
+    for sub in ("run", "skills", "plugins", "garden", "canon", "settings"):
         assert sub in plain, f"missing sub-app {sub!r} in --help:\n{plain}"
