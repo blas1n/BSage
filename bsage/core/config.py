@@ -131,10 +131,34 @@ class Settings(BsvibeSettings):
     # ``bsv_admin_*`` token; empty disables the bootstrap path.
     # Empty ``introspection_url`` disables the opaque-token path; the
     # verifier then handles only JWT and (optionally) bootstrap tokens.
-    bootstrap_token_hash: str = ""
-    introspection_url: str = ""
-    introspection_client_id: str = ""
-    introspection_client_secret: str = ""
+    # ``BSV_*``-prefixed aliases let prod operators use one consistent
+    # naming scheme across every product Settings class — matches the
+    # alias set on :class:`bsvibe_authz.Settings` (bsvibe-python PR #21)
+    # so a single ``.env`` configures the lib + product layers.
+    bootstrap_token_hash: str = Field(
+        default="",
+        validation_alias=AliasChoices("bootstrap_token_hash", "bsv_bootstrap_token_hash"),
+    )
+    introspection_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("introspection_url", "bsv_introspection_url"),
+    )
+    introspection_client_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("introspection_client_id", "bsv_introspection_client_id"),
+    )
+    introspection_client_secret: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "introspection_client_secret", "bsv_introspection_client_secret"
+        ),
+    )
+
+    # User-JWT verification — mirrors bsvibe_authz.Settings. Set to a
+    # JWKS URL (preferred for prod, ES256/RS256 with key rotation) so
+    # ``bsvibe_authz.verify_user_jwt`` picks up rotation automatically.
+    # Empty default disables JWKS verification.
+    user_jwt_jwks_url: str = ""
 
     # Default tenant id used when a write happens without an authenticated
     # principal (cron, local dev, or migration). Personal-tenant only.
