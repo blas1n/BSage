@@ -80,6 +80,10 @@ def _authz_settings_safe() -> AuthzSettings:
         # Demo bypass — when set, get_current_user accepts demo-signed
         # JWTs (is_demo claim) and resolves them to a User(is_demo=True).
         "demo_jwt_secret": os.environ.get("DEMO_JWT_SECRET") or None,
+        # Phase 8 §사전 발견 #6 — adopt JWKS URL so verify_user_jwt picks
+        # up Supabase ES256 key rotation. Empty / unset leaves the
+        # legacy secret/public-key paths intact.
+        "user_jwt_jwks_url": os.environ.get("USER_JWT_JWKS_URL") or None,
     }
     return AuthzSettings(**overrides)
 
