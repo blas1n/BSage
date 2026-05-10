@@ -49,6 +49,40 @@ _LIST_KIND_TO_PATH = {
     "policies": "/api/canonicalization/policies/active",
 }
 
+# Singular forms map to the same canonical (plural) endpoint. Phase 8
+# dogfood (2026-05-11) caught users typing ``--kind concept`` (singular)
+# and getting a stiff "must be one of [...]" error; the wrapping
+# resource pages, in-app docs, and even the route segments use the
+# plural form, so accept both and silently normalize. Keep the canonical
+# form plural so ``--help`` and any future enum exposure stay
+# consistent.
+_KIND_ALIASES = {
+    "concept": "concepts",
+    "proposal": "proposals",
+    "action": "actions",
+    "policy": "policies",
+}
+
+
+def _canonicalize_kind(kind: str) -> str:
+    """Return the canonical (plural) ``--kind`` value for ``kind``.
+
+    Accepts the canonical plural verbatim, the singular alias, or a
+    case-variant of either. Raises ``typer.BadParameter`` with an
+    actionable suggestion otherwise.
+    """
+    normalized = kind.strip().lower()
+    if normalized in _LIST_KIND_TO_PATH:
+        return normalized
+    if normalized in _KIND_ALIASES:
+        return _KIND_ALIASES[normalized]
+    raise typer.BadParameter(
+        f"--kind must be one of {sorted(_LIST_KIND_TO_PATH)} "
+        f"(also accepts {sorted(_KIND_ALIASES)} as singular aliases). "
+        f"Got {kind!r}."
+    )
+
+
 _APPLY_MODE_TO_SUFFIX = {
     "apply": "apply",
     "approve": "approve",
@@ -71,11 +105,8 @@ def list_cmd(
     ),
 ) -> None:
     obj = ctx.obj
-    if kind not in _LIST_KIND_TO_PATH:
-        raise typer.BadParameter(
-            f"--kind must be one of {sorted(_LIST_KIND_TO_PATH)} (got {kind!r})"
-        )
-    path = _LIST_KIND_TO_PATH[kind]
+    canonical_kind = _canonicalize_kind(kind)
+    path = _LIST_KIND_TO_PATH[canonical_kind]
 
     if obj.dry_run:
         emit_dry_run(obj, {"method": "GET", "path": path})

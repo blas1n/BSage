@@ -123,6 +123,58 @@ def test_canon_list_invalid_kind(runner: CliRunner, fake_client: MagicMock) -> N
     fake_client.get.assert_not_called()
 
 
+# Phase 8 dogfood (2026-05-11) caught operators typing `--kind concept`
+# (singular) and getting a stiff "must be one of [...]" error. The
+# resource pages, in-app docs, and route segments use the plural form,
+# so accept both and silently normalize. Five tests below pin the
+# alias map.
+
+
+@pytest.mark.parametrize(
+    "alias,canonical_path",
+    [
+        ("concept", "/api/canonicalization/concepts"),
+        ("proposal", "/api/canonicalization/proposals"),
+        ("action", "/api/canonicalization/actions"),
+        ("policy", "/api/canonicalization/policies/active"),
+    ],
+)
+def test_canon_list_singular_kind_normalizes(
+    runner: CliRunner, fake_client: MagicMock, alias: str, canonical_path: str
+) -> None:
+    from bsage.cli.main import app
+
+    fake_client.get.return_value = _resp(200, {"items": []})
+    result = runner.invoke(app, _base_args("canon", "list", "--kind", alias))
+    assert result.exit_code == 0, result.stderr
+    fake_client.get.assert_awaited_once_with(canonical_path)
+
+
+def test_canon_list_uppercase_kind_normalizes(runner: CliRunner, fake_client: MagicMock) -> None:
+    # Case-insensitive — "CONCEPTS" / "Concept" / etc. all flow through.
+    from bsage.cli.main import app
+
+    fake_client.get.return_value = _resp(200, {"items": []})
+    result = runner.invoke(app, _base_args("canon", "list", "--kind", "Concepts"))
+    assert result.exit_code == 0, result.stderr
+    fake_client.get.assert_awaited_once_with("/api/canonicalization/concepts")
+
+
+def test_canon_list_invalid_kind_lists_aliases_in_error(
+    runner: CliRunner, fake_client: MagicMock
+) -> None:
+    from bsage.cli.main import app
+
+    result = runner.invoke(app, _base_args("canon", "list", "--kind", "bogus"))
+    assert result.exit_code != 0
+    # Error should mention both the canonical plurals and the singular
+    # aliases so users can self-correct without grepping the source.
+    plain = _strip_ansi(result.output)
+    assert "concepts" in plain
+    assert "concept" in plain  # alias also surfaced
+    fake_client.get.assert_not_called()
+
+
 def test_canon_list_dry_run_skips_http(runner: CliRunner, fake_client: MagicMock) -> None:
     from bsage.cli.main import app
 
