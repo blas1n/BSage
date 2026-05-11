@@ -357,11 +357,19 @@ async def create_note(
 
     notes_created = 0
     notes_updated = 0
-    compiler_available = state.ingest_compiler is not None
+    # Round 4 Finding 24: prod AppState does not define `ingest_compiler`
+    # as a default attribute (it is only attached when the compile
+    # pipeline bootstraps — gated by env). Bare attribute access raised
+    # AttributeError and `tool 'create_note' failed: AttributeError`
+    # before F21 surfaced the class name. getattr with default keeps
+    # create_note functional in compiler-disabled deployments: the seed
+    # is still written, the compile step is just skipped.
+    ingest_compiler = getattr(state, "ingest_compiler", None)
+    compiler_available = ingest_compiler is not None
 
     if compiler_available:
         try:
-            result = await state.ingest_compiler.compile(
+            result = await ingest_compiler.compile(
                 seed_content=_format_mcp_compile_payload(seed_data, links),
                 seed_source=f"mcp/{source_label}",
             )

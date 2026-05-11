@@ -239,3 +239,37 @@ class TestCreateNote:
         assert result["compiler_available"] is False
         assert result["notes_created"] == 0
         assert "seed_path" in result
+
+    @pytest.mark.asyncio
+    async def test_runs_when_state_has_no_ingest_compiler_attr_at_all(self) -> None:
+        """Round 4 Finding 24: prod AppState does not always define
+        ``ingest_compiler`` as a default attribute. Bare attribute access
+        raised AttributeError; create_note must use getattr(default=None)
+        so compiler-disabled deployments can still submit seeds."""
+
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+
+            class _BareState:
+                pass
+
+            state = _BareState()
+            state.garden_writer = MagicMock()
+
+            async def _write_seed(_src, data):
+                p = Path(tmp) / "seed.md"
+                p.write_text("seed")
+                return p
+
+            state.garden_writer.write_seed = _write_seed
+            state.vault = MagicMock()
+            state.vault.root = Path(tmp)
+            # NOTE: state.ingest_compiler is intentionally NOT set —
+            # this is the prod AppState shape that triggered F24.
+
+            result = await mcp_tools.create_note(state, {"title": "T"})
+            assert result["compiler_available"] is False
+            assert result["notes_created"] == 0
+            assert "seed_path" in result
