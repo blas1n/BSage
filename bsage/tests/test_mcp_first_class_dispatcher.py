@@ -440,5 +440,9 @@ class TestErrorTranslation:
         )
         with pytest.raises(ToolError) as excinfo:
             await reg.call_tool("echo", {"message": "hi"}, ctx_admin)
-        # Error message must NOT carry the internal RuntimeError detail.
+        # Error MESSAGE stays redacted (can carry DB columns / paths / secrets).
         assert "internal db state" not in str(excinfo.value)
+        # But the exception CLASS NAME is surfaced (Round 4 Finding 21) so
+        # an LLM caller can distinguish error categories and self-correct.
+        # Class names are public stdlib/lib types — not implementation detail.
+        assert "RuntimeError" in str(excinfo.value)
