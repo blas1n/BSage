@@ -179,12 +179,18 @@ class ToolRegistry:
             # propagate them unchanged.
             raise
         except Exception as exc:  # noqa: BLE001 — boundary translation
+            # Round 4 Finding 21: surface the exception class so an LLM
+            # caller can distinguish "PermissionError" vs "FileNotFoundError"
+            # vs "ValidationError" and self-correct. The exception MESSAGE
+            # stays redacted (it can carry DB columns, file paths, secrets);
+            # class names are public stdlib/lib types and safe to expose.
+            # The full traceback + message stays in the structured log.
             logger.exception(
                 "mcp_tool_handler_failed",
                 tool=name,
                 error_type=type(exc).__name__,
             )
-            raise ToolError(f"tool {name!r} failed") from exc
+            raise ToolError(f"tool {name!r} failed: {type(exc).__name__}") from exc
 
         # 4. Output validation.
         try:
