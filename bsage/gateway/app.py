@@ -10,9 +10,10 @@ import structlog
 from bsvibe_authz import get_settings_dep as _authz_get_settings_dep
 from bsvibe_fastapi import RequestIdMiddleware, add_cors_middleware
 from bsvibe_fastapi.settings import FastApiSettings
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from bsage.core.config import Settings
 from bsage.gateway.authz import get_authz_settings
@@ -21,6 +22,10 @@ from bsage.gateway.mcp import create_mcp_routes
 from bsage.gateway.rate_limit import RateLimiter, RateLimitMiddleware
 from bsage.gateway.routes import create_routes
 from bsage.gateway.ws import create_ws_routes
+from bsage.mcp.oauth_protected_resource import (
+    build_protected_resource_metadata,
+    wrap_mcp_with_oauth_401,
+)
 from bsage.mcp.sse import create_sse_routes
 
 logger = structlog.get_logger(__name__)
@@ -87,6 +92,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(create_routes(state))
     app.include_router(create_mcp_routes(state))
     app.include_router(create_sse_routes(state))
+
+    # RFC 9728 protected-resource discovery — MCP clients (Claude Code,
+    # IDE plugins) bootstrap OAuth by hitting /mcp/* with no Authorization
+    # header, getting back a 401 + WWW-Authenticate referencing this URL,
+    # then discovering the authorization server from this body.
+    @app.get("/.well-known/oauth-protected-resource", tags=["mcp"])
+    async def oauth_protected_resource(request: Request) -> JSONResponse:
+        proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+        host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+        resource_url = f"{proto}://{host}" if host else str(request.base_url).rstrip("/")
+        return JSONResponse(
+            content=build_protected_resource_metadata(
+                resource_url=resource_url,
+                authorization_server=settings.bsvibe_auth_url.rstrip("/"),
+                scopes_supported=["sage:*"],
+            ),
+            headers={"Cache-Control": "public, max-age=300"},
+        )
+
+    # Wrap the MCP transport surface (`/mcp/sse`, `/mcp/messages/*`) so
+    # unauthenticated requests return a 401 + WWW-Authenticate Bearer
+    # challenge pointing at the metadata URL above. `/mcp/health` stays
+    # unauthenticated (deploy probe). The /api/mcp/* REST router is on
+    # a different prefix and unaffected.
+    class _McpOAuthDiscoveryMiddleware:
+        def __init__(self, inner_app: ASGIApp) -> None:
+            self._inner = inner_app
+            self._guarded = wrap_mcp_with_oauth_401(inner_app)
+
+        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+            if scope.get("type") != "http":
+                await self._inner(scope, receive, send)
+                return
+            path = scope.get("path") or ""
+            # Only guard the MCP transport endpoints — leave /mcp/health
+            # and everything else (REST, frontend, /api/*) alone.
+            if path == "/mcp/sse" or path.startswith("/mcp/messages"):
+                await self._guarded(scope, receive, send)
+                return
+            await self._inner(scope, receive, send)
+
+    app.add_middleware(_McpOAuthDiscoveryMiddleware)
 
     # Demo mode (separate deployment, BSVIBE_DEMO_MODE=true)
     from bsvibe_demo import is_demo_mode
