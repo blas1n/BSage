@@ -41,15 +41,15 @@ def _full_admin_user() -> _FakeUser:
     """Principal with every scope every admin tool requires."""
     return _FakeUser(
         scope=[
-            "bsage.plugins.read",
-            "bsage.plugins.execute",
-            "bsage.plugins.install",
-            "bsage.config.read",
-            "bsage.config.write",
-            "bsage.vault.read",
-            "bsage.canonicalization.read",
-            "bsage.canonicalization.draft",
-            "bsage.canonicalization.apply",
+            "sage:plugins.read",
+            "sage:plugins.execute",
+            "sage:plugins.install",
+            "sage:config.read",
+            "sage:config.write",
+            "sage:vault.read",
+            "sage:canonicalization.read",
+            "sage:canonicalization.draft",
+            "sage:canonicalization.apply",
         ],
     )
 
@@ -340,7 +340,7 @@ class TestScopeEnforcement:
         state: MagicMock,
     ) -> None:
         ctx = ToolContext(
-            user=_FakeUser(scope=["bsage.config.read"]),  # missing config.write
+            user=_FakeUser(scope=["sage:config.read"]),  # missing config.write
             state=state,
             settings=state.settings,
         )
@@ -358,7 +358,7 @@ class TestScopeEnforcement:
         state: MagicMock,
     ) -> None:
         ctx = ToolContext(
-            user=_FakeUser(scope=["bsage.canonicalization.read"]),
+            user=_FakeUser(scope=["sage:canonicalization.read"]),
             state=state,
             settings=state.settings,
         )

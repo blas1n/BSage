@@ -147,8 +147,8 @@ def _service_principal(
 def _service_token(
     *,
     sub: str = "service:bsnexus",
-    aud: str = "bsage",
-    scope: str = "bsage.read bsage.write",
+    aud: str = "sage",
+    scope: str = "sage:read sage:write",
     tenant_id: str = "tenant-default",
 ) -> ServiceTokenPayload:
     return ServiceTokenPayload(
