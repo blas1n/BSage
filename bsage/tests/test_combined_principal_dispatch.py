@@ -190,11 +190,11 @@ class TestServiceJwtPath:
         token = jwt.encode(
             {
                 "sub": "service:bsnexus",
-                "aud": "bsage",
+                "aud": "sage",
                 "iss": "https://auth.bsvibe.dev",
                 "iat": 1700000000,
                 "exp": 1900000000,
-                "scope": "bsage.read",
+                "scope": "sage:read",
                 "token_type": "service",
                 "tenant_id": "tenant-default",
             },

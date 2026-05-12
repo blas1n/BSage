@@ -465,7 +465,7 @@ _ADMIN_TOOLS: list[Tool] = [
         input_schema=CanonApplyInput,
         output_schema=CanonApplyOutput,
         handler=_h_canon_apply,
-        required_scopes=["bsage.canonicalization.apply"],
+        required_scopes=["sage:canonicalization.apply"],
         audit_event="bsage.mcp.canon_apply.invoked",
     ),
     Tool(
@@ -476,7 +476,7 @@ _ADMIN_TOOLS: list[Tool] = [
         input_schema=CanonDraftInput,
         output_schema=CanonDraftOutput,
         handler=_h_canon_draft,
-        required_scopes=["bsage.canonicalization.draft"],
+        required_scopes=["sage:canonicalization.draft"],
         audit_event="bsage.mcp.canon_draft.invoked",
     ),
     Tool(
@@ -488,7 +488,7 @@ _ADMIN_TOOLS: list[Tool] = [
         input_schema=CanonListInput,
         output_schema=CanonListOutput,
         handler=_h_canon_list,
-        required_scopes=["bsage.canonicalization.read"],
+        required_scopes=["sage:canonicalization.read"],
     ),
     Tool(
         name="bsage_canon_status",
@@ -496,7 +496,7 @@ _ADMIN_TOOLS: list[Tool] = [
         input_schema=CanonStatusInput,
         output_schema=CanonStatusOutput,
         handler=_h_canon_status,
-        required_scopes=["bsage.canonicalization.read"],
+        required_scopes=["sage:canonicalization.read"],
     ),
     Tool(
         name="bsage_garden_list",
@@ -507,7 +507,7 @@ _ADMIN_TOOLS: list[Tool] = [
         input_schema=GardenListInput,
         output_schema=GardenListOutput,
         handler=_h_garden_list,
-        required_scopes=["bsage.vault.read"],
+        required_scopes=["sage:vault.read"],
     ),
     Tool(
         name="bsage_plugins_disable",
@@ -515,7 +515,7 @@ _ADMIN_TOOLS: list[Tool] = [
         input_schema=PluginsToggleInput,
         output_schema=PluginsToggleOutput,
         handler=_h_plugins_disable,
-        required_scopes=["bsage.config.write"],
+        required_scopes=["sage:config.write"],
         audit_event="bsage.mcp.plugins_disable.invoked",
     ),
     Tool(
@@ -524,7 +524,7 @@ _ADMIN_TOOLS: list[Tool] = [
         input_schema=PluginsToggleInput,
         output_schema=PluginsToggleOutput,
         handler=_h_plugins_enable,
-        required_scopes=["bsage.config.write"],
+        required_scopes=["sage:config.write"],
         audit_event="bsage.mcp.plugins_enable.invoked",
     ),
     Tool(
@@ -533,7 +533,7 @@ _ADMIN_TOOLS: list[Tool] = [
         input_schema=PluginsInstallInput,
         output_schema=PluginsInstallOutput,
         handler=_h_plugins_install,
-        required_scopes=["bsage.plugins.install"],
+        required_scopes=["sage:plugins.install"],
         audit_event="bsage.mcp.plugins_install.invoked",
     ),
     Tool(
@@ -542,7 +542,7 @@ _ADMIN_TOOLS: list[Tool] = [
         input_schema=PluginsListInput,
         output_schema=PluginsListOutput,
         handler=_h_plugins_list,
-        required_scopes=["bsage.plugins.read"],
+        required_scopes=["sage:plugins.read"],
     ),
     Tool(
         name="bsage_settings_get",
@@ -552,7 +552,7 @@ _ADMIN_TOOLS: list[Tool] = [
         input_schema=SettingsGetInput,
         output_schema=SettingsGetOutput,
         handler=_h_settings_get,
-        required_scopes=["bsage.config.read"],
+        required_scopes=["sage:config.read"],
     ),
     Tool(
         name="bsage_settings_set",
@@ -560,7 +560,7 @@ _ADMIN_TOOLS: list[Tool] = [
         input_schema=SettingsSetInput,
         output_schema=SettingsSetOutput,
         handler=_h_settings_set,
-        required_scopes=["bsage.config.write"],
+        required_scopes=["sage:config.write"],
         audit_event="bsage.mcp.settings_set.invoked",
     ),
     Tool(
@@ -569,7 +569,7 @@ _ADMIN_TOOLS: list[Tool] = [
         input_schema=SkillsListInput,
         output_schema=SkillsListOutput,
         handler=_h_skills_list,
-        required_scopes=["bsage.plugins.read"],
+        required_scopes=["sage:plugins.read"],
     ),
     Tool(
         name="bsage_skills_run",
@@ -577,7 +577,7 @@ _ADMIN_TOOLS: list[Tool] = [
         input_schema=SkillsRunInput,
         output_schema=SkillsRunOutput,
         handler=_h_skills_run,
-        required_scopes=["bsage.plugins.execute"],
+        required_scopes=["sage:plugins.execute"],
         audit_event="bsage.mcp.skills_run.invoked",
     ),
 ]

@@ -161,7 +161,8 @@ def _get_introspection_cache_dep(
 
 
 # Audience for every service JWT BSage accepts.
-BSAGE_AUDIENCE = "bsage"
+# Round 5: bare "sage" (was "bsage" — `b`-prefix dropped in bsvibe-authz 1.0.0).
+BSAGE_AUDIENCE = "sage"
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
