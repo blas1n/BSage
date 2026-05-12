@@ -1,20 +1,16 @@
-"""TASK-004 — combined_principal 3-way dispatch (bootstrap / opaque / JWT).
+"""combined_principal dispatch (opaque / user JWT / service JWT).
 
 The Phase 0 P0.5 path accepts service JWTs (aud=bsage) AND user JWTs.
-Phase 1 (token cutover) extends ``combined_principal`` to also accept the
-two new BSVibe-Auth token shapes:
+Token cutover extends ``combined_principal`` to also accept the opaque
+``bsv_sk_*`` session token via RFC 7662 introspection.
 
-    - ``bsv_admin_*`` bootstrap admin token (constant-time digest match).
-    - ``bsv_sk_*`` opaque session token (RFC 7662 introspection).
-
-This module pins all four paths end-to-end so the dispatch stays wired to
-``bsvibe_authz.get_current_user`` rather than diverging into a private
+This module pins all three paths end-to-end so the dispatch stays wired
+to ``bsvibe_authz.get_current_user`` rather than diverging into a private
 re-implementation.
 """
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Callable
 from unittest.mock import AsyncMock
 
@@ -35,8 +31,6 @@ from bsage.gateway.authz import (
 
 _USER_JWT_SECRET = "test-user-secret"  # noqa: S105
 _SERVICE_TOKEN_SECRET = "test-service-secret"  # noqa: S105
-_BOOTSTRAP_TOKEN = "bsv_admin_test_secret_value"  # noqa: S105
-_BOOTSTRAP_HASH = hashlib.sha256(_BOOTSTRAP_TOKEN.encode()).hexdigest()
 
 
 def _build_settings() -> AuthzSettings:
@@ -49,7 +43,6 @@ def _build_settings() -> AuthzSettings:
         user_jwt_secret=_USER_JWT_SECRET,
         user_jwt_audience="bsvibe",
         user_jwt_issuer="https://auth.bsvibe.dev",
-        bootstrap_token_hash=_BOOTSTRAP_HASH,
         introspection_url="https://auth.bsvibe.dev/oauth/introspect",
         introspection_client_id="bsage",
         introspection_client_secret="introspect-secret",  # noqa: S106
@@ -86,32 +79,6 @@ def app_factory() -> Callable[..., FastAPI]:
         return app
 
     return _build
-
-
-class TestBootstrapPath:
-    def test_bsv_admin_token_resolves_to_bootstrap_admin(
-        self, app_factory: Callable[..., FastAPI]
-    ) -> None:
-        client = TestClient(app_factory())
-        resp = client.get(
-            "/whoami",
-            headers={"Authorization": f"Bearer {_BOOTSTRAP_TOKEN}"},
-        )
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
-        assert body["id"] == "bootstrap"
-        assert body["scope"] == ["*"]
-        assert body["is_service"] is True
-
-    def test_bsv_admin_with_wrong_digest_returns_401(
-        self, app_factory: Callable[..., FastAPI]
-    ) -> None:
-        client = TestClient(app_factory())
-        resp = client.get(
-            "/whoami",
-            headers={"Authorization": "Bearer bsv_admin_not_the_real_secret"},
-        )
-        assert resp.status_code == 401
 
 
 class TestOpaquePath:

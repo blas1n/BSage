@@ -221,15 +221,14 @@ async def combined_principal(
     introspection_client: IntrospectionClient | None = Depends(_get_introspection_client_dep),
     introspection_cache: IntrospectionCache = Depends(_get_introspection_cache_dep),
 ) -> User:
-    """Resolve the request principal from one of four token shapes.
+    """Resolve the request principal from one of three token shapes.
 
     Resolution order:
     1. ``aud=bsage`` service JWT (Phase 0 P0.5 invariant).
-    2. ``bsv_admin_*`` bootstrap admin token (constant-time digest match).
-    3. ``bsv_sk_*`` opaque session token (RFC 7662 introspection).
-    4. User session JWT.
+    2. ``bsv_sk_*`` opaque session token (RFC 7662 introspection).
+    3. User session JWT.
 
-    Steps 2-4 are dispatched by ``bsvibe_authz.get_current_user``. Token
+    Steps 2-3 are dispatched by ``bsvibe_authz.get_current_user``. Token
     introspection state (client + cache) is resolved here via FastAPI DI and
     forwarded explicitly so the underlying verifier doesn't see unresolved
     ``Depends`` defaults when called from this wrapper.

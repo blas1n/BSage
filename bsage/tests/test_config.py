@@ -124,36 +124,29 @@ class TestSettings:
         with pytest.raises(ValueError):
             Settings(_env_file=None)
 
-    def test_token_cutover_defaults_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Bootstrap + introspection fields default to empty (path disabled)."""
+    def test_introspection_defaults_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Introspection fields default to empty (path disabled)."""
         for key in (
-            "BOOTSTRAP_TOKEN_HASH",
             "INTROSPECTION_URL",
             "INTROSPECTION_CLIENT_ID",
             "INTROSPECTION_CLIENT_SECRET",
         ):
             monkeypatch.delenv(key, raising=False)
         settings = Settings(_env_file=None)
-        assert settings.bootstrap_token_hash == ""
         assert settings.introspection_url == ""
         assert settings.introspection_client_id == ""
         assert settings.introspection_client_secret == ""
 
-    def test_token_cutover_loads_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Bootstrap + introspection fields populate from env vars."""
-        monkeypatch.setenv(
-            "BOOTSTRAP_TOKEN_HASH",
-            "a" * 64,
-        )
+    def test_introspection_loads_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Introspection fields populate from env vars."""
         monkeypatch.setenv(
             "INTROSPECTION_URL",
-            "https://auth.bsvibe.dev/api/oauth/introspect",
+            "https://auth.bsvibe.dev/oauth/introspect",
         )
         monkeypatch.setenv("INTROSPECTION_CLIENT_ID", "bsage")
         monkeypatch.setenv("INTROSPECTION_CLIENT_SECRET", "shhh")
         settings = Settings(_env_file=None)
-        assert settings.bootstrap_token_hash == "a" * 64
-        assert settings.introspection_url == "https://auth.bsvibe.dev/api/oauth/introspect"
+        assert settings.introspection_url == "https://auth.bsvibe.dev/oauth/introspect"
         assert settings.introspection_client_id == "bsage"
         assert settings.introspection_client_secret == "shhh"
 

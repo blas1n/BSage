@@ -1,24 +1,22 @@
-"""TASK-005 — token-cutover smoke for MCP endpoints.
+"""Token-cutover smoke for MCP endpoints.
 
 End-to-end via TestClient: the real ``create_mcp_routes`` router is mounted
-with ``state.get_current_user = combined_principal`` so the full 4-way
-dispatch (service JWT / bootstrap / opaque / user JWT) flows through to a
-real MCP handler. Introspection is faked via FastAPI dep overrides — no
-network. The companion ``/scoped_invoke`` route layers ``require_scope``
-on top of the same principal source so the ``sage:mcp:invoke`` enforcement
-path is also covered.
+with ``state.get_current_user = combined_principal`` so the full 3-way
+dispatch (service JWT / opaque / user JWT) flows through to a real MCP
+handler. Introspection is faked via FastAPI dep overrides — no network.
+The companion ``/scoped_invoke`` route layers ``require_scope`` on top of
+the same principal source so the ``sage:mcp:invoke`` enforcement path is
+also covered.
 
 Cases:
-    (a) ``Bearer bsv_admin_<secret>`` → 200 (admin scope=['*']).
-    (b) ``Bearer bsv_sk_<id>`` w/ introspect scope=['sage:mcp:invoke']
+    (a) ``Bearer bsv_sk_<id>`` w/ introspect scope=['sage:mcp:invoke']
         → 200; same shape with empty scope → 403 on scoped route.
-    (c) Service JWT (Phase 0 P0.5 invariant) → 200.
-    (d) Invalid / missing token → 401.
+    (b) Service JWT (Phase 0 P0.5 invariant) → 200.
+    (c) Invalid / missing token → 401.
 """
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Callable
 from unittest.mock import AsyncMock, MagicMock
 
@@ -44,8 +42,6 @@ from bsage.tests.conftest import make_plugin_meta, make_skill_meta
 
 _USER_JWT_SECRET = "test-user-secret"  # noqa: S105
 _SERVICE_TOKEN_SECRET = "test-service-secret"  # noqa: S105
-_BOOTSTRAP_TOKEN = "bsv_admin_cutover_smoke_secret"  # noqa: S105
-_BOOTSTRAP_HASH = hashlib.sha256(_BOOTSTRAP_TOKEN.encode()).hexdigest()
 
 
 def _build_settings() -> AuthzSettings:
@@ -58,7 +54,6 @@ def _build_settings() -> AuthzSettings:
         user_jwt_secret=_USER_JWT_SECRET,
         user_jwt_audience="bsvibe",
         user_jwt_issuer="https://auth.bsvibe.dev",
-        bootstrap_token_hash=_BOOTSTRAP_HASH,
         introspection_url="https://auth.bsvibe.dev/oauth/introspect",
         introspection_client_id="bsage",
         introspection_client_secret="introspect-secret",  # noqa: S106
@@ -133,35 +128,7 @@ def app_factory(mock_state: MagicMock) -> Callable[..., FastAPI]:
 
 
 # ---------------------------------------------------------------------------
-# (a) Bootstrap admin
-# ---------------------------------------------------------------------------
-class TestBootstrapAdmin:
-    def test_list_plugins_with_bootstrap_token_returns_200(
-        self, app_factory: Callable[..., FastAPI]
-    ) -> None:
-        client = TestClient(app_factory())
-        resp = client.get(
-            "/api/mcp/list_plugins",
-            headers={"Authorization": f"Bearer {_BOOTSTRAP_TOKEN}"},
-        )
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
-        assert body["total"] == 2
-
-    def test_scoped_invoke_with_bootstrap_token_returns_200(
-        self, app_factory: Callable[..., FastAPI]
-    ) -> None:
-        # Admin scope=['*'] satisfies any required scope.
-        client = TestClient(app_factory())
-        resp = client.get(
-            "/api/mcp/scoped_invoke",
-            headers={"Authorization": f"Bearer {_BOOTSTRAP_TOKEN}"},
-        )
-        assert resp.status_code == 200, resp.text
-
-
-# ---------------------------------------------------------------------------
-# (b) Opaque session token (RFC 7662 introspection)
+# (a) Opaque session token (RFC 7662 introspection)
 # ---------------------------------------------------------------------------
 class TestOpaqueSessionToken:
     def test_active_opaque_with_invoke_scope_passes_scoped_route(
@@ -225,7 +192,7 @@ class TestOpaqueSessionToken:
 
 
 # ---------------------------------------------------------------------------
-# (c) Service JWT (Phase 0 P0.5 invariant)
+# (b) Service JWT (Phase 0 P0.5 invariant)
 # ---------------------------------------------------------------------------
 class TestServiceJwt:
     def test_service_jwt_passes_mcp_route(self, app_factory: Callable[..., FastAPI]) -> None:
@@ -252,7 +219,7 @@ class TestServiceJwt:
 
 
 # ---------------------------------------------------------------------------
-# (d) Invalid / missing token
+# (c) Invalid / missing token
 # ---------------------------------------------------------------------------
 class TestInvalidToken:
     def test_missing_authorization_returns_401(self, app_factory: Callable[..., FastAPI]) -> None:
