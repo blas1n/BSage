@@ -124,21 +124,14 @@ class Settings(BsvibeSettings):
     openfga_auth_token: str = ""
     service_token_signing_secret: str = ""
 
-    # Token cutover (Phase 1, PR #5) — bootstrap admin token + RFC 7662
-    # opaque session introspection. Mirrors bsvibe_authz.Settings so the
-    # central verifier resolves the same env vars.
-    # ``bootstrap_token_hash`` is the SHA-256 hex digest of the
-    # ``bsv_admin_*`` token; empty disables the bootstrap path.
-    # Empty ``introspection_url`` disables the opaque-token path; the
-    # verifier then handles only JWT and (optionally) bootstrap tokens.
-    # ``BSV_*``-prefixed aliases let prod operators use one consistent
-    # naming scheme across every product Settings class — matches the
-    # alias set on :class:`bsvibe_authz.Settings` (bsvibe-python PR #21)
-    # so a single ``.env`` configures the lib + product layers.
-    bootstrap_token_hash: str = Field(
-        default="",
-        validation_alias=AliasChoices("bootstrap_token_hash", "bsv_bootstrap_token_hash"),
-    )
+    # RFC 7662 opaque-token introspection. Mirrors bsvibe_authz.Settings
+    # so the central verifier resolves the same env vars. Empty
+    # ``introspection_url`` disables the opaque-token path; the verifier
+    # then handles only JWT tokens. ``BSV_*``-prefixed aliases let prod
+    # operators use one consistent naming scheme across every product
+    # Settings class — matches the alias set on
+    # :class:`bsvibe_authz.Settings` so a single ``.env`` configures the
+    # lib + product layers.
     introspection_url: str = Field(
         default="",
         validation_alias=AliasChoices("introspection_url", "bsv_introspection_url"),

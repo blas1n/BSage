@@ -216,8 +216,8 @@ The `bsage-mcp` console script (entry point) also points at
 
 | Transport | Mechanism |
 |---|---|
-| `stdio` | Trusted local process. Principal is read from env via `BSV_BOOTSTRAP_TOKEN` (verified by bsvibe-authz `verify_bootstrap_token`). |
-| `http` (SSE) | `state.get_current_user(request)` — bsvibe-authz 3-way dispatch (bootstrap token → opaque introspection → JWT). |
+| `stdio` | Trusted local process. Principal is read from env via `BSAGE_PAT`. |
+| `http` (SSE) | `state.get_current_user(request)` — bsvibe-authz dispatch (opaque introspection → JWT). |
 
 EventSource cannot send `Authorization` headers, so `GET /mcp/sse`
 also accepts `?token=<bearer>` and injects it as a `Bearer` header
@@ -256,6 +256,6 @@ bsage/cli/commands/mcp.py
 ## See also
 
 - `~/Docs/BSVibe_AI_Native_Control_Plane_Plan_2026-05-06.md` — overall plan
-- `~/Docs/BSVibe_Phase1_Decisions_2026-05-07.md` — bootstrap_token + introspection conventions
+- `~/Docs/BSVibe_Phase1_Decisions_2026-05-07.md` — introspection conventions
 - Memory `mcp-python-sdk-testing` — test pattern for first-class MCP tools
 - Memory `eventsource-sse-auth-trap` — `?token=` fallback for SSE auth
