@@ -7,7 +7,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import structlog
-from bsvibe_authz import get_settings_dep as _authz_get_settings_dep
 from bsvibe_fastapi import RequestIdMiddleware, add_cors_middleware
 from bsvibe_fastapi.settings import FastApiSettings
 from fastapi import FastAPI, Request
@@ -16,7 +15,6 @@ from fastapi.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from bsage.core.config import Settings
-from bsage.gateway.authz import get_authz_settings
 from bsage.gateway.dependencies import AppState
 from bsage.gateway.mcp import create_mcp_routes
 from bsage.gateway.rate_limit import RateLimiter, RateLimitMiddleware
@@ -62,10 +60,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.bsage = state
 
-    # Phase 0 P0.5 — point bsvibe_authz at our tolerant settings adapter so
-    # require_bsage_permission() can resolve when the deployment hasn't yet
-    # bootstrapped OpenFGA (empty OPENFGA_API_URL → permissive mode).
-    app.dependency_overrides[_authz_get_settings_dep] = get_authz_settings
+    # bsvibe-authz 1.2.0 — library ``Settings`` now defaults openfga_*/
+    # bsvibe_auth_url/service_token_signing_secret to ``""``, so it
+    # constructs fine on a partially-configured deployment. The previous
+    # tolerant ``get_settings_dep`` override (with the deleted
+    # ``gateway/authz.py`` adapter) is no longer needed — the standard
+    # ``bsvibe_authz.get_settings_dep`` and the introspection client/cache
+    # deps resolve directly from the library Settings.
 
     # Rate limiting — per-IP sliding window
     rate_limiter = RateLimiter(requests_per_minute=settings.rate_limit_per_minute)
@@ -106,7 +107,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             content=build_protected_resource_metadata(
                 resource_url=resource_url,
                 authorization_server=settings.bsvibe_auth_url.rstrip("/"),
-                scopes_supported=["sage:*"],
+                scopes_supported=["bsage:*"],
             ),
             headers={"Cache-Control": "public, max-age=300"},
         )
