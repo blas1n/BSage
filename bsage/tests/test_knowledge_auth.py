@@ -1,24 +1,96 @@
-"""Tests for auth enforcement on /api/knowledge/* endpoints.
+"""Auth enforcement on /api/knowledge/* + /api/notify endpoints.
 
-Verifies that knowledge endpoints require valid JWT when auth is enabled,
-and that service accounts (e.g. bsnexus-planner) are allowed via both
-JWT and X-Service-Key header.
+Migrated to the shared ``bsvibe_authz`` library deps:
+
+- ``state.get_current_user`` is ``combined_principal("bsage")`` — a missing
+  / invalid Bearer token → 401.
+- read routes (``/api/knowledge/search``) use ``require_permission`` —
+  permissive: any authenticated caller passes while ``openfga_api_url`` is
+  empty.
+- write routes (``/api/knowledge/entries``, ``/decisions``, ``/api/notify``)
+  use ``require_admin`` — only ``owner``/``admin`` JWT roles and service
+  principals pass; a plain authenticated user 403s.
+
+The legacy ``X-Service-Key`` header path is gone — service-to-service auth
+now rides on an ``aud=bsage`` service JWT resolved by ``combined_principal``.
 """
 
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from bsvibe_auth import BsvibeAuthProvider, BSVibeUser
+from bsvibe_authz import (
+    PermissionCache,
+    User,
+    combined_principal,
+    get_openfga_client,
+    get_permission_cache,
+    get_settings_dep,
+)
+from bsvibe_authz.settings import Settings as AuthzSettings
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from bsage.core.prompt_registry import PromptRegistry
 from bsage.core.runtime_config import RuntimeConfig
 from bsage.garden.sync import SyncManager
-from bsage.gateway.auth import create_get_current_user
 from bsage.gateway.dependencies import AppState
 from bsage.gateway.routes import create_routes
+
+
+class _AllowFGA:
+    async def check(self, user: str, relation: str, object_: str) -> bool:
+        return True
+
+    async def list_objects(self, user: str, relation: str, type_: str) -> list[str]:
+        return []
+
+
+def _authz_settings() -> AuthzSettings:
+    """Permissive — empty openfga_api_url, so require_permission passes any
+    authenticated caller."""
+    return AuthzSettings(
+        bsvibe_auth_url="https://auth.bsvibe.dev",
+        openfga_api_url="",
+        openfga_store_id="",
+        openfga_auth_model_id="",
+        service_token_signing_secret="test-service-secret",  # noqa: S106
+        user_jwt_secret="test-user-secret",  # noqa: S106
+        user_jwt_audience="bsvibe",
+        user_jwt_issuer="https://auth.bsvibe.dev",
+    )
+
+
+def _admin_user() -> User:
+    return User(
+        id="user-1",
+        email="admin@test.com",
+        active_tenant_id="tenant-default",
+        tenants=[],
+        is_service=False,
+        app_metadata={"role": "admin"},
+    )
+
+
+def _plain_user() -> User:
+    return User(
+        id="user-2",
+        email="user@test.com",
+        active_tenant_id="tenant-default",
+        tenants=[],
+        is_service=False,
+        app_metadata={},
+    )
+
+
+def _service_user() -> User:
+    return User(
+        id="service:bsnexus",
+        email=None,
+        active_tenant_id="tenant-default",
+        tenants=[],
+        is_service=True,
+    )
 
 
 def _build_vault(tmp_path: Path) -> Path:
@@ -32,33 +104,7 @@ def _build_vault(tmp_path: Path) -> Path:
     return vault_root
 
 
-def _make_mock_provider() -> MagicMock:
-    """Mock BsvibeAuthProvider that validates known test tokens."""
-    provider = MagicMock(spec=BsvibeAuthProvider)
-
-    async def _verify(token: str) -> BSVibeUser:
-        if token == "valid-jwt-token":
-            return BSVibeUser(id="user-1", email="user@test.com", role="authenticated")
-        if token == "service-jwt-token":
-            return BSVibeUser(
-                id="bsnexus-planner",
-                email="svc@bsvibe.dev",
-                role="service_role",
-            )
-        from bsvibe_auth import AuthError
-
-        raise AuthError("Invalid token")
-
-    provider.verify_token = _verify
-    return provider
-
-
-def _make_state(
-    vault_root: Path,
-    *,
-    auth_provider: MagicMock | None = None,
-    service_api_keys: dict[str, str] | None = None,
-) -> MagicMock:
+def _make_state(vault_root: Path) -> MagicMock:
     state = MagicMock(spec=AppState)
     state.skill_loader = MagicMock()
     state.skill_loader.load_all = AsyncMock(return_value={})
@@ -93,7 +139,6 @@ def _make_state(
         return_value=vault_root / "ideas" / "test.md",
     )
 
-    # Ontology mock
     ontology = MagicMock()
     ontology.get_entity_types.return_value = {
         "idea": {"folder": "ideas/", "knowledge_layer": "semantic"},
@@ -103,12 +148,31 @@ def _make_state(
     }
     state.ontology = ontology
 
-    state.auth_provider = auth_provider
-    state.get_current_user = create_get_current_user(
-        provider=auth_provider,
-        service_api_keys=service_api_keys,
-    )
+    state.auth_provider = None
+    # Default: the real library dep — exercises the 401 path. Per-test
+    # helpers below override it with a fixed principal.
+    state.get_current_user = combined_principal("bsage")
     return state
+
+
+def _app_for(state: MagicMock, principal: User | None = None) -> FastAPI:
+    """Build an app. When ``principal`` is given, override
+    ``state.get_current_user`` to return it; otherwise leave the real
+    ``combined_principal('bsage')`` dep in place (so missing/invalid tokens
+    401 as in production)."""
+    if principal is not None:
+
+        async def _principal() -> User:
+            return principal
+
+        state.get_current_user = _principal
+
+    app = FastAPI()
+    app.include_router(create_routes(state))
+    app.dependency_overrides[get_settings_dep] = _authz_settings
+    app.dependency_overrides[get_openfga_client] = lambda: _AllowFGA()
+    app.dependency_overrides[get_permission_cache] = lambda: PermissionCache(30)
+    return app
 
 
 @pytest.fixture()
@@ -117,88 +181,107 @@ def vault_root(tmp_path):
 
 
 @pytest.fixture()
-def auth_client(vault_root):
-    """Client with JWT auth enabled, no service keys."""
-    state = _make_state(vault_root, auth_provider=_make_mock_provider())
-    app = FastAPI()
-    app.include_router(create_routes(state))
-    return TestClient(app)
+def state(vault_root):
+    return _make_state(vault_root)
 
 
-@pytest.fixture()
-def service_key_client(vault_root):
-    """Client with JWT auth + service API keys enabled."""
-    state = _make_state(
-        vault_root,
-        auth_provider=_make_mock_provider(),
-        service_api_keys={"bsnexus-planner": "secret-service-key-123"},
-    )
-    app = FastAPI()
-    app.include_router(create_routes(state))
-    return TestClient(app)
+class TestUnauthenticatedRejected:
+    """No / invalid Bearer token → 401 from combined_principal('bsage')."""
 
-
-@pytest.fixture()
-def open_client(vault_root):
-    """Client with auth disabled (anonymous access)."""
-    state = _make_state(vault_root, auth_provider=None)
-    app = FastAPI()
-    app.include_router(create_routes(state))
-    return TestClient(app)
-
-
-class TestKnowledgeAuthEnforcement:
-    """All knowledge endpoints return 401 without valid credentials."""
-
-    def test_notify_unauthenticated_returns_401(self, auth_client):
-        resp = auth_client.post("/api/notify", json={"message": "test"})
+    def test_notify_unauthenticated_returns_401(self, state):
+        client = TestClient(_app_for(state))
+        resp = client.post("/api/notify", json={"message": "test"})
         assert resp.status_code == 401
 
-    def test_notify_invalid_token_returns_401(self, auth_client):
-        resp = auth_client.post(
+    def test_notify_invalid_token_returns_401(self, state):
+        client = TestClient(_app_for(state))
+        resp = client.post(
             "/api/notify",
             json={"message": "test"},
             headers={"Authorization": "Bearer bad-token"},
         )
         assert resp.status_code == 401
 
-    def test_notify_valid_token_returns_200(self, auth_client):
-        resp = auth_client.post(
-            "/api/notify",
-            json={"message": "test"},
-            headers={"Authorization": "Bearer valid-jwt-token"},
-        )
-        assert resp.status_code == 200
-
-    def test_search_unauthenticated_returns_401(self, auth_client):
-        resp = auth_client.get("/api/knowledge/search", params={"q": "test"})
+    def test_search_unauthenticated_returns_401(self, state):
+        client = TestClient(_app_for(state))
+        resp = client.get("/api/knowledge/search", params={"q": "test"})
         assert resp.status_code == 401
 
-    def test_search_valid_token_returns_200(self, auth_client):
-        resp = auth_client.get(
+    def test_entries_unauthenticated_returns_401(self, state):
+        client = TestClient(_app_for(state))
+        resp = client.post(
+            "/api/knowledge/entries",
+            json={"title": "Test", "content": "Content"},
+        )
+        assert resp.status_code == 401
+
+
+class TestReadRoutesPermissive:
+    """Read routes use require_permission — any authenticated user passes
+    while OpenFGA is not deployed (empty openfga_api_url)."""
+
+    def test_plain_user_can_search(self, state):
+        client = TestClient(_app_for(state, _plain_user()))
+        resp = client.get(
             "/api/knowledge/search",
             params={"q": "test"},
-            headers={"Authorization": "Bearer valid-jwt-token"},
+            headers={"Authorization": "Bearer fake-user-token"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 200, resp.text
 
-    def test_entries_unauthenticated_returns_401(self, auth_client):
-        resp = auth_client.post(
+    def test_admin_user_can_search(self, state):
+        client = TestClient(_app_for(state, _admin_user()))
+        resp = client.get(
+            "/api/knowledge/search",
+            params={"q": "test"},
+            headers={"Authorization": "Bearer fake-admin-token"},
+        )
+        assert resp.status_code == 200, resp.text
+
+
+class TestWriteRoutesRequireAdmin:
+    """Write routes use require_admin — plain users 403, admins + service
+    principals pass."""
+
+    def test_plain_user_denied_notify(self, state):
+        client = TestClient(_app_for(state, _plain_user()))
+        resp = client.post(
+            "/api/notify",
+            json={"message": "test"},
+            headers={"Authorization": "Bearer fake-user-token"},
+        )
+        assert resp.status_code == 403
+
+    def test_plain_user_denied_create_entry(self, state):
+        client = TestClient(_app_for(state, _plain_user()))
+        resp = client.post(
             "/api/knowledge/entries",
             json={"title": "Test", "content": "Content"},
+            headers={"Authorization": "Bearer fake-user-token"},
         )
-        assert resp.status_code == 401
+        assert resp.status_code == 403
 
-    def test_entries_valid_token_returns_201(self, auth_client):
-        resp = auth_client.post(
+    def test_admin_user_can_notify(self, state):
+        client = TestClient(_app_for(state, _admin_user()))
+        resp = client.post(
+            "/api/notify",
+            json={"message": "test"},
+            headers={"Authorization": "Bearer fake-admin-token"},
+        )
+        assert resp.status_code == 200, resp.text
+
+    def test_admin_user_can_create_entry(self, state):
+        client = TestClient(_app_for(state, _admin_user()))
+        resp = client.post(
             "/api/knowledge/entries",
             json={"title": "Test", "content": "Content"},
-            headers={"Authorization": "Bearer valid-jwt-token"},
+            headers={"Authorization": "Bearer fake-admin-token"},
         )
-        assert resp.status_code == 201
+        assert resp.status_code == 201, resp.text
 
-    def test_decisions_unauthenticated_returns_401(self, auth_client):
-        resp = auth_client.post(
+    def test_admin_user_can_create_decision(self, state):
+        client = TestClient(_app_for(state, _admin_user()))
+        resp = client.post(
             "/api/knowledge/decisions",
             json={
                 "title": "T",
@@ -207,57 +290,49 @@ class TestKnowledgeAuthEnforcement:
                 "alternatives": [],
                 "context": "C",
             },
+            headers={"Authorization": "Bearer fake-admin-token"},
         )
-        assert resp.status_code == 401
-
-    def test_decisions_valid_token_returns_201(self, auth_client):
-        resp = auth_client.post(
-            "/api/knowledge/decisions",
-            json={
-                "title": "T",
-                "decision": "D",
-                "reasoning": "R",
-                "alternatives": [],
-                "context": "C",
-            },
-            headers={"Authorization": "Bearer valid-jwt-token"},
-        )
-        assert resp.status_code == 201
+        assert resp.status_code == 201, resp.text
 
 
-class TestServiceAccountJWT:
-    """Service accounts with JWT tokens (role=service_role) are allowed."""
+class TestServicePrincipalAccess:
+    """An aud=bsage service principal (BSNexus → BSage) reaches both read and
+    write routes — require_admin lets verified service callers through."""
 
-    def test_service_jwt_can_notify(self, auth_client):
-        resp = auth_client.post(
-            "/api/notify",
-            json={"message": "test"},
-            headers={"Authorization": "Bearer service-jwt-token"},
-        )
-        assert resp.status_code == 200
-
-    def test_service_jwt_can_search(self, auth_client):
-        resp = auth_client.get(
+    def test_service_can_search(self, state):
+        client = TestClient(_app_for(state, _service_user()))
+        resp = client.get(
             "/api/knowledge/search",
             params={"q": "test"},
-            headers={"Authorization": "Bearer service-jwt-token"},
+            headers={"Authorization": "Bearer fake-service-token"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 200, resp.text
 
-    def test_service_jwt_can_create_entry(self, auth_client):
-        resp = auth_client.post(
+    def test_service_can_notify(self, state):
+        client = TestClient(_app_for(state, _service_user()))
+        resp = client.post(
+            "/api/notify",
+            json={"message": "test"},
+            headers={"Authorization": "Bearer fake-service-token"},
+        )
+        assert resp.status_code == 200, resp.text
+
+    def test_service_can_create_entry(self, state):
+        client = TestClient(_app_for(state, _service_user()))
+        resp = client.post(
             "/api/knowledge/entries",
             json={
                 "title": "Planner Entry",
                 "content": "Created by planner.",
                 "source": "bsnexus-planner",
             },
-            headers={"Authorization": "Bearer service-jwt-token"},
+            headers={"Authorization": "Bearer fake-service-token"},
         )
-        assert resp.status_code == 201
+        assert resp.status_code == 201, resp.text
 
-    def test_service_jwt_can_create_decision(self, auth_client):
-        resp = auth_client.post(
+    def test_service_can_create_decision(self, state):
+        client = TestClient(_app_for(state, _service_user()))
+        resp = client.post(
             "/api/knowledge/decisions",
             json={
                 "title": "D",
@@ -267,87 +342,16 @@ class TestServiceAccountJWT:
                 "context": "C",
                 "source": "bsnexus-planner",
             },
-            headers={"Authorization": "Bearer service-jwt-token"},
+            headers={"Authorization": "Bearer fake-service-token"},
         )
-        assert resp.status_code == 201
-
-
-class TestServiceAPIKey:
-    """Service-to-service calls via X-Service-Key header."""
-
-    def test_valid_service_key_grants_access(self, service_key_client):
-        resp = service_key_client.post(
-            "/api/notify",
-            json={"message": "test"},
-            headers={"X-Service-Key": "secret-service-key-123"},
-        )
-        assert resp.status_code == 200
-
-    def test_service_key_can_search(self, service_key_client):
-        resp = service_key_client.get(
-            "/api/knowledge/search",
-            params={"q": "test"},
-            headers={"X-Service-Key": "secret-service-key-123"},
-        )
-        assert resp.status_code == 200
-
-    def test_service_key_can_create_entry(self, service_key_client):
-        resp = service_key_client.post(
-            "/api/knowledge/entries",
-            json={
-                "title": "Planner Entry",
-                "content": "Created by planner.",
-                "source": "bsnexus-planner",
-            },
-            headers={"X-Service-Key": "secret-service-key-123"},
-        )
-        assert resp.status_code == 201
-
-    def test_service_key_can_create_decision(self, service_key_client):
-        resp = service_key_client.post(
-            "/api/knowledge/decisions",
-            json={
-                "title": "D",
-                "decision": "D",
-                "reasoning": "R",
-                "alternatives": [],
-                "context": "C",
-                "source": "bsnexus-planner",
-            },
-            headers={"X-Service-Key": "secret-service-key-123"},
-        )
-        assert resp.status_code == 201
-
-    def test_invalid_service_key_returns_401(self, service_key_client):
-        resp = service_key_client.post(
-            "/api/notify",
-            json={"message": "test"},
-            headers={"X-Service-Key": "wrong-key"},
-        )
-        assert resp.status_code == 401
-
-    def test_no_credentials_returns_401(self, service_key_client):
-        """Neither Bearer nor X-Service-Key provided."""
-        resp = service_key_client.post("/api/notify", json={"message": "test"})
-        assert resp.status_code == 401
-
-
-class TestAuthDisabled:
-    """When auth is disabled, anonymous access works."""
-
-    def test_notify_accessible(self, open_client):
-        resp = open_client.post("/api/notify", json={"message": "test"})
-        assert resp.status_code == 200
-
-    def test_search_accessible(self, open_client):
-        resp = open_client.get("/api/knowledge/search", params={"q": "test"})
-        assert resp.status_code == 200
+        assert resp.status_code == 201, resp.text
 
 
 class TestPublicEndpoints:
-    """Public endpoints remain accessible even with auth enabled."""
+    """Public endpoints remain accessible with no auth."""
 
-    def test_health_no_auth_required(self, auth_client):
-        resp = auth_client.get("/api/health")
+    def test_health_no_auth_required(self, state):
+        client = TestClient(_app_for(state))
+        resp = client.get("/api/health")
         assert resp.status_code == 200
         assert resp.json() == {"status": "ok"}

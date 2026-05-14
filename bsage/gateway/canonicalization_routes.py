@@ -4,14 +4,17 @@ Mounted under ``/api/canonicalization/...``. All mutation goes through
 the core ``CanonicalizationService`` so REST and MCP share the same
 typed-action contract.
 
-Authz uses the existing ``require_bsage_permission`` decorators, with
-permission strings matching the four canonicalization permission
-surfaces from Handoff §16:
+Authz uses the shared ``bsvibe_authz`` library deps, mapping the four
+canonicalization permission surfaces from Handoff §16:
 
 - ``bsage.canonicalization.read``    — list/get notes, list policies
+  → ``require_permission`` (permissive for authenticated callers).
 - ``bsage.canonicalization.draft``   — propose, draft, validate, score
+  → ``require_admin`` (role-gated; service principals pass).
 - ``bsage.canonicalization.apply``   — apply, approve, reject, expire
+  → ``require_admin``.
 - ``bsage.canonicalization.govern``  — create-decision, update-policy
+  → ``require_admin`` (reserved for future endpoints).
 """
 
 from __future__ import annotations
@@ -19,10 +22,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import structlog
+from bsvibe_authz import require_admin, require_permission
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-
-from bsage.gateway.authz import require_bsage_permission
 
 if TYPE_CHECKING:
     from bsage.gateway.dependencies import AppState
@@ -150,9 +152,11 @@ def _policy_to_dict(p: Any) -> dict[str, Any]:
 def create_canonicalization_router(state: AppState) -> APIRouter:
     """Build the /api/canonicalization router bound to ``state``."""
     _principal = state.get_current_user
-    canon_read = require_bsage_permission("bsage.canonicalization.read", principal_dep=_principal)
-    canon_draft = require_bsage_permission("bsage.canonicalization.draft", principal_dep=_principal)
-    canon_apply = require_bsage_permission("bsage.canonicalization.apply", principal_dep=_principal)
+    canon_read = require_permission("bsage.canonicalization.read", principal_dep=_principal)
+    # draft / apply are mutations — role-gated via require_admin; an
+    # ``aud=bsage`` service principal still passes.
+    canon_draft = require_admin(principal_dep=_principal)
+    canon_apply = require_admin(principal_dep=_principal)
     # canon_govern is reserved for future endpoints (CreateDecision /
     # UpdatePolicy mutations exposed over REST). Wire when those land.
 

@@ -226,9 +226,10 @@ def _pydantic_to_json_schema(model: type[BaseModel]) -> dict[str, Any]:
 def _enforce_scopes(tool: Tool, ctx: ToolContext) -> None:
     """Check that ctx.user carries every scope ``tool.required_scopes`` lists.
 
-    Mirrors :func:`bsage.gateway.authz.require_bsage_permission` semantics:
-    a tool with no required scopes is anonymous-friendly; a tool with
-    required scopes denies missing/anonymous principals.
+    Mirrors the gateway route-permission semantics
+    (``bsvibe_authz.require_permission`` / ``require_admin``): a tool with
+    no required scopes is anonymous-friendly; a tool with required scopes
+    denies missing/anonymous principals.
     """
     if not tool.required_scopes:
         return

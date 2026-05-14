@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
+from bsvibe_authz import require_admin, require_permission
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
@@ -24,7 +25,6 @@ from bsage.core.skill_loader import SkillMeta
 from bsage.garden.audit_outbox import safe_emit as _audit_safe_emit
 from bsage.garden.markdown_utils import extract_frontmatter, extract_title
 from bsage.garden.writer import GardenNote
-from bsage.gateway.authz import require_bsage_permission
 from bsage.gateway.dependencies import AppState
 
 logger = structlog.get_logger(__name__)
@@ -240,12 +240,19 @@ def create_routes(state: AppState) -> APIRouter:
     (everything else).  The protected router applies ``state.get_current_user``
     as a router-level dependency so individual handlers don't need to declare it.
 
-    Phase 0 P0.5 — ``state.get_current_user`` returns a ``bsvibe_authz.User``
-    (either a real human or a service principal). Handlers that need to stamp
+    ``state.get_current_user`` is ``bsvibe_authz.combined_principal("bsage")``
+    — it returns a ``bsvibe_authz.User`` (a real human, an opaque/PAT session,
+    or an ``aud=bsage`` service principal). Handlers that need to stamp
     ``tenant_id`` onto written notes pull the principal via
-    ``Depends(state.get_current_user)`` directly. Permission enforcement is
-    layered on top via :func:`bsage.gateway.authz.require_bsage_permission`,
-    which routes the same principal through OpenFGA.
+    ``Depends(state.get_current_user)`` directly.
+
+    Permission enforcement is layered on top via the shared library deps:
+    read routes use ``require_permission`` (permissive — passes any
+    authenticated caller while ``settings.openfga_api_url`` is empty, enforces
+    OpenFGA ``check`` once it is set); write / execute / draft routes use
+    ``require_admin`` (role-gated: ``owner``/``admin`` JWT roles, demo
+    sessions, and ``aud=bsage`` service principals pass — the latter keeps
+    the BSNexus service-to-service write path open).
     """
     public = APIRouter(prefix="/api")
     protected = APIRouter(
@@ -257,21 +264,21 @@ def create_routes(state: AppState) -> APIRouter:
     # so route definitions stay short. These are constructed once per app
     # creation, NOT once per request.
     #
-    # ``principal_dep=state.get_current_user`` makes the permission factory
-    # share the same principal source as the router-level auth dep — tests
-    # that override ``state.get_current_user`` automatically flow through to
+    # ``principal_dep=state.get_current_user`` makes each guard share the same
+    # principal source as the router-level auth dep — so the service-JWT path
+    # (and any test override of ``state.get_current_user``) flows through to
     # the permission check too.
     _principal = state.get_current_user
-    knowledge_read = require_bsage_permission("bsage.knowledge.read", principal_dep=_principal)
-    knowledge_write = require_bsage_permission("bsage.knowledge.write", principal_dep=_principal)
-    decisions_write = require_bsage_permission("bsage.decisions.write", principal_dep=_principal)
-    vault_read = require_bsage_permission("bsage.vault.read", principal_dep=_principal)
-    notify_write = require_bsage_permission("bsage.notify.write", principal_dep=_principal)
-    config_read = require_bsage_permission("bsage.config.read", principal_dep=_principal)
-    config_write = require_bsage_permission("bsage.config.write", principal_dep=_principal)
-    plugins_read = require_bsage_permission("bsage.plugins.read", principal_dep=_principal)
-    plugins_execute = require_bsage_permission("bsage.plugins.execute", principal_dep=_principal)
-    chat_write = require_bsage_permission("bsage.chat.write", principal_dep=_principal)
+    knowledge_read = require_permission("bsage.knowledge.read", principal_dep=_principal)
+    knowledge_write = require_admin(principal_dep=_principal)
+    decisions_write = require_admin(principal_dep=_principal)
+    vault_read = require_permission("bsage.vault.read", principal_dep=_principal)
+    notify_write = require_admin(principal_dep=_principal)
+    config_read = require_permission("bsage.config.read", principal_dep=_principal)
+    config_write = require_admin(principal_dep=_principal)
+    plugins_read = require_permission("bsage.plugins.read", principal_dep=_principal)
+    plugins_execute = require_admin(principal_dep=_principal)
+    chat_write = require_admin(principal_dep=_principal)
 
     async def _tenant_graph_snapshot(tenant_id: str | None) -> Any:
         graph = await state.graph_store.to_networkx_snapshot()

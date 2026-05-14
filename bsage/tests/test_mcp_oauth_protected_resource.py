@@ -12,12 +12,12 @@ def test_protected_resource_metadata_shape():
     body = build_protected_resource_metadata(
         resource_url="https://bsage.bsvibe.dev",
         authorization_server="https://auth.bsvibe.dev",
-        scopes_supported=["sage:*"],
+        scopes_supported=["bsage:*"],
     )
     assert body["resource"] == "https://bsage.bsvibe.dev"
     assert body["authorization_servers"] == ["https://auth.bsvibe.dev"]
     assert body["bearer_methods_supported"] == ["header"]
-    assert "sage:*" in body["scopes_supported"]
+    assert "bsage:*" in body["scopes_supported"]
 
 
 async def test_wrapper_passes_through_when_bearer_present():

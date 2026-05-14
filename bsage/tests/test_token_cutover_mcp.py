@@ -1,15 +1,15 @@
 """Token-cutover smoke for MCP endpoints.
 
 End-to-end via TestClient: the real ``create_mcp_routes`` router is mounted
-with ``state.get_current_user = combined_principal`` so the full 3-way
+with ``state.get_current_user = combined_principal("bsage")`` so the full 3-way
 dispatch (service JWT / opaque / user JWT) flows through to a real MCP
 handler. Introspection is faked via FastAPI dep overrides — no network.
 The companion ``/scoped_invoke`` route layers ``require_scope`` on top of
-the same principal source so the ``sage:mcp:invoke`` enforcement path is
+the same principal source so the ``bsage:mcp:invoke`` enforcement path is
 also covered.
 
 Cases:
-    (a) ``Bearer bsv_sk_<id>`` w/ introspect scope=['sage:mcp:invoke']
+    (a) ``Bearer bsv_sk_<id>`` w/ introspect scope=['bsage:mcp:invoke']
         → 200; same shape with empty scope → 403 on scoped route.
     (b) Service JWT (Phase 0 P0.5 invariant) → 200.
     (c) Invalid / missing token → 401.
@@ -22,7 +22,14 @@ from unittest.mock import AsyncMock, MagicMock
 
 import jwt
 import pytest
-from bsvibe_authz import IntrospectionResponse, User
+from bsvibe_authz import (
+    IntrospectionResponse,
+    User,
+    combined_principal,
+    get_introspection_cache,
+    get_introspection_client,
+    get_settings_dep,
+)
 from bsvibe_authz.cache import IntrospectionCache
 from bsvibe_authz.deps import _scope_grants
 from bsvibe_authz.settings import Settings as AuthzSettings
@@ -30,12 +37,6 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.testclient import TestClient
 
 from bsage.core.runtime_config import RuntimeConfig
-from bsage.gateway.authz import (
-    _get_introspection_cache_dep,
-    _get_introspection_client_dep,
-    _settings_dep,
-    combined_principal,
-)
 from bsage.gateway.dependencies import AppState
 from bsage.gateway.mcp import create_mcp_routes
 from bsage.tests.conftest import make_plugin_meta, make_skill_meta
@@ -64,7 +65,7 @@ def _build_settings() -> AuthzSettings:
 def mock_state() -> MagicMock:
     """Mocked AppState with ``get_current_user`` wired to combined_principal."""
     state = MagicMock(spec=AppState)
-    state.get_current_user = combined_principal
+    state.get_current_user = combined_principal("bsage")
 
     state.plugin_loader = MagicMock()
     state.plugin_loader.load_all = AsyncMock(
@@ -98,12 +99,12 @@ def app_factory(mock_state: MagicMock) -> Callable[..., FastAPI]:
         # Scope-protected smoke endpoint — re-uses combined_principal so
         # introspection-resolved scopes flow through unchanged.
         async def _require_invoke_scope(
-            user: User = Depends(combined_principal),
+            user: User = Depends(mock_state.get_current_user),
         ) -> None:
-            if not _scope_grants(user.scope, "sage:mcp:invoke"):
+            if not _scope_grants(user.scope, "bsage:mcp:invoke"):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="missing required scope: sage:mcp:invoke",
+                    detail="missing required scope: bsage:mcp:invoke",
                 )
 
         @app.get("/api/mcp/scoped_invoke", dependencies=[Depends(_require_invoke_scope)])
@@ -111,17 +112,17 @@ def app_factory(mock_state: MagicMock) -> Callable[..., FastAPI]:
             return {"ok": True}
 
         settings = _build_settings()
-        app.dependency_overrides[_settings_dep] = lambda: settings
+        app.dependency_overrides[get_settings_dep] = lambda: settings
 
         if introspection_response is not None:
             mock_client = AsyncMock()
             mock_client.introspect = AsyncMock(return_value=introspection_response)
-            app.dependency_overrides[_get_introspection_client_dep] = lambda: mock_client
+            app.dependency_overrides[get_introspection_client] = lambda: mock_client
         else:
-            app.dependency_overrides[_get_introspection_client_dep] = lambda: None
+            app.dependency_overrides[get_introspection_client] = lambda: None
 
         cache = IntrospectionCache(ttl_s=30)
-        app.dependency_overrides[_get_introspection_cache_dep] = lambda: cache
+        app.dependency_overrides[get_introspection_cache] = lambda: cache
         return app
 
     return _build
@@ -138,7 +139,7 @@ class TestOpaqueSessionToken:
             active=True,
             sub="user-7",
             tenant="tenant-7",
-            scope=["sage:mcp:invoke"],
+            scope=["bsage:mcp:invoke"],
         )
         client = TestClient(app_factory(introspection_response=response))
         resp = client.get(
@@ -154,7 +155,7 @@ class TestOpaqueSessionToken:
             active=True,
             sub="user-7",
             tenant="tenant-7",
-            scope=["sage:mcp:invoke"],
+            scope=["bsage:mcp:invoke"],
         )
         client = TestClient(app_factory(introspection_response=response))
         resp = client.get(
@@ -171,7 +172,7 @@ class TestOpaqueSessionToken:
             active=True,
             sub="user-7",
             tenant="tenant-7",
-            scope=["sage:read"],
+            scope=["bsage:read"],
         )
         client = TestClient(app_factory(introspection_response=response))
         resp = client.get(
@@ -179,7 +180,7 @@ class TestOpaqueSessionToken:
             headers={"Authorization": "Bearer bsv_sk_no_scope"},
         )
         assert resp.status_code == 403
-        assert "sage:mcp:invoke" in resp.json()["detail"]
+        assert "bsage:mcp:invoke" in resp.json()["detail"]
 
     def test_inactive_opaque_returns_401(self, app_factory: Callable[..., FastAPI]) -> None:
         response = IntrospectionResponse(active=False)
@@ -199,11 +200,11 @@ class TestServiceJwt:
         token = jwt.encode(
             {
                 "sub": "service:bsnexus",
-                "aud": "sage",
+                "aud": "bsage",
                 "iss": "https://auth.bsvibe.dev",
                 "iat": 1700000000,
                 "exp": 1900000000,
-                "scope": "sage:read",
+                "scope": "bsage:read",
                 "token_type": "service",
                 "tenant_id": "tenant-default",
             },

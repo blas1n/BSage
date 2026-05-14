@@ -79,8 +79,19 @@ def _make_state(tmp_path: Path, *, registry: dict | None = None) -> MagicMock:
     ontology.get_entity_types.return_value = {}
     state.ontology = ontology
 
-    async def _mock_get_current_user():
-        return MagicMock(id="test-user", email="test@example.com", role="authenticated")
+    # /api/notify is now require_admin-gated — return a proper admin User so
+    # the validation / error tests reach the handler.
+    from bsvibe_authz import User
+
+    async def _mock_get_current_user() -> User:
+        return User(
+            id="test-user",
+            email="test@example.com",
+            active_tenant_id="tenant-default",
+            tenants=[],
+            is_service=False,
+            app_metadata={"role": "admin"},
+        )
 
     state.get_current_user = _mock_get_current_user
     state.auth_provider = None

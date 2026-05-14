@@ -1,26 +1,33 @@
-"""Phase 0 P0.5 — bsvibe-authz integration tests for BSage Gateway.
+"""bsvibe-authz integration tests for the BSage Gateway.
 
 Verifies that knowledge / vault / decisions / notify endpoints route through
-``bsvibe-authz`` ``CurrentUser`` (user JWTs) and ``ServiceKeyAuth("bsage")``
-(service JWTs from BSNexus etc.), and that ``require_permission`` enforces
-deny on OpenFGA negative responses.
+the shared ``bsvibe_authz`` library deps:
+
+- ``state.get_current_user`` is ``combined_principal("bsage")`` — accepts a
+  user JWT *or* an ``aud=bsage`` service JWT on the same path.
+- read routes use ``require_permission`` — permissive (any authenticated
+  caller passes) while ``settings.openfga_api_url`` is empty; once it is set
+  the OpenFGA ``check`` is enforced and a negative response → 403.
+- write / execute / draft routes use ``require_admin`` — role-gated:
+  ``owner``/``admin`` JWT roles and service principals pass, anything else
+  403s. This is enforced even with no OpenFGA deployed.
 
 Authentication routing matrix (BSage):
 
-| Route                              | Auth principal           | Permission                 |
-|------------------------------------|--------------------------|----------------------------|
-| GET  /api/knowledge/search         | user OR service          | bsage.knowledge.read       |
-| POST /api/knowledge/entries        | user OR service          | bsage.knowledge.write      |
-| POST /api/knowledge/decisions      | user OR service          | bsage.decisions.write      |
-| GET  /api/knowledge/catalog        | user OR service          | bsage.knowledge.read       |
-| GET  /api/vault/file               | user OR service          | bsage.vault.read           |
-| GET  /api/vault/tree               | user OR service          | bsage.vault.read           |
-| GET  /api/vault/search             | user OR service          | bsage.vault.read           |
-| POST /api/notify                   | user OR service          | bsage.notify.write         |
+| Route                              | Auth principal           | Guard                |
+|------------------------------------|--------------------------|----------------------|
+| GET  /api/knowledge/search         | user OR service          | require_permission   |
+| POST /api/knowledge/entries        | admin user OR service    | require_admin        |
+| POST /api/knowledge/decisions      | admin user OR service    | require_admin        |
+| GET  /api/knowledge/catalog        | user OR service          | require_permission   |
+| GET  /api/vault/file               | user OR service          | require_permission   |
+| GET  /api/vault/tree               | user OR service          | require_permission   |
+| GET  /api/vault/search             | user OR service          | require_permission   |
+| POST /api/notify                   | admin user OR service    | require_admin        |
 
 bsage-sync.sh consumes ``/api/knowledge/{entries,decisions,search}`` and
-``/api/vault/file`` with admin user JWT — those flows must keep working.
-BSNexus knowledge_client.py will use service JWT (aud=bsage) for the same
+``/api/vault/file`` with an admin user JWT — those flows must keep working.
+BSNexus knowledge_client.py uses a service JWT (aud=bsage) for the same
 routes — the dual-acceptance test confirms both succeed.
 """
 
@@ -34,8 +41,10 @@ from bsvibe_authz import (
     FGAClientProtocol,
     OpenFGAError,
     PermissionCache,
-    ServiceTokenPayload,
     User,
+    get_openfga_client,
+    get_permission_cache,
+    get_settings_dep,
 )
 from bsvibe_authz.settings import Settings as AuthzSettings
 from fastapi import FastAPI
@@ -47,11 +56,6 @@ from bsage.garden.ontology import OntologyRegistry
 from bsage.garden.sync import SyncManager
 from bsage.garden.vault import Vault
 from bsage.garden.writer_core import GardenWriter
-from bsage.gateway.authz import (
-    _optional_cache_dep,
-    _optional_fga_dep,
-    _settings_dep,
-)
 from bsage.gateway.dependencies import AppState
 from bsage.gateway.routes import create_routes
 
@@ -61,8 +65,7 @@ from bsage.gateway.routes import create_routes
 
 
 class _AlwaysAllowFGA:
-    """OpenFGA stub that grants every check — equivalent to a permissive
-    Phase 0 deployment where the model isn't fully populated yet."""
+    """OpenFGA stub that grants every check."""
 
     async def check(self, user: str, relation: str, object_: str) -> bool:
         return True
@@ -81,18 +84,6 @@ class _DenyFGA:
         return []
 
 
-class _RecordingFGA:
-    def __init__(self) -> None:
-        self.checks: list[tuple[str, str, str]] = []
-
-    async def check(self, user: str, relation: str, object_: str) -> bool:
-        self.checks.append((user, relation, object_))
-        return True
-
-    async def list_objects(self, user: str, relation: str, type_: str) -> list[str]:
-        return []
-
-
 class _ErrorFGA:
     async def check(self, user: str, relation: str, object_: str) -> bool:
         raise OpenFGAError(400, {"code": "validation_error", "message": "bad relation"})
@@ -101,7 +92,24 @@ class _ErrorFGA:
         return []
 
 
-def _build_authz_settings() -> AuthzSettings:
+def _permissive_settings() -> AuthzSettings:
+    """Settings with an empty ``openfga_api_url`` — require_permission is
+    permissive (authenticated callers pass without an FGA check)."""
+    return AuthzSettings(
+        bsvibe_auth_url="https://auth.bsvibe.dev",
+        openfga_api_url="",
+        openfga_store_id="",
+        openfga_auth_model_id="",
+        service_token_signing_secret="test-service-secret",  # noqa: S106
+        user_jwt_secret="test-user-secret",  # noqa: S106
+        user_jwt_audience="bsvibe",
+        user_jwt_issuer="https://auth.bsvibe.dev",
+    )
+
+
+def _openfga_settings() -> AuthzSettings:
+    """Settings with a non-empty ``openfga_api_url`` — require_permission
+    enforces the OpenFGA ``check``."""
     return AuthzSettings(
         bsvibe_auth_url="https://auth.bsvibe.dev",
         openfga_api_url="http://openfga.test:8080",
@@ -119,14 +127,21 @@ def _user_principal(
     user_id: str = "user-1",
     email: str = "admin@bsvibe.dev",
     tenant_id: str = "tenant-default",
+    admin: bool = True,
 ) -> User:
-    """Build a User the way ``parse_user_token`` would."""
+    """Build a User the way ``parse_user_token`` would.
+
+    ``admin=True`` lifts ``app_metadata.role='admin'`` so the principal
+    passes ``require_admin``-gated write routes (bsage-sync.sh runs with an
+    admin user JWT).
+    """
     return User(
         id=user_id,
         email=email,
         active_tenant_id=tenant_id,
         tenants=[],
         is_service=False,
+        app_metadata={"role": "admin"} if admin else {},
     )
 
 
@@ -135,31 +150,14 @@ def _service_principal(
     sub: str = "service:bsnexus",
     tenant_id: str = "tenant-default",
 ) -> User:
+    """Service principal as ``combined_principal('bsage')`` resolves it from
+    a verified ``aud=bsage`` service JWT."""
     return User(
         id=sub,
         email=None,
         active_tenant_id=tenant_id,
         tenants=[],
         is_service=True,
-    )
-
-
-def _service_token(
-    *,
-    sub: str = "service:bsnexus",
-    aud: str = "sage",
-    scope: str = "sage:read sage:write",
-    tenant_id: str = "tenant-default",
-) -> ServiceTokenPayload:
-    return ServiceTokenPayload(
-        iss="https://auth.bsvibe.dev",
-        sub=sub,
-        aud=aud,  # type: ignore[arg-type]
-        scope=scope,
-        iat=1700000000,
-        exp=1900000000,
-        token_type="service",
-        tenant_id=tenant_id,
     )
 
 
@@ -238,36 +236,36 @@ def _build_app(
     state,
     *,
     user: User | None = None,
-    service: ServiceTokenPayload | None = None,
+    service: User | None = None,
     fga: FGAClientProtocol | None = None,
+    settings: AuthzSettings | None = None,
 ) -> FastAPI:
     """Create a FastAPI app where the bsvibe-authz dependency tree is wired to
     return the given principal / FGA stub. Either ``user`` xor ``service`` is
     provided per request scope.
 
-    The fixture stamps ``state.get_current_user`` with a sync function that
-    returns the chosen principal so that:
+    The fixture stamps ``state.get_current_user`` with a coroutine returning
+    the chosen principal so that:
       1. The router-level auth dep (``Depends(state.get_current_user)``) accepts.
-      2. ``require_bsage_permission`` (which the route-factory wired with
-         ``principal_dep=state.get_current_user``) sees the same principal.
-    OpenFGA + cache + settings are overridden via ``app.dependency_overrides``.
+      2. ``require_permission`` / ``require_admin`` (wired by the route factory
+         with ``principal_dep=state.get_current_user``) see the same principal.
+    OpenFGA + permission cache + settings are overridden via
+    ``app.dependency_overrides`` of the shared library deps.
+
+    ``settings`` defaults to ``_permissive_settings()`` (empty openfga_api_url)
+    so read routes pass for any authenticated caller. Pass
+    ``_openfga_settings()`` + an FGA stub to exercise the enforced path.
     """
     fga = fga or _AlwaysAllowFGA()
-    settings = _build_authz_settings()
+    settings = settings or _permissive_settings()
     cache = PermissionCache(ttl_s=30)
 
-    if user is not None:
+    principal = user if user is not None else service
+
+    if principal is not None:
 
         async def _principal():
-            return user
-
-    elif service is not None:
-        from bsage.gateway.authz import service_principal_from_payload
-
-        svc_principal = service_principal_from_payload(service)
-
-        async def _principal():
-            return svc_principal
+            return principal
 
     else:
 
@@ -279,9 +277,9 @@ def _build_app(
     app = FastAPI()
     app.include_router(create_routes(state))
 
-    app.dependency_overrides[_settings_dep] = lambda: settings
-    app.dependency_overrides[_optional_fga_dep] = lambda: fga
-    app.dependency_overrides[_optional_cache_dep] = lambda: cache
+    app.dependency_overrides[get_settings_dep] = lambda: settings
+    app.dependency_overrides[get_openfga_client] = lambda: fga
+    app.dependency_overrides[get_permission_cache] = lambda: cache
 
     return app
 
@@ -292,7 +290,7 @@ def _build_app(
 
 
 class TestUserJwtAccess:
-    """User JWT (admin@bsvibe.dev via bsage-sync.sh) reaches every sync route."""
+    """Admin user JWT (admin@bsvibe.dev via bsage-sync.sh) reaches every sync route."""
 
     def test_search_with_user_jwt_returns_200(self, real_state) -> None:
         app = _build_app(real_state, user=_user_principal())
@@ -344,10 +342,11 @@ class TestUserJwtAccess:
 
 class TestServiceJwtAccess:
     """Service JWT with audience=bsage (BSNexus → BSage) reaches every route
-    BSNexus knowledge_client.py uses."""
+    BSNexus knowledge_client.py uses. ``require_admin`` lets verified service
+    principals through the write routes."""
 
     def test_search_with_service_jwt_returns_200(self, real_state) -> None:
-        app = _build_app(real_state, service=_service_token())
+        app = _build_app(real_state, service=_service_principal())
         client = TestClient(app)
         resp = client.get(
             "/api/knowledge/search",
@@ -357,7 +356,7 @@ class TestServiceJwtAccess:
         assert resp.status_code == 200, resp.text
 
     def test_create_entry_with_service_jwt_returns_201(self, real_state) -> None:
-        app = _build_app(real_state, service=_service_token())
+        app = _build_app(real_state, service=_service_principal())
         client = TestClient(app)
         resp = client.post(
             "/api/knowledge/entries",
@@ -367,7 +366,7 @@ class TestServiceJwtAccess:
         assert resp.status_code == 201, resp.text
 
     def test_create_decision_with_service_jwt_returns_201(self, real_state) -> None:
-        app = _build_app(real_state, service=_service_token())
+        app = _build_app(real_state, service=_service_principal())
         client = TestClient(app)
         resp = client.post(
             "/api/knowledge/decisions",
@@ -378,22 +377,21 @@ class TestServiceJwtAccess:
 
 
 class TestNoCredentialsRejected:
-    """No Bearer header → 401 from get_current_user."""
+    """No Bearer header → 401 from combined_principal('bsage')."""
 
     def test_search_without_auth_returns_401(self, real_state) -> None:
-        """Real bsvibe-authz get_current_user must reject calls without
-        Authorization header. We point state.get_current_user at the real
-        production dep (``combined_principal``) to assert the wiring."""
-        from bsage.gateway.authz import combined_principal
+        """The real library ``combined_principal('bsage')`` must reject calls
+        without an Authorization header. ``real_state.get_current_user`` is
+        already that dep (set in dependencies.AppState.__init__)."""
+        from bsvibe_authz import combined_principal
 
-        real_state.get_current_user = combined_principal
+        real_state.get_current_user = combined_principal("bsage")
 
         app = FastAPI()
         app.include_router(create_routes(real_state))
-        settings = _build_authz_settings()
-        app.dependency_overrides[_settings_dep] = lambda: settings
-        app.dependency_overrides[_optional_fga_dep] = lambda: _AlwaysAllowFGA()
-        app.dependency_overrides[_optional_cache_dep] = lambda: PermissionCache(30)
+        app.dependency_overrides[get_settings_dep] = _permissive_settings
+        app.dependency_overrides[get_openfga_client] = lambda: _AlwaysAllowFGA()
+        app.dependency_overrides[get_permission_cache] = lambda: PermissionCache(30)
 
         client = TestClient(app)
         resp = client.get("/api/knowledge/search", params={"q": "x"})
@@ -408,11 +406,17 @@ class TestNoCredentialsRejected:
         assert resp.status_code == 200
 
 
-class TestPermissionDenied:
-    """OpenFGA returning False → 403 — no fall-through."""
+class TestRequirePermissionEnforced:
+    """With a non-empty openfga_api_url, read routes enforce the OpenFGA
+    ``check`` — a negative response → 403, errors do not escape as 500."""
 
     def test_search_denies_when_fga_says_no(self, real_state) -> None:
-        app = _build_app(real_state, user=_user_principal(), fga=_DenyFGA())
+        app = _build_app(
+            real_state,
+            user=_user_principal(),
+            fga=_DenyFGA(),
+            settings=_openfga_settings(),
+        )
         client = TestClient(app)
         resp = client.get(
             "/api/knowledge/search",
@@ -421,8 +425,46 @@ class TestPermissionDenied:
         )
         assert resp.status_code == 403
 
-    def test_create_entry_denies_when_fga_says_no(self, real_state) -> None:
-        app = _build_app(real_state, user=_user_principal(), fga=_DenyFGA())
+    def test_search_passes_when_fga_says_yes(self, real_state) -> None:
+        app = _build_app(
+            real_state,
+            user=_user_principal(),
+            fga=_AlwaysAllowFGA(),
+            settings=_openfga_settings(),
+        )
+        client = TestClient(app)
+        resp = client.get(
+            "/api/knowledge/search",
+            params={"q": "x"},
+            headers={"Authorization": "Bearer fake-user-token"},
+        )
+        assert resp.status_code == 200, resp.text
+
+    def test_openfga_errors_propagate_not_swallowed(self, real_state) -> None:
+        # An OpenFGAError from the client bubbles out of require_permission —
+        # FastAPI turns the unhandled exception into a 500. The point of this
+        # test is that the error is not silently treated as "allowed".
+        app = _build_app(
+            real_state,
+            user=_user_principal(),
+            fga=_ErrorFGA(),
+            settings=_openfga_settings(),
+        )
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get(
+            "/api/knowledge/search",
+            params={"q": "x"},
+            headers={"Authorization": "Bearer fake-user-token"},
+        )
+        assert resp.status_code != 200
+
+
+class TestRequireAdminEnforced:
+    """Write / execute routes use ``require_admin`` — role-gated, enforced
+    even with no OpenFGA deployed."""
+
+    def test_non_admin_user_denied_on_write_route(self, real_state) -> None:
+        app = _build_app(real_state, user=_user_principal(admin=False))
         client = TestClient(app)
         resp = client.post(
             "/api/knowledge/entries",
@@ -431,30 +473,49 @@ class TestPermissionDenied:
         )
         assert resp.status_code == 403
 
-    def test_openfga_errors_do_not_escape_as_500(self, real_state) -> None:
-        app = _build_app(real_state, user=_user_principal(), fga=_ErrorFGA())
+    def test_admin_user_allowed_on_write_route(self, real_state) -> None:
+        app = _build_app(real_state, user=_user_principal(admin=True))
         client = TestClient(app)
-        resp = client.get(
-            "/api/knowledge/search",
-            params={"q": "x"},
+        resp = client.post(
+            "/api/knowledge/entries",
+            json={"title": "T", "content": "C", "source": "test"},
             headers={"Authorization": "Bearer fake-user-token"},
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 201, resp.text
 
-    def test_plugin_execute_permission_checks_tenant_write_relation(self, real_state) -> None:
-        fga = _RecordingFGA()
+    def test_service_principal_allowed_on_write_route(self, real_state) -> None:
+        app = _build_app(real_state, service=_service_principal())
+        client = TestClient(app)
+        resp = client.post(
+            "/api/knowledge/entries",
+            json={"title": "Svc", "content": "C", "source": "bsnexus"},
+            headers={"Authorization": "Bearer fake-service-token"},
+        )
+        assert resp.status_code == 201, resp.text
+
+    def test_non_admin_user_denied_on_run_route(self, real_state) -> None:
         real_state.agent_loop.get_entry = MagicMock(return_value=object())
         real_state.agent_loop.run_entry_direct = AsyncMock(return_value={"ok": True})
 
-        app = _build_app(real_state, user=_user_principal(), fga=fga)
+        app = _build_app(real_state, user=_user_principal(admin=False))
         client = TestClient(app)
         resp = client.post(
             "/api/run/garden-writer",
             headers={"Authorization": "Bearer fake-user-token"},
         )
+        assert resp.status_code == 403
 
+    def test_admin_user_allowed_on_run_route(self, real_state) -> None:
+        real_state.agent_loop.get_entry = MagicMock(return_value=object())
+        real_state.agent_loop.run_entry_direct = AsyncMock(return_value={"ok": True})
+
+        app = _build_app(real_state, user=_user_principal(admin=True))
+        client = TestClient(app)
+        resp = client.post(
+            "/api/run/garden-writer",
+            headers={"Authorization": "Bearer fake-user-token"},
+        )
         assert resp.status_code == 200, resp.text
-        assert fga.checks == [("user:user-1", "write", "tenant:tenant-default")]
 
 
 class TestTenantIsolation:
@@ -490,7 +551,7 @@ class TestTenantIsolation:
     def test_service_call_persists_tenant_id_from_token(self, real_state, vault_root: Path) -> None:
         app = _build_app(
             real_state,
-            service=_service_token(tenant_id="tenant-bob"),
+            service=_service_principal(tenant_id="tenant-bob"),
         )
         client = TestClient(app)
         resp = client.post(
@@ -543,24 +604,9 @@ class TestTenantIsolation:
         assert resp.status_code == 404
 
 
-class TestServicePrincipalShape:
-    """Service principal extracted from a service JWT must look like a User
-    with is_service=True so downstream OpenFGA principals build correctly
-    (`user.id` already in `service:foo` form)."""
-
-    def test_service_principal_has_is_service_true(self) -> None:
-        from bsage.gateway.authz import service_principal_from_payload
-
-        payload = _service_token(sub="service:bsnexus", tenant_id="t-1")
-        principal = service_principal_from_payload(payload)
-        assert principal.is_service is True
-        assert principal.id == "service:bsnexus"
-        assert principal.active_tenant_id == "t-1"
-
-
 class TestSyncApiContractStillHolds:
-    """Sprint 2 PR #26 + Sprint 4 PR #28 — bsage-sync.sh must keep working
-    after authz integration. Smoke-test the wire shape under the new auth."""
+    """bsage-sync.sh must keep working after the authz library migration.
+    Smoke-test the wire shape under the new auth."""
 
     def test_entries_response_keys_unchanged(self, real_state) -> None:
         app = _build_app(real_state, user=_user_principal())

@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 
 import structlog
+from bsvibe_authz import combined_principal
 
 from bsage.core.agent_loop import AgentLoop
 from bsage.core.chat_bridge import ChatBridge
@@ -39,7 +40,6 @@ from bsage.garden.vault import Vault
 from bsage.garden.vector_store import VectorStore
 from bsage.garden.writer import GardenWriter
 from bsage.gateway.auth import create_auth_provider
-from bsage.gateway.authz import combined_principal
 from bsage.gateway.event_broadcaster import WebSocketEventBroadcaster
 from bsage.gateway.ws import manager as ws_manager
 from bsage.interface.ws_interface import WebSocketApprovalInterface
@@ -103,11 +103,13 @@ class AppState:
 
         # Authentication
         # Legacy provider kept for back-compat (used by WS auth route + the
-        # /auth/callback redirect helper). Phase 0 P0.5 routes the HTTP
-        # principal through ``bsvibe_authz.combined_principal`` instead, which
-        # accepts both user JWTs and audience-scoped service JWTs.
+        # /auth/callback redirect helper). The HTTP principal is resolved by
+        # the shared ``bsvibe_authz.combined_principal("bsage")`` dep, which
+        # accepts both user JWTs and ``aud=bsage`` service JWTs on the same
+        # path (BSNexus reads BSage knowledge/vault service-to-service).
+        # ``combined_principal`` is a FACTORY — build one shared instance.
         self.auth_provider = create_auth_provider(settings)
-        self.get_current_user = combined_principal
+        self.get_current_user = combined_principal("bsage")
 
         # WebSocket approval interface for SafeMode in Gateway context
         self.ws_approval_interface = WebSocketApprovalInterface(manager=ws_manager)
