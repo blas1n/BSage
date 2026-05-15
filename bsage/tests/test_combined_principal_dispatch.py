@@ -1,9 +1,17 @@
-"""combined_principal("bsage") dispatch (opaque / user JWT / service JWT).
+"""combined_principal("bsage") dispatch (PAT JWT / user JWT / service JWT).
 
 BSage wires its HTTP principal to the shared
 ``bsvibe_authz.combined_principal("bsage")`` dep. That factory accepts
 ``aud=bsage`` service JWTs AND falls through to ``get_current_user``
-(opaque ``bsv_sk_*`` introspection / user JWT / PAT).
+(user JWT / PAT JWT via RFC 7662 introspection).
+
+Tier 2 cleanup (bsvibe-authz 1.3.0, 2026-05): the legacy ``bsv_sk_*``
+opaque-prefix dispatch was removed. The only path now reaching
+introspection is the JWT-shaped fallback — PAT JWTs are minted by
+BSVibe-Auth's device-authorization grant, signed with
+``SERVICE_TOKEN_SIGNING_SECRET`` (not ``USER_JWT_SECRET``), so they
+fail ``verify_user_jwt`` locally and only succeed via
+``/oauth/introspect``. We forge that shape in the test below.
 
 This module pins all three paths end-to-end against the *library* dep so
 BSage's principal resolution stays standard and is not re-implemented.
@@ -31,6 +39,20 @@ from fastapi.testclient import TestClient
 
 _USER_JWT_SECRET = "test-user-secret"  # noqa: S105
 _SERVICE_TOKEN_SECRET = "test-service-secret"  # noqa: S105
+# A secret neither verifier shares — produces a JWT-shaped token that
+# fails both ``verify_user_jwt`` and ``verify_service_jwt`` locally and
+# therefore reaches the introspection fallback in ``get_current_user``.
+_PAT_JWT_SECRET = "test-pat-unknown-secret"  # noqa: S105
+
+
+def _make_pat_jwt(jti: str = "pat-abc") -> str:
+    """Build a JWT-shaped token that drops into introspection fallback."""
+    return jwt.encode(
+        {"jti": jti, "iat": 1700000000, "exp": 1900000000},
+        _PAT_JWT_SECRET,
+        algorithm="HS256",
+    )
+
 
 # The dep BSage installs as ``state.get_current_user``.
 _bsage_principal = combined_principal("bsage")
@@ -84,8 +106,8 @@ def app_factory() -> Callable[..., FastAPI]:
     return _build
 
 
-class TestOpaquePath:
-    def test_active_opaque_token_resolves_to_user(
+class TestPatIntrospectionPath:
+    def test_active_pat_jwt_resolves_to_user_via_introspection(
         self, app_factory: Callable[..., FastAPI]
     ) -> None:
         response = IntrospectionResponse(
@@ -97,7 +119,7 @@ class TestOpaquePath:
         client = TestClient(app_factory(introspection_response=response))
         resp = client.get(
             "/whoami",
-            headers={"Authorization": "Bearer bsv_sk_abc"},
+            headers={"Authorization": f"Bearer {_make_pat_jwt('pat-abc')}"},
         )
         assert resp.status_code == 200, resp.text
         body = resp.json()
@@ -106,22 +128,29 @@ class TestOpaquePath:
         assert body["is_service"] is False
         assert body["active_tenant_id"] == "tenant-x"
 
-    def test_inactive_opaque_token_returns_401(self, app_factory: Callable[..., FastAPI]) -> None:
+    def test_inactive_pat_jwt_returns_401(self, app_factory: Callable[..., FastAPI]) -> None:
         response = IntrospectionResponse(active=False)
         client = TestClient(app_factory(introspection_response=response))
         resp = client.get(
             "/whoami",
-            headers={"Authorization": "Bearer bsv_sk_revoked"},
+            headers={"Authorization": f"Bearer {_make_pat_jwt('pat-revoked')}"},
         )
         assert resp.status_code == 401
 
-    def test_opaque_token_falls_through_to_jwt_when_introspection_disabled(
+    def test_legacy_opaque_prefix_no_longer_dispatches_to_introspection(
         self, app_factory: Callable[..., FastAPI]
     ) -> None:
-        # introspection_response=None → introspection_client dep returns None.
-        # bsv_sk_* token then drops into the JWT verifier, which 401s on a
-        # non-JWT shape.
-        client = TestClient(app_factory(introspection_response=None))
+        """Tier 2 retirement guard: a ``bsv_sk_*`` token is now treated as
+        any non-JWT garbage — it fails ``_looks_like_jwt`` and skips
+        introspection entirely, returning 401 even when an introspection
+        response is wired up that would have resolved it under 1.2.0."""
+        response = IntrospectionResponse(
+            active=True,
+            sub="user-42",
+            tenant="tenant-x",
+            scope=["bsage.mcp-invoke"],
+        )
+        client = TestClient(app_factory(introspection_response=response))
         resp = client.get(
             "/whoami",
             headers={"Authorization": "Bearer bsv_sk_abc"},

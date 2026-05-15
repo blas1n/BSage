@@ -45,6 +45,10 @@ class _AllowFGA:
     async def list_objects(self, user: str, relation: str, type_: str) -> list[str]:
         return []
 
+    async def write_tuple(self, user: str, relation: str, object_: str) -> None:
+        # bsvibe-authz 1.3.0 lazy auto-provision write. No-op for tests.
+        return None
+
 
 def _authz_settings() -> AuthzSettings:
     """Permissive — empty openfga_api_url, so require_permission passes any
