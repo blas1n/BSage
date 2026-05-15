@@ -73,6 +73,10 @@ class _AlwaysAllowFGA:
     async def list_objects(self, user: str, relation: str, type_: str) -> list[str]:
         return []
 
+    async def write_tuple(self, user: str, relation: str, object_: str) -> None:
+        # bsvibe-authz 1.3.0 lazy auto-provision write. No-op for tests.
+        return None
+
 
 class _DenyFGA:
     """OpenFGA stub that denies every check — used to assert 403 wiring."""
@@ -83,6 +87,9 @@ class _DenyFGA:
     async def list_objects(self, user: str, relation: str, type_: str) -> list[str]:
         return []
 
+    async def write_tuple(self, user: str, relation: str, object_: str) -> None:
+        return None
+
 
 class _ErrorFGA:
     async def check(self, user: str, relation: str, object_: str) -> bool:
@@ -90,6 +97,9 @@ class _ErrorFGA:
 
     async def list_objects(self, user: str, relation: str, type_: str) -> list[str]:
         return []
+
+    async def write_tuple(self, user: str, relation: str, object_: str) -> None:
+        return None
 
 
 def _permissive_settings() -> AuthzSettings:

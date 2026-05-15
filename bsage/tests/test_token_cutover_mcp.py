@@ -1,15 +1,24 @@
 """Token-cutover smoke for MCP endpoints.
 
 End-to-end via TestClient: the real ``create_mcp_routes`` router is mounted
-with ``state.get_current_user = combined_principal("bsage")`` so the full 3-way
-dispatch (service JWT / opaque / user JWT) flows through to a real MCP
-handler. Introspection is faked via FastAPI dep overrides — no network.
-The companion ``/scoped_invoke`` route layers ``require_scope`` on top of
-the same principal source so the ``bsage:mcp:invoke`` enforcement path is
-also covered.
+with ``state.get_current_user = combined_principal("bsage")`` so the full
+dispatch (service JWT / PAT JWT via introspection / user JWT) flows through
+to a real MCP handler. Introspection is faked via FastAPI dep overrides —
+no network. The companion ``/scoped_invoke`` route layers ``require_scope``
+on top of the same principal source so the ``bsage:mcp:invoke`` enforcement
+path is also covered.
+
+Note (Tier 2 cleanup, 2026-05): bsvibe-authz 1.3.0 removed the legacy
+``bsv_sk_*`` opaque-prefix dispatch. Introspection is now reached ONLY via
+the JWT-shaped fallback in ``get_current_user`` — a token must look like a
+JWT (three base64url segments) AND fail ``verify_user_jwt`` (signed with a
+different secret) before introspection is attempted. PAT JWTs from the
+device-authorization grant are signed with ``SERVICE_TOKEN_SIGNING_SECRET``,
+not ``USER_JWT_SECRET``, which is exactly that shape — so we forge that
+shape in the tests below.
 
 Cases:
-    (a) ``Bearer bsv_sk_<id>`` w/ introspect scope=['bsage:mcp:invoke']
+    (a) PAT JWT (introspect-fallback) w/ scope=['bsage:mcp:invoke']
         → 200; same shape with empty scope → 403 on scoped route.
     (b) Service JWT (Phase 0 P0.5 invariant) → 200.
     (c) Invalid / missing token → 401.
@@ -43,6 +52,33 @@ from bsage.tests.conftest import make_plugin_meta, make_skill_meta
 
 _USER_JWT_SECRET = "test-user-secret"  # noqa: S105
 _SERVICE_TOKEN_SECRET = "test-service-secret"  # noqa: S105
+# PAT JWTs are minted by BSVibe-Auth's device-authorization grant; they're
+# signed with a key the consumer service doesn't share, so they fail both
+# ``verify_user_jwt`` and ``verify_service_jwt`` locally and only succeed via
+# ``/oauth/introspect``. We forge "looks-like-a-PAT-JWT" by signing with a
+# third secret that neither verifier knows.
+_PAT_JWT_SECRET = "test-pat-unknown-secret"  # noqa: S105
+
+
+def _make_pat_jwt(jti: str = "pat-active") -> str:
+    """Build a JWT-shaped token that fails local verification.
+
+    The payload contents do not matter for the introspection fallback —
+    ``verify_via_introspection`` keys on the raw token, and the fake
+    introspection client returns a fixed ``IntrospectionResponse``. The
+    only requirement is that the string is shaped like a JWT
+    (three base64url segments) so ``_looks_like_jwt`` returns True after
+    ``verify_user_jwt`` raises ``AuthError``.
+    """
+    return jwt.encode(
+        {
+            "jti": jti,
+            "iat": 1700000000,
+            "exp": 1900000000,
+        },
+        _PAT_JWT_SECRET,
+        algorithm="HS256",
+    )
 
 
 def _build_settings() -> AuthzSettings:
@@ -129,10 +165,10 @@ def app_factory(mock_state: MagicMock) -> Callable[..., FastAPI]:
 
 
 # ---------------------------------------------------------------------------
-# (a) Opaque session token (RFC 7662 introspection)
+# (a) PAT JWT (RFC 7662 introspection fallback)
 # ---------------------------------------------------------------------------
-class TestOpaqueSessionToken:
-    def test_active_opaque_with_invoke_scope_passes_scoped_route(
+class TestPatJwtIntrospection:
+    def test_active_pat_with_invoke_scope_passes_scoped_route(
         self, app_factory: Callable[..., FastAPI]
     ) -> None:
         response = IntrospectionResponse(
@@ -144,11 +180,11 @@ class TestOpaqueSessionToken:
         client = TestClient(app_factory(introspection_response=response))
         resp = client.get(
             "/api/mcp/scoped_invoke",
-            headers={"Authorization": "Bearer bsv_sk_active"},
+            headers={"Authorization": f"Bearer {_make_pat_jwt('pat-active')}"},
         )
         assert resp.status_code == 200, resp.text
 
-    def test_active_opaque_with_invoke_scope_passes_list_plugins(
+    def test_active_pat_with_invoke_scope_passes_list_plugins(
         self, app_factory: Callable[..., FastAPI]
     ) -> None:
         response = IntrospectionResponse(
@@ -160,11 +196,11 @@ class TestOpaqueSessionToken:
         client = TestClient(app_factory(introspection_response=response))
         resp = client.get(
             "/api/mcp/list_plugins",
-            headers={"Authorization": "Bearer bsv_sk_active"},
+            headers={"Authorization": f"Bearer {_make_pat_jwt('pat-active')}"},
         )
         assert resp.status_code == 200, resp.text
 
-    def test_active_opaque_without_invoke_scope_returns_403(
+    def test_active_pat_without_invoke_scope_returns_403(
         self, app_factory: Callable[..., FastAPI]
     ) -> None:
         # Token is active (auth OK) but lacks the required scope.
@@ -177,17 +213,17 @@ class TestOpaqueSessionToken:
         client = TestClient(app_factory(introspection_response=response))
         resp = client.get(
             "/api/mcp/scoped_invoke",
-            headers={"Authorization": "Bearer bsv_sk_no_scope"},
+            headers={"Authorization": f"Bearer {_make_pat_jwt('pat-no-scope')}"},
         )
         assert resp.status_code == 403
         assert "bsage:mcp:invoke" in resp.json()["detail"]
 
-    def test_inactive_opaque_returns_401(self, app_factory: Callable[..., FastAPI]) -> None:
+    def test_inactive_pat_returns_401(self, app_factory: Callable[..., FastAPI]) -> None:
         response = IntrospectionResponse(active=False)
         client = TestClient(app_factory(introspection_response=response))
         resp = client.get(
             "/api/mcp/list_plugins",
-            headers={"Authorization": "Bearer bsv_sk_revoked"},
+            headers={"Authorization": f"Bearer {_make_pat_jwt('pat-revoked')}"},
         )
         assert resp.status_code == 401
 
