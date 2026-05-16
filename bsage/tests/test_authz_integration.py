@@ -8,22 +8,26 @@ the shared ``bsvibe_authz`` library deps:
 - read routes use ``require_permission`` — permissive (any authenticated
   caller passes) while ``settings.openfga_api_url`` is empty; once it is set
   the OpenFGA ``check`` is enforced and a negative response → 403.
-- write / execute / draft routes use ``require_admin`` — role-gated:
+- Tier 5: write / execute routes ALSO use ``require_permission``. The
+  permission matrix maps them to the ``member`` role — a non-admin member
+  can write. Permissive while OpenFGA is undeployed, model-enforced once
+  it is set.
+- admin-surface routes (config) stay on ``require_admin`` — role-gated:
   ``owner``/``admin`` JWT roles and service principals pass, anything else
-  403s. This is enforced even with no OpenFGA deployed.
+  403s. Enforced even with no OpenFGA deployed.
 
-Authentication routing matrix (BSage):
+Authentication routing matrix (BSage, Tier 5):
 
 | Route                              | Auth principal           | Guard                |
 |------------------------------------|--------------------------|----------------------|
 | GET  /api/knowledge/search         | user OR service          | require_permission   |
-| POST /api/knowledge/entries        | admin user OR service    | require_admin        |
-| POST /api/knowledge/decisions      | admin user OR service    | require_admin        |
+| POST /api/knowledge/entries        | member user OR service   | require_permission   |
+| POST /api/knowledge/decisions      | member user OR service   | require_permission   |
 | GET  /api/knowledge/catalog        | user OR service          | require_permission   |
 | GET  /api/vault/file               | user OR service          | require_permission   |
 | GET  /api/vault/tree               | user OR service          | require_permission   |
 | GET  /api/vault/search             | user OR service          | require_permission   |
-| POST /api/notify                   | admin user OR service    | require_admin        |
+| POST /api/notify                   | member user OR service   | require_permission   |
 
 bsage-sync.sh consumes ``/api/knowledge/{entries,decisions,search}`` and
 ``/api/vault/file`` with an admin user JWT — those flows must keep working.
@@ -469,11 +473,16 @@ class TestRequirePermissionEnforced:
         assert resp.status_code != 200
 
 
-class TestRequireAdminEnforced:
-    """Write / execute routes use ``require_admin`` — role-gated, enforced
-    even with no OpenFGA deployed."""
+class TestWriteRoutesMemberWritable:
+    """Tier 5 — write / execute routes use ``require_permission`` and the
+    permission matrix maps them to the ``member`` role. A plain (non-admin)
+    member can now write. In permissive mode (empty openfga_api_url) any
+    authenticated caller passes; once OpenFGA is deployed the model
+    enforces the member minimum."""
 
-    def test_non_admin_user_denied_on_write_route(self, real_state) -> None:
+    def test_non_admin_user_allowed_on_write_route(self, real_state) -> None:
+        # Pre-Tier-5 this 403'd (require_admin). The matrix loosens
+        # knowledge.write to member — a non-admin member now writes.
         app = _build_app(real_state, user=_user_principal(admin=False))
         client = TestClient(app)
         resp = client.post(
@@ -481,7 +490,7 @@ class TestRequireAdminEnforced:
             json={"title": "T", "content": "C", "source": "test"},
             headers={"Authorization": "Bearer fake-user-token"},
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 201, resp.text
 
     def test_admin_user_allowed_on_write_route(self, real_state) -> None:
         app = _build_app(real_state, user=_user_principal(admin=True))
@@ -503,7 +512,25 @@ class TestRequireAdminEnforced:
         )
         assert resp.status_code == 201, resp.text
 
-    def test_non_admin_user_denied_on_run_route(self, real_state) -> None:
+    def test_write_route_denied_when_fga_says_no(self, real_state) -> None:
+        # With OpenFGA deployed, the write route enforces the member
+        # relation — a negative check → 403.
+        app = _build_app(
+            real_state,
+            user=_user_principal(admin=False),
+            fga=_DenyFGA(),
+            settings=_openfga_settings(),
+        )
+        client = TestClient(app)
+        resp = client.post(
+            "/api/knowledge/entries",
+            json={"title": "T", "content": "C", "source": "test"},
+            headers={"Authorization": "Bearer fake-user-token"},
+        )
+        assert resp.status_code == 403
+
+    def test_non_admin_user_allowed_on_run_route(self, real_state) -> None:
+        # plugins.execute -> member. A non-admin member can run a plugin.
         real_state.agent_loop.get_entry = MagicMock(return_value=object())
         real_state.agent_loop.run_entry_direct = AsyncMock(return_value={"ok": True})
 
@@ -513,7 +540,7 @@ class TestRequireAdminEnforced:
             "/api/run/garden-writer",
             headers={"Authorization": "Bearer fake-user-token"},
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 200, resp.text
 
     def test_admin_user_allowed_on_run_route(self, real_state) -> None:
         real_state.agent_loop.get_entry = MagicMock(return_value=object())
