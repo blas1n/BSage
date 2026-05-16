@@ -12,6 +12,7 @@ serialised as JSON-text content. No subprocesses spawned.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -53,38 +54,79 @@ class _FakeUser:
         self,
         *,
         id: str = "user-1",  # noqa: A002 — mirrors bsvibe_authz.User.id
-        scope: list[str] | None = None,
         active_tenant_id: str | None = "tenant-a",
         is_service: bool = False,
     ) -> None:
         self.id = id
-        self.scope = scope or []
         self.active_tenant_id = active_tenant_id
         self.is_service = is_service
+        self.is_demo = False
+        self.app_metadata: dict[str, object] = {}
         self.email = None
+
+
+class _FakeFga:
+    """OpenFGA client stub — fixed allow/deny verdict."""
+
+    def __init__(self, *, allowed: bool) -> None:
+        self._allowed = allowed
+
+    async def check(self, user: str, relation: str, object_: str) -> bool:
+        return self._allowed
+
+    async def write_tuple(self, user: str, relation: str, object_: str) -> None:
+        return None
+
+
+def _permissive_settings() -> SimpleNamespace:
+    """OpenFGA unconfigured — ``check_tenant_permission`` is permissive."""
+    return SimpleNamespace(openfga_api_url="", permission_cache_ttl_s=30)
+
+
+def _enforcing_settings() -> SimpleNamespace:
+    """OpenFGA configured — the real check runs against the fake fga."""
+    return SimpleNamespace(openfga_api_url="http://openfga.test", permission_cache_ttl_s=30)
 
 
 @pytest.fixture()
 def ctx_admin() -> ToolContext:
+    # Permissive authz settings → an authenticated principal passes every
+    # ``required_permission`` tool.
+    from bsvibe_authz import PermissionCache
+
     return ToolContext(
-        user=_FakeUser(id="admin", scope=["bsage:admin", "bsage:write"]),
+        user=_FakeUser(id="admin"),
         audit_outbox=AsyncMock(),
         state=None,
+        settings=_permissive_settings(),
+        fga=_FakeFga(allowed=True),
+        cache=PermissionCache(ttl_s=30),
     )
 
 
 @pytest.fixture()
-def ctx_scoped() -> ToolContext:
+def ctx_denied() -> ToolContext:
+    # OpenFGA configured + fake fga denies → permissioned tools 403.
+    from bsvibe_authz import PermissionCache
+
     return ToolContext(
-        user=_FakeUser(id="user-1", scope=["bsage:read"]),
+        user=_FakeUser(id="user-1"),
         audit_outbox=AsyncMock(),
         state=None,
+        settings=_enforcing_settings(),
+        fga=_FakeFga(allowed=False),
+        cache=PermissionCache(ttl_s=30),
     )
 
 
 @pytest.fixture()
 def ctx_anon() -> ToolContext:
-    return ToolContext(user=None, audit_outbox=None, state=None)
+    return ToolContext(
+        user=None,
+        audit_outbox=None,
+        state=None,
+        settings=_permissive_settings(),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -206,11 +248,15 @@ class TestSchemaValidation:
 
 
 # ---------------------------------------------------------------------------
-# Scope enforcement
+# Permission enforcement — Tier 5: OpenFGA ``check_tenant_permission``.
 # ---------------------------------------------------------------------------
-class TestScopeEnforcement:
+class TestPermissionEnforcement:
     @pytest.mark.asyncio
-    async def test_required_scope_admin_passes(self, ctx_admin: ToolContext) -> None:
+    async def test_required_permission_passes_in_permissive_mode(
+        self, ctx_admin: ToolContext
+    ) -> None:
+        # OpenFGA unconfigured → permissive: any authenticated principal
+        # passes a ``required_permission`` tool.
         reg = ToolRegistry()
         reg.register(
             Tool(
@@ -219,14 +265,15 @@ class TestScopeEnforcement:
                 input_schema=CreateNoteIn,
                 output_schema=CreateNoteOut,
                 handler=_create_note_handler,
-                required_scopes=["bsage:write"],
+                required_permission="bsage.knowledge.write",
             )
         )
         result = await reg.call_tool("create_note", {"title": "T"}, ctx_admin)
         assert result["id"] == "note-42"
 
     @pytest.mark.asyncio
-    async def test_missing_scope_raises_denied(self, ctx_scoped: ToolContext) -> None:
+    async def test_openfga_deny_raises_denied(self, ctx_denied: ToolContext) -> None:
+        # OpenFGA configured + fga.check → False ⇒ tool is denied.
         reg = ToolRegistry()
         reg.register(
             Tool(
@@ -235,14 +282,14 @@ class TestScopeEnforcement:
                 input_schema=CreateNoteIn,
                 output_schema=CreateNoteOut,
                 handler=_create_note_handler,
-                required_scopes=["bsage:write"],
+                required_permission="bsage.knowledge.write",
             )
         )
         with pytest.raises(ToolScopeDenied):
-            await reg.call_tool("create_note", {"title": "T"}, ctx_scoped)
+            await reg.call_tool("create_note", {"title": "T"}, ctx_denied)
 
     @pytest.mark.asyncio
-    async def test_no_user_with_required_scopes_raises(self, ctx_anon: ToolContext) -> None:
+    async def test_no_user_with_required_permission_raises(self, ctx_anon: ToolContext) -> None:
         reg = ToolRegistry()
         reg.register(
             Tool(
@@ -251,14 +298,14 @@ class TestScopeEnforcement:
                 input_schema=CreateNoteIn,
                 output_schema=CreateNoteOut,
                 handler=_create_note_handler,
-                required_scopes=["bsage:write"],
+                required_permission="bsage.knowledge.write",
             )
         )
         with pytest.raises(ToolScopeDenied):
             await reg.call_tool("create_note", {"title": "T"}, ctx_anon)
 
     @pytest.mark.asyncio
-    async def test_no_required_scopes_allows_anon(self, ctx_anon: ToolContext) -> None:
+    async def test_no_required_permission_allows_anon(self, ctx_anon: ToolContext) -> None:
         reg = ToolRegistry()
         reg.register(
             Tool(
@@ -273,7 +320,7 @@ class TestScopeEnforcement:
         assert result == {"echoed": "hi"}
 
     @pytest.mark.asyncio
-    async def test_service_principal_with_scope_passes(self) -> None:
+    async def test_service_principal_passes_in_permissive_mode(self) -> None:
         reg = ToolRegistry()
         reg.register(
             Tool(
@@ -282,20 +329,45 @@ class TestScopeEnforcement:
                 input_schema=CreateNoteIn,
                 output_schema=CreateNoteOut,
                 handler=_create_note_handler,
-                required_scopes=["bsage:write"],
+                required_permission="bsage.knowledge.write",
             )
         )
         ctx = ToolContext(
-            user=_FakeUser(
-                id="service:bsnexus",
-                scope=["bsage:write"],
-                is_service=True,
-            ),
+            user=_FakeUser(id="service:bsnexus", is_service=True),
             audit_outbox=AsyncMock(),
             state=None,
+            settings=_permissive_settings(),
         )
         result = await reg.call_tool("create_note", {"title": "T"}, ctx)
         assert result["title"] == "T"
+
+    @pytest.mark.asyncio
+    async def test_no_active_tenant_denied_when_openfga_configured(self) -> None:
+        # A principal with no active tenant cannot resolve a ``tenant:<id>``
+        # object — denied once OpenFGA is configured even if fga allows.
+        from bsvibe_authz import PermissionCache
+
+        reg = ToolRegistry()
+        reg.register(
+            Tool(
+                name="create_note",
+                description="x",
+                input_schema=CreateNoteIn,
+                output_schema=CreateNoteOut,
+                handler=_create_note_handler,
+                required_permission="bsage.knowledge.write",
+            )
+        )
+        ctx = ToolContext(
+            user=_FakeUser(id="user-1", active_tenant_id=None),
+            audit_outbox=AsyncMock(),
+            state=None,
+            settings=_enforcing_settings(),
+            fga=_FakeFga(allowed=True),
+            cache=PermissionCache(ttl_s=30),
+        )
+        with pytest.raises(ToolScopeDenied):
+            await reg.call_tool("create_note", {"title": "T"}, ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -317,9 +389,10 @@ class TestAuditEmit:
     async def test_audit_event_emitted_on_success(self) -> None:
         outbox = _RecordingOutbox()
         ctx = ToolContext(
-            user=_FakeUser(id="admin", scope=["bsage:write"]),
+            user=_FakeUser(id="admin"),
             audit_outbox=outbox,
             state=None,
+            settings=_permissive_settings(),
         )
         reg = ToolRegistry()
         reg.register(
@@ -329,7 +402,7 @@ class TestAuditEmit:
                 input_schema=CreateNoteIn,
                 output_schema=CreateNoteOut,
                 handler=_create_note_handler,
-                required_scopes=["bsage:write"],
+                required_permission="bsage.knowledge.write",
                 audit_event="bsage.mcp.create_note.invoked",
             )
         )
@@ -343,9 +416,10 @@ class TestAuditEmit:
     async def test_audit_not_emitted_when_handler_raises(self) -> None:
         outbox = _RecordingOutbox()
         ctx = ToolContext(
-            user=_FakeUser(id="admin", scope=["bsage:write"]),
+            user=_FakeUser(id="admin"),
             audit_outbox=outbox,
             state=None,
+            settings=_permissive_settings(),
         )
 
         async def boom(args: EchoIn, _ctx: ToolContext) -> EchoOut:
@@ -370,9 +444,10 @@ class TestAuditEmit:
     async def test_no_audit_event_when_field_absent(self) -> None:
         outbox = _RecordingOutbox()
         ctx = ToolContext(
-            user=_FakeUser(id="reader", scope=["bsage:read"]),
+            user=_FakeUser(id="reader"),
             audit_outbox=outbox,
             state=None,
+            settings=_permissive_settings(),
         )
         reg = ToolRegistry()
         reg.register(
@@ -396,9 +471,10 @@ class TestAuditEmit:
                 raise RuntimeError("audit down")
 
         ctx = ToolContext(
-            user=_FakeUser(id="admin", scope=["bsage:write"]),
+            user=_FakeUser(id="admin"),
             audit_outbox=BrokenOutbox(),
             state=None,
+            settings=_permissive_settings(),
         )
         reg = ToolRegistry()
         reg.register(
@@ -408,7 +484,7 @@ class TestAuditEmit:
                 input_schema=CreateNoteIn,
                 output_schema=CreateNoteOut,
                 handler=_create_note_handler,
-                required_scopes=["bsage:write"],
+                required_permission="bsage.knowledge.write",
                 audit_event="bsage.mcp.create_note.invoked",
             )
         )

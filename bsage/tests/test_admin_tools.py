@@ -4,9 +4,17 @@ Each ``bsage <subapp>`` Typer sub-app gets a matching ``bsage_<subapp>_<action>`
 first-class :class:`bsage.mcp.api.Tool`. Tests cover:
 
 * the full admin catalog is registered (ListTools includes every name);
-* one CallTool round-trip per sub-app, with a duck-typed bootstrap-style
-  principal (``scope`` carries the REST scope), confirms the handler
-  reaches the same service-layer call the REST route uses.
+* one CallTool round-trip per sub-app, with a duck-typed principal,
+  confirms the handler reaches the same service-layer call the REST
+  route uses.
+
+Tier 5 Phase 3a — admin tools enforce a ``required_permission`` dot
+string via ``bsvibe_authz.check_tenant_permission`` (OpenFGA), not the
+legacy JWT ``scope`` claim. ``check_tenant_permission`` is permissive
+when OpenFGA is unconfigured (``openfga_api_url`` empty), so positive
+round-trips pass against a permissive authz settings; the deny-path
+tests inject a settings carrying ``openfga_api_url`` plus a fake fga
+client returning ``False``.
 
 The tests stay in-process (memory ``mcp-python-sdk-testing``) — no
 subprocesses, no FastAPI app spin-up.
@@ -29,29 +37,54 @@ from bsage.tests.conftest import make_plugin_meta, make_skill_meta
 # Fake principal — duck-typed to bsvibe_authz.User.
 # ---------------------------------------------------------------------------
 class _FakeUser:
-    def __init__(self, *, id: str = "admin", scope: list[str] | None = None) -> None:  # noqa: A002
+    def __init__(
+        self,
+        *,
+        id: str = "admin",  # noqa: A002
+        active_tenant_id: str | None = "tenant-a",
+    ) -> None:
         self.id = id
-        self.scope = scope or []
         self.email = None
         self.is_service = False
-        self.active_tenant_id = None
+        self.is_demo = False
+        self.active_tenant_id = active_tenant_id
+        self.app_metadata: dict[str, object] = {}
+
+
+class _FakeFga:
+    """OpenFGA client stub — returns a fixed allow/deny verdict."""
+
+    def __init__(self, *, allowed: bool) -> None:
+        self._allowed = allowed
+
+    async def check(self, user: str, relation: str, object_: str) -> bool:
+        return self._allowed
+
+    async def write_tuple(self, user: str, relation: str, object_: str) -> None:
+        return None
+
+
+def _permissive_settings() -> SimpleNamespace:
+    """bsvibe_authz.Settings-shaped object with OpenFGA *unconfigured*
+    (``openfga_api_url`` empty) — ``check_tenant_permission`` is then
+    permissive, mirroring the test/dev/current-prod posture."""
+    return SimpleNamespace(openfga_api_url="", permission_cache_ttl_s=30)
+
+
+def _enforcing_settings() -> SimpleNamespace:
+    """bsvibe_authz.Settings-shaped object with OpenFGA *configured* —
+    flips ``check_tenant_permission`` out of permissive mode so the
+    deny path is exercised."""
+    return SimpleNamespace(
+        openfga_api_url="http://openfga.test",
+        permission_cache_ttl_s=30,
+    )
 
 
 def _full_admin_user() -> _FakeUser:
-    """Principal with every scope every admin tool requires."""
-    return _FakeUser(
-        scope=[
-            "bsage:plugins.read",
-            "bsage:plugins.execute",
-            "bsage:plugins.install",
-            "bsage:config.read",
-            "bsage:config.write",
-            "bsage:vault.read",
-            "bsage:canonicalization.read",
-            "bsage:canonicalization.draft",
-            "bsage:canonicalization.apply",
-        ],
-    )
+    """A principal with an active tenant — passes every admin tool when
+    OpenFGA is unconfigured (permissive mode)."""
+    return _FakeUser()
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +186,19 @@ def registry(state: MagicMock) -> ToolRegistry:
 
 @pytest.fixture()
 def ctx(state: MagicMock) -> ToolContext:
-    return ToolContext(user=_full_admin_user(), state=state, settings=state.settings)
+    # Permissive authz settings (OpenFGA unconfigured) → every
+    # ``required_permission`` admin tool is allowed for an authenticated
+    # principal, exercising the handler/service path. The deny-path
+    # tests below build their own enforcing context.
+    from bsvibe_authz import PermissionCache
+
+    return ToolContext(
+        user=_full_admin_user(),
+        state=state,
+        settings=_permissive_settings(),
+        fga=_FakeFga(allowed=True),
+        cache=PermissionCache(ttl_s=30),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -330,20 +375,31 @@ class TestCallToolPerSubApp:
 
 
 # ---------------------------------------------------------------------------
-# Scope enforcement — admin tools require the same scope as the REST route.
+# Permission enforcement — Tier 5: admin tools run the same OpenFGA
+# ``check_tenant_permission`` the REST routes' ``require_permission`` does.
 # ---------------------------------------------------------------------------
-class TestScopeEnforcement:
+class TestPermissionEnforcement:
+    def _denying_ctx(self, state: MagicMock) -> ToolContext:
+        """Context whose OpenFGA check always denies — settings carry an
+        ``openfga_api_url`` (out of permissive mode) and the fake fga
+        returns ``False`` for every ``check``."""
+        from bsvibe_authz import PermissionCache
+
+        return ToolContext(
+            user=_FakeUser(),
+            state=state,
+            settings=_enforcing_settings(),
+            fga=_FakeFga(allowed=False),
+            cache=PermissionCache(ttl_s=30),
+        )
+
     @pytest.mark.asyncio
-    async def test_settings_set_requires_config_write(
+    async def test_settings_set_denied_when_openfga_denies(
         self,
         registry: ToolRegistry,
         state: MagicMock,
     ) -> None:
-        ctx = ToolContext(
-            user=_FakeUser(scope=["bsage:config.read"]),  # missing config.write
-            state=state,
-            settings=state.settings,
-        )
+        ctx = self._denying_ctx(state)
         with pytest.raises(ToolScopeDenied):
             await registry.call_tool(
                 "bsage_settings_set",
@@ -352,20 +408,61 @@ class TestScopeEnforcement:
             )
 
     @pytest.mark.asyncio
-    async def test_canon_apply_requires_canon_apply_scope(
+    async def test_canon_apply_denied_when_openfga_denies(
         self,
         registry: ToolRegistry,
         state: MagicMock,
     ) -> None:
+        ctx = self._denying_ctx(state)
+        with pytest.raises(ToolScopeDenied):
+            await registry.call_tool(
+                "bsage_canon_apply",
+                {"action_path": "actions/x.md", "mode": "apply"},
+                ctx,
+            )
+
+    @pytest.mark.asyncio
+    async def test_anonymous_principal_denied_on_permissioned_tool(
+        self,
+        registry: ToolRegistry,
+        state: MagicMock,
+    ) -> None:
+        # No principal at all → permissioned tool denies before the
+        # OpenFGA call (cannot resolve a user).
         ctx = ToolContext(
-            user=_FakeUser(scope=["bsage:canonicalization.read"]),
+            user=None,
             state=state,
-            settings=state.settings,
+            settings=_permissive_settings(),
         )
         with pytest.raises(ToolScopeDenied):
             await registry.call_tool(
                 "bsage_canon_apply",
                 {"action_path": "actions/x.md", "mode": "apply"},
+                ctx,
+            )
+
+    @pytest.mark.asyncio
+    async def test_no_active_tenant_denied_when_openfga_configured(
+        self,
+        registry: ToolRegistry,
+        state: MagicMock,
+    ) -> None:
+        # A principal with no active tenant cannot resolve a
+        # ``tenant:<id>`` object — ``check_tenant_permission`` returns
+        # False once OpenFGA is configured.
+        from bsvibe_authz import PermissionCache
+
+        ctx = ToolContext(
+            user=_FakeUser(active_tenant_id=None),
+            state=state,
+            settings=_enforcing_settings(),
+            fga=_FakeFga(allowed=True),
+            cache=PermissionCache(ttl_s=30),
+        )
+        with pytest.raises(ToolScopeDenied):
+            await registry.call_tool(
+                "bsage_settings_set",
+                {"key": "safe_mode", "value": True},
                 ctx,
             )
 
