@@ -40,7 +40,6 @@ from bsvibe_authz import (
     get_settings_dep,
 )
 from bsvibe_authz.cache import IntrospectionCache
-from bsvibe_authz.deps import _scope_grants
 from bsvibe_authz.settings import Settings as AuthzSettings
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.testclient import TestClient
@@ -133,7 +132,18 @@ def app_factory(mock_state: MagicMock) -> Callable[..., FastAPI]:
         app.include_router(create_mcp_routes(mock_state))
 
         # Scope-protected smoke endpoint — re-uses combined_principal so
-        # introspection-resolved scopes flow through unchanged.
+        # introspection-resolved scopes flow through unchanged. The scope
+        # check is inlined here (bsvibe-authz 2.0.0 dropped the legacy
+        # ``_scope_grants`` / ``require_scope`` path); this route is purely
+        # test scaffolding to assert introspection scope propagation.
+        def _scope_grants(user_scopes: list[str], required: str) -> bool:
+            for granted in user_scopes:
+                if granted == required:
+                    return True
+                if granted.endswith(":*") and required.startswith(granted[:-1]):
+                    return True
+            return False
+
         async def _require_invoke_scope(
             user: User = Depends(mock_state.get_current_user),
         ) -> None:
