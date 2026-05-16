@@ -25,6 +25,12 @@ const AUTH_URL =
 const LS_ACCESS_TOKEN = "bsage_access_token";
 const LS_REFRESH_TOKEN = "bsage_refresh_token";
 const LS_EXPIRES_AT = "bsage_expires_at";
+// Tier 3.2: the wrapped session JWT was collapsed to the raw Supabase JWT,
+// which carries no tenant claim. Product backends now resolve the active
+// tenant from the `X-Active-Tenant` request header. The frontend reads the
+// active tenant id from the `/api/session` response body and persists it so
+// the API client can stamp the header onto every call.
+const LS_ACTIVE_TENANT = "bsage_active_tenant";
 
 interface SessionTenant {
   id: string;
@@ -41,6 +47,10 @@ interface SessionResponse {
 }
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
+// Tier 3.2: module-level cache of the active tenant id, populated from the
+// `/api/session` response. Mirrors `cachedToken` so the API client can read
+// it synchronously after the first probe without re-hitting the auth server.
+let cachedActiveTenant: string | null = null;
 interface AccessTokenOptions {
   probeRemoteSession?: boolean;
 }
@@ -78,6 +88,22 @@ function clearLocalStorageTokens(): void {
   localStorage.removeItem(LS_ACCESS_TOKEN);
   localStorage.removeItem(LS_REFRESH_TOKEN);
   localStorage.removeItem(LS_EXPIRES_AT);
+  localStorage.removeItem(LS_ACTIVE_TENANT);
+}
+
+/**
+ * Tier 3.2: cache + persist the active tenant id resolved from `/api/session`.
+ * Cleared by `clearTokenCache()` alongside the access token so a logout /
+ * session expiry drops the tenant context too.
+ */
+function rememberActiveTenant(tenantId: string | null | undefined): void {
+  if (!tenantId) return;
+  cachedActiveTenant = tenantId;
+  try {
+    localStorage.setItem(LS_ACTIVE_TENANT, tenantId);
+  } catch {
+    /* noop — localStorage may be unavailable (private mode / SSR) */
+  }
 }
 
 export async function getAccessToken({
@@ -111,6 +137,10 @@ export async function getAccessToken({
         value: data.access_token,
         expiresAt: Date.now() + data.expires_in * 1000,
       };
+      // Tier 3.2: the raw Supabase JWT no longer carries a tenant claim, so
+      // capture the active tenant id from the session body for the
+      // `X-Active-Tenant` header.
+      rememberActiveTenant(data.active_tenant_id);
       // Persist so a reload doesn't require another cookie round-trip
       // (and so sibling tabs can reuse the token).
       saveTokenToLocalStorage(data.access_token, data.refresh_token, data.expires_in);
@@ -127,7 +157,38 @@ export async function getAccessToken({
 export function clearTokenCache() {
   cachedToken = null;
   inFlightSession = null;
+  cachedActiveTenant = null;
   clearLocalStorageTokens();
+}
+
+/**
+ * Tier 3.2: resolve the active tenant id for the `X-Active-Tenant` header.
+ *
+ * Resolution order:
+ *   1. module cache (populated by a prior `/api/session` probe)
+ *   2. localStorage (survives reloads / sibling tabs)
+ *   3. a fresh `/api/session` probe — only reached when the API client runs
+ *      before `useAuth`'s session fetch has landed
+ *   4. null — no tenant context yet (backend falls back to its own default)
+ */
+export async function getActiveTenantId(): Promise<string | null> {
+  if (cachedActiveTenant) return cachedActiveTenant;
+
+  try {
+    const stored = localStorage.getItem(LS_ACTIVE_TENANT);
+    if (stored) {
+      cachedActiveTenant = stored;
+      return stored;
+    }
+  } catch {
+    /* noop — localStorage may be unavailable */
+  }
+
+  // Last resort: probe the auth server. `getAccessToken()` performs the
+  // `/api/session` fetch and `rememberActiveTenant()` populates the cache as
+  // a side effect, so re-read the cache afterwards.
+  await getAccessToken();
+  return cachedActiveTenant;
 }
 
 /**
@@ -223,6 +284,10 @@ export function useAuth({
             activeTenantId = data.active_tenant_id ?? tenantId;
             tenantName =
               tenantList.find((t) => t.id === activeTenantId)?.name ?? null;
+            // Tier 3.2: keep the module cache in sync with the hook's own
+            // session probe so the API client's `X-Active-Tenant` header is
+            // populated even if this fetch lands before `getAccessToken()`'s.
+            rememberActiveTenant(activeTenantId);
           }
         } catch {
           // ignore
