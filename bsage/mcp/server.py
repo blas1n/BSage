@@ -144,6 +144,26 @@ def _canon_mutation_enabled(state: Any) -> bool:
 # ---------------------------------------------------------------------------
 # Dispatch helpers — first-class registry, then plugin bridge fallback.
 # ---------------------------------------------------------------------------
+def _authz_context() -> tuple[Any, Any, Any]:
+    """Resolve ``(authz_settings, fga, cache)`` for the MCP tool dispatcher.
+
+    Tier 5 Phase 3a — the dispatcher's ``required_permission`` check runs
+    through ``bsvibe_authz.check_tenant_permission``, which needs the
+    ``bsvibe_authz.Settings`` (``openfga_api_url`` decides permissive
+    mode), the OpenFGA client, and the permission cache. We resolve the
+    process-wide singletons the REST ``require_permission`` dependency
+    uses so MCP and REST share one OpenFGA client + one 30s cache.
+    """
+    from bsvibe_authz import get_openfga_client, get_permission_cache, get_settings
+
+    authz_settings = get_settings()
+    return (
+        authz_settings,
+        get_openfga_client(authz_settings),
+        get_permission_cache(authz_settings),
+    )
+
+
 async def _dispatch_via_registry(
     state: Any,
     registry: ToolRegistry,
@@ -151,9 +171,21 @@ async def _dispatch_via_registry(
     arguments: dict[str, Any],
 ) -> Any:
     if name in registry:
+        authz_settings, fga, cache = _authz_context()
+        # NOTE: the SSE / stdio transports authenticate the *connection*
+        # (sse.py::_resolve_principal) but do not yet thread the resolved
+        # principal into per-call ToolContext — so ``ctx.user`` is None
+        # here. Tools with a ``required_permission`` therefore deny over
+        # these transports (a permissioned tool needs a principal); tools
+        # with ``required_permission=None`` (every domain read tool) are
+        # unaffected. Threading the per-connection principal is a
+        # transport concern tracked separately from this Tier 5 migration.
         ctx = ToolContext(
             state=state,
-            settings=getattr(state, "settings", None),
+            user=getattr(state, "mcp_principal", None),
+            settings=authz_settings,
+            fga=fga,
+            cache=cache,
             audit_outbox=getattr(state, "audit_outbox", None),
         )
         try:

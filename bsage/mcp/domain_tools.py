@@ -10,12 +10,14 @@ existing transport-agnostic service layer in
 :mod:`bsage.gateway.mcp_tools`; CLI / REST / MCP all share the same
 service implementations.
 
-``required_scopes`` is empty for every static tool: the gateway already
-authenticates the SSE / stdio connection before a single tool runs (see
-``bsage/mcp/sse.py::_resolve_principal``), and the existing contract is
+``required_permission`` is ``None`` for every static tool: the gateway
+already authenticates the SSE / stdio connection before a single tool
+runs (see ``bsage/mcp/sse.py::_resolve_principal``), and the contract is
 "any authenticated principal may call any read tool."  ``create_note``
 adds an ``audit_event`` because it's the one mutating tool in this
-catalog.
+catalog. (Tier 5 Phase 3a renamed the legacy ``required_scopes`` list to
+the OpenFGA-backed ``required_permission`` dot string — see
+:mod:`bsage.mcp.api`.)
 """
 
 from __future__ import annotations

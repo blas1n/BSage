@@ -79,8 +79,9 @@ def _make_state(tmp_path: Path, *, registry: dict | None = None) -> MagicMock:
     ontology.get_entity_types.return_value = {}
     state.ontology = ontology
 
-    # /api/notify is now require_admin-gated — return a proper admin User so
-    # the validation / error tests reach the handler.
+    # /api/notify is require_permission-gated (Tier 5 — notify.write maps
+    # to member). Return a real User so the validation / error tests reach
+    # the handler; an admin role still passes the member-level check.
     from bsvibe_authz import User
 
     async def _mock_get_current_user() -> User:

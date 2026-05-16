@@ -8,7 +8,8 @@ Subcommands:
   script). ``http`` runs ``uvicorn.run(create_app(...))`` so the SSE
   transport mounted at ``/mcp/sse`` shares the gateway lifespan.
 * ``list-tools`` — build the in-process :class:`ToolRegistry` and emit
-  the catalog (name + description + scopes) via :class:`OutputFormatter`.
+  the catalog (name + description + required_permission) via
+  :class:`OutputFormatter`.
   No HTTP, no auth — runs against a freshly-initialised AppState so
   the catalog is identical to what the live server would advertise.
 
@@ -160,7 +161,7 @@ def list_tools_cmd(ctx: typer.Context) -> None:
             {
                 "name": tool.name,
                 "description": tool.description,
-                "required_scopes": list(spec.required_scopes) if spec else [],
+                "required_permission": (spec.required_permission if spec else None),
                 "audit_event": (spec.audit_event if spec else None),
             }
         )
@@ -175,7 +176,7 @@ def list_tools_cmd(ctx: typer.Context) -> None:
             {
                 "name": pt["name"],
                 "description": pt.get("description", ""),
-                "required_scopes": [],
+                "required_permission": None,
                 "audit_event": None,
             }
         )

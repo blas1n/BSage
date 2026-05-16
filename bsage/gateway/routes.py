@@ -246,13 +246,23 @@ def create_routes(state: AppState) -> APIRouter:
     ``tenant_id`` onto written notes pull the principal via
     ``Depends(state.get_current_user)`` directly.
 
-    Permission enforcement is layered on top via the shared library deps:
-    read routes use ``require_permission`` (permissive — passes any
-    authenticated caller while ``settings.openfga_api_url`` is empty, enforces
-    OpenFGA ``check`` once it is set); write / execute / draft routes use
-    ``require_admin`` (role-gated: ``owner``/``admin`` JWT roles, demo
-    sessions, and ``aud=bsage`` service principals pass — the latter keeps
-    the BSNexus service-to-service write path open).
+    Permission enforcement is layered on top via the shared library deps.
+    Tier 5 unifies the gates onto the per-resource OpenFGA permission
+    matrix:
+
+    - read routes use ``require_permission`` (permissive — passes any
+      authenticated caller while ``settings.openfga_api_url`` is empty,
+      enforces the OpenFGA ``check`` once it is set — viewer role).
+    - write / execute routes (``knowledge.write``, ``vault.write``,
+      ``plugins.execute``, ``chat.write``, ``decisions.write``,
+      ``notify.write``) ALSO use ``require_permission``. The matrix
+      deliberately maps these to the ``member`` role — a non-admin member
+      can now write. The minimum role lives in the OpenFGA model, not the
+      route code.
+    - admin-surface routes (``config.read`` / ``config.write``) stay on
+      ``require_admin`` (role-gated: ``owner``/``admin`` JWT roles, demo
+      sessions, and ``aud=bsage`` service principals pass — the latter
+      keeps the BSNexus service-to-service write path open).
     """
     public = APIRouter(prefix="/api")
     protected = APIRouter(
@@ -270,15 +280,18 @@ def create_routes(state: AppState) -> APIRouter:
     # the permission check too.
     _principal = state.get_current_user
     knowledge_read = require_permission("bsage.knowledge.read", principal_dep=_principal)
-    knowledge_write = require_admin(principal_dep=_principal)
-    decisions_write = require_admin(principal_dep=_principal)
+    knowledge_write = require_permission("bsage.knowledge.write", principal_dep=_principal)
+    decisions_write = require_permission("bsage.decisions.write", principal_dep=_principal)
     vault_read = require_permission("bsage.vault.read", principal_dep=_principal)
-    notify_write = require_admin(principal_dep=_principal)
+    notify_write = require_permission("bsage.notify.write", principal_dep=_principal)
     config_read = require_permission("bsage.config.read", principal_dep=_principal)
+    # config_* stays role-gated — the matrix maps config.read/write -> admin
+    # (admin-surface), and require_admin enforces the role claim directly
+    # without an OpenFGA dependency.
     config_write = require_admin(principal_dep=_principal)
     plugins_read = require_permission("bsage.plugins.read", principal_dep=_principal)
-    plugins_execute = require_admin(principal_dep=_principal)
-    chat_write = require_admin(principal_dep=_principal)
+    plugins_execute = require_permission("bsage.plugins.execute", principal_dep=_principal)
+    chat_write = require_permission("bsage.chat.write", principal_dep=_principal)
 
     async def _tenant_graph_snapshot(tenant_id: str | None) -> Any:
         graph = await state.graph_store.to_networkx_snapshot()

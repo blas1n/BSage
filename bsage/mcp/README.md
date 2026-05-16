@@ -1,10 +1,17 @@
 # `bsage.mcp` — Model Context Protocol API surface
 
 BSage treats MCP as a **first-class API surface** alongside REST. Every
-MCP tool ships with typed Pydantic input/output schemas, explicit
-required scopes, and an optional audit event — mirroring how a FastAPI
-route is defined. CLI, REST, and MCP all delegate to the same
-service-layer functions; no surface is a wrapper around another.
+MCP tool ships with typed Pydantic input/output schemas, an optional
+OpenFGA-backed `required_permission`, and an optional audit event —
+mirroring how a FastAPI route is defined. CLI, REST, and MCP all
+delegate to the same service-layer functions; no surface is a wrapper
+around another.
+
+> **Tier 5 Phase 3a** — MCP tool authorization was migrated from JWT
+> `scope`-claim checks to OpenFGA. A tool's `required_permission` is a
+> `<product>.<resource>.<action>` dot string run through
+> `bsvibe_authz.check_tenant_permission` — the *same* OpenFGA model the
+> REST routes' `require_permission` dependency enforces.
 
 This document covers:
 
@@ -28,7 +35,7 @@ class Tool:
     input_schema: type[pydantic.BaseModel]      # drives ListTools' JSON Schema
     output_schema: type[pydantic.BaseModel]     # validates handler return
     handler: Callable[[BaseModel, ToolContext], Awaitable[BaseModel | dict]]
-    required_scopes: list[str] = []             # checked vs. principal
+    required_permission: str | None = None      # OpenFGA dot string
     audit_event: str | None = None              # emitted on success
 ```
 
@@ -36,8 +43,13 @@ class Tool:
 
 1. Validate `arguments` against `input_schema` (`ValidationError` →
    `ToolError`, wire-safe).
-2. Enforce every entry in `required_scopes` against
-   `ctx.user.scopes` — missing scope raises `ToolScopeDenied`.
+2. Enforce `required_permission` via
+   `bsvibe_authz.check_tenant_permission(ctx.user, permission, fga=...,
+   cache=..., settings=...)` — the same OpenFGA check `require_permission`
+   runs. Deny raises `ToolScopeDenied`. Permissive (allow) for demo
+   sessions and when OpenFGA is unconfigured; an anonymous caller is
+   denied on any permissioned tool. `required_permission=None` means the
+   tool is open to any authenticated principal.
 3. Run `handler(input_model, ctx)`.
 4. Validate the return value against `output_schema` (handlers may
    return either a model instance or a dict; `model_config =
@@ -58,11 +70,19 @@ reaches the wire.
 @dataclass
 class ToolContext:
     state: Any                       # AppState (DB, vault, services)
-    settings: Settings | None = None
+    settings: Any | None = None      # bsvibe_authz.Settings
     user: Any | None = None          # bsvibe-authz principal
+    fga: Any | None = None           # OpenFGA client (lazy-resolved if None)
+    cache: Any | None = None         # PermissionCache (lazy-resolved if None)
     audit_outbox: AuditOutboxLike | None = None
     request_id: str | None = None
 ```
+
+`fga` / `cache` / `settings` back the Tier 5 permission check. When the
+caller leaves them `None` the dispatcher lazily resolves the
+process-wide `bsvibe_authz` singletons — the same OpenFGA client and
+30s permission cache the REST `require_permission` dependency uses, so
+REST and MCP share one client per process.
 
 Handlers should call the same service-layer function the REST route
 calls — never the Typer command function and never an HTTP client
@@ -78,9 +98,11 @@ back to ourselves.
    OutputModel` that calls the service layer (e.g.
    `ctx.state.canon_service.apply(...)`). **Do not** call the CLI or
    HTTP — direct service call only.
-3. Match `required_scopes` to whatever the equivalent REST route
-   enforces (e.g. `bsage.config.write` for settings mutations,
-   `bsage:knowledge:read` for query tools).
+3. Match `required_permission` to whatever the equivalent REST route
+   enforces (e.g. `bsage.config.write` for settings mutations). Every
+   value MUST be a row in the bsvibe-authz permission matrix
+   (`packages/bsvibe-authz/schema/permission_matrix.yaml`, `bsage:`
+   block). Leave it `None` for tools open to any authenticated caller.
 4. For mutating tools, set `audit_event="bsage.mcp.<area>.<verb>.invoked"`
    to mirror the REST audit event.
 5. Register the tool in the appropriate module's `register_*` helper:
@@ -101,8 +123,8 @@ Per project rules and `python-security.md`: never log argument
 **values** for tools whose payloads might carry secrets (settings
 writes, credentials). The dispatcher logs only field names and
 `error_type`. `bsage_settings_set` validates the `key` against
-`ConfigUpdate.model_fields` via `field_validator` before scope or
-runtime is touched, so typo'd keys raise `ToolError` and the
+`ConfigUpdate.model_fields` via `field_validator` before the permission
+check or runtime is touched, so typo'd keys raise `ToolError` and the
 sensitive value never lands in logs.
 
 ---
@@ -140,19 +162,22 @@ action.approved, action.rejected}`.
 ### Admin (13 tools — `bsage/mcp/admin_tools.py`)
 One per CLI sub-app action. Direct service-layer calls, never CLI/HTTP.
 
-| Tool | Required scope | Audit |
+All `required_permission` values are rows in the bsvibe-authz
+permission matrix (`bsage:` block).
+
+| Tool | `required_permission` | Audit |
 |---|---|---|
-| `bsage_skills_list` | `bsage.skills.read` | — |
-| `bsage_skills_run` | `bsage.skills.write` | `bsage.mcp.skills_run.invoked` |
+| `bsage_skills_list` | `bsage.plugins.read` | — |
+| `bsage_skills_run` | `bsage.plugins.execute` | `bsage.mcp.skills_run.invoked` |
 | `bsage_plugins_list` | `bsage.plugins.read` | — |
-| `bsage_plugins_install` | `bsage.plugins.write` | `bsage.mcp.plugins_install.invoked` |
-| `bsage_plugins_enable` | `bsage.plugins.write` | `bsage.mcp.plugins_enable.invoked` |
-| `bsage_plugins_disable` | `bsage.plugins.write` | `bsage.mcp.plugins_disable.invoked` |
-| `bsage_garden_list` | `bsage.garden.read` | — |
-| `bsage_canon_list` | `bsage.canon.read` | — |
-| `bsage_canon_status` | `bsage.canon.read` | — |
-| `bsage_canon_draft` | `bsage.canon.write` | `bsage.mcp.canon_draft.invoked` |
-| `bsage_canon_apply` | `bsage.canon.write` | `bsage.mcp.canon_apply.invoked` |
+| `bsage_plugins_install` | `bsage.plugins.install` | `bsage.mcp.plugins_install.invoked` |
+| `bsage_plugins_enable` | `bsage.config.write` | `bsage.mcp.plugins_enable.invoked` |
+| `bsage_plugins_disable` | `bsage.config.write` | `bsage.mcp.plugins_disable.invoked` |
+| `bsage_garden_list` | `bsage.vault.read` | — |
+| `bsage_canon_list` | `bsage.canonicalization.read` | — |
+| `bsage_canon_status` | `bsage.canonicalization.read` | — |
+| `bsage_canon_draft` | `bsage.canonicalization.draft` | `bsage.mcp.canon_draft.invoked` |
+| `bsage_canon_apply` | `bsage.canonicalization.apply` | `bsage.mcp.canon_apply.invoked` |
 | `bsage_settings_get` | `bsage.config.read` | — |
 | `bsage_settings_set` | `bsage.config.write` | `bsage.mcp.settings_set.invoked` |
 
@@ -224,10 +249,20 @@ also accepts `?token=<bearer>` and injects it as a `Bearer` header
 before delegating to the same dispatcher. Documented under memory
 `eventsource-sse-auth-trap`.
 
-`required_scopes` enforcement happens **per tool** inside
-`ToolRegistry.call_tool`, identical to how `require_scope` guards a
-REST route. Connection-time auth is necessary but not sufficient —
-each mutating tool re-checks scopes against the resolved principal.
+`required_permission` enforcement happens **per tool** inside
+`ToolRegistry.call_tool`, running the same OpenFGA
+`check_tenant_permission` the REST `require_permission` dependency
+uses. Connection-time auth is necessary but not sufficient — each
+permissioned tool re-checks the resolved principal against the OpenFGA
+model.
+
+> **Known gap (out of Tier 5 Phase 3a scope):** the `stdio` / SSE
+> transports authenticate the *connection* but do not yet thread the
+> resolved principal into the per-call `ToolContext`, so `ctx.user` is
+> `None` on those transports today. Tools with `required_permission`
+> therefore deny over `stdio`/SSE until per-connection principal
+> threading lands; `required_permission=None` tools (all domain read
+> tools) are unaffected.
 
 ---
 

@@ -5,14 +5,18 @@ the core ``CanonicalizationService`` so REST and MCP share the same
 typed-action contract.
 
 Authz uses the shared ``bsvibe_authz`` library deps, mapping the four
-canonicalization permission surfaces from Handoff §16:
+canonicalization permission surfaces from Handoff §16. Tier 5 aligns these
+with the per-resource OpenFGA permission matrix — ``draft`` is a
+member-level mutation, ``apply`` stays admin-only:
 
 - ``bsage.canonicalization.read``    — list/get notes, list policies
-  → ``require_permission`` (permissive for authenticated callers).
+  → ``require_permission`` (permissive for authenticated callers; OpenFGA
+    ``check`` enforced once ``openfga_api_url`` is set — viewer role).
 - ``bsage.canonicalization.draft``   — propose, draft, validate, score
-  → ``require_admin`` (role-gated; service principals pass).
+  → ``require_permission`` (Tier 5 — matrix maps draft -> member; the
+    OpenFGA model enforces the minimum role).
 - ``bsage.canonicalization.apply``   — apply, approve, reject, expire
-  → ``require_admin``.
+  → ``require_admin`` (admin-surface; matrix maps apply -> admin).
 - ``bsage.canonicalization.govern``  — create-decision, update-policy
   → ``require_admin`` (reserved for future endpoints).
 """
@@ -153,9 +157,15 @@ def create_canonicalization_router(state: AppState) -> APIRouter:
     """Build the /api/canonicalization router bound to ``state``."""
     _principal = state.get_current_user
     canon_read = require_permission("bsage.canonicalization.read", principal_dep=_principal)
-    # draft / apply are mutations — role-gated via require_admin; an
-    # ``aud=bsage`` service principal still passes.
-    canon_draft = require_admin(principal_dep=_principal)
+    # draft is a member-level mutation (Tier 5 — the permission matrix maps
+    # ``canonicalization.draft`` -> member). It routes through
+    # ``require_permission`` so the OpenFGA model is the source of truth for
+    # the minimum role.
+    canon_draft = require_permission("bsage.canonicalization.draft", principal_dep=_principal)
+    # apply stays role-gated via require_admin — ``canonicalization.apply``
+    # maps to admin (admin-surface), enforced directly off the JWT role
+    # claim with no OpenFGA dependency. An ``aud=bsage`` service principal
+    # still passes.
     canon_apply = require_admin(principal_dep=_principal)
     # canon_govern is reserved for future endpoints (CreateDecision /
     # UpdatePolicy mutations exposed over REST). Wire when those land.

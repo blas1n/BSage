@@ -7,9 +7,10 @@ Migrated to the shared ``bsvibe_authz`` library deps:
 - read routes (``/api/knowledge/search``) use ``require_permission`` —
   permissive: any authenticated caller passes while ``openfga_api_url`` is
   empty.
-- write routes (``/api/knowledge/entries``, ``/decisions``, ``/api/notify``)
-  use ``require_admin`` — only ``owner``/``admin`` JWT roles and service
-  principals pass; a plain authenticated user 403s.
+- Tier 5: write routes (``/api/knowledge/entries``, ``/decisions``,
+  ``/api/notify``) ALSO use ``require_permission``. The permission matrix
+  maps them to the ``member`` role — a plain (non-admin) member passes
+  while OpenFGA is undeployed, model-enforced once it is set.
 
 The legacy ``X-Service-Key`` header path is gone — service-to-service auth
 now rides on an ``aud=bsage`` service JWT resolved by ``combined_principal``.
@@ -243,27 +244,31 @@ class TestReadRoutesPermissive:
         assert resp.status_code == 200, resp.text
 
 
-class TestWriteRoutesRequireAdmin:
-    """Write routes use require_admin — plain users 403, admins + service
-    principals pass."""
+class TestWriteRoutesMemberWritable:
+    """Tier 5 — write routes use require_permission and the permission
+    matrix maps them to the ``member`` role. A plain (non-admin) member
+    passes while OpenFGA is undeployed; admins + service principals also
+    pass."""
 
-    def test_plain_user_denied_notify(self, state):
+    def test_plain_user_allowed_notify(self, state):
+        # Pre-Tier-5 this 403'd (require_admin). notify.write -> member.
         client = TestClient(_app_for(state, _plain_user()))
         resp = client.post(
             "/api/notify",
             json={"message": "test"},
             headers={"Authorization": "Bearer fake-user-token"},
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 200, resp.text
 
-    def test_plain_user_denied_create_entry(self, state):
+    def test_plain_user_allowed_create_entry(self, state):
+        # Pre-Tier-5 this 403'd (require_admin). knowledge.write -> member.
         client = TestClient(_app_for(state, _plain_user()))
         resp = client.post(
             "/api/knowledge/entries",
             json={"title": "Test", "content": "Content"},
             headers={"Authorization": "Bearer fake-user-token"},
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 201, resp.text
 
     def test_admin_user_can_notify(self, state):
         client = TestClient(_app_for(state, _admin_user()))
@@ -301,7 +306,8 @@ class TestWriteRoutesRequireAdmin:
 
 class TestServicePrincipalAccess:
     """An aud=bsage service principal (BSNexus → BSage) reaches both read and
-    write routes — require_admin lets verified service callers through."""
+    write routes — a verified service principal passes both
+    ``require_permission`` (permissive) and ``require_admin``."""
 
     def test_service_can_search(self, state):
         client = TestClient(_app_for(state, _service_user()))
