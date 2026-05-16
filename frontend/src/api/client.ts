@@ -1,6 +1,11 @@
 import { createApiFetch, setOnAuthError } from "@bsvibe/api";
+import { isDemoMode } from "@bsvibe/demo";
 
-import { clearTokenCache, getAccessToken } from "../hooks/useAuth";
+import {
+  clearTokenCache,
+  getAccessToken,
+  getActiveTenantId,
+} from "../hooks/useAuth";
 import type {
   ChatRequest,
   ChatResponse,
@@ -59,6 +64,17 @@ setOnAuthError(() => {
   }
 });
 
+// Tier 3.2: the wrapped session JWT was collapsed to the raw Supabase JWT,
+// which carries no tenant claim. Product backends now resolve the active
+// tenant from the `X-Active-Tenant` request header, so every call must carry
+// it. The header is skipped in demo mode — the demo is single-tenant and
+// cookie-authenticated, and the auth server rejects the demo origin.
+async function activeTenantHeader(): Promise<Record<string, string>> {
+  if (isDemoMode()) return {};
+  const activeTenant = await getActiveTenantId();
+  return activeTenant ? { "X-Active-Tenant": activeTenant } : {};
+}
+
 async function request<T>(
   path: string,
   init?: RequestInit & { timeoutMs?: number },
@@ -70,7 +86,16 @@ async function request<T>(
   const body = init?.body;
   const opts = init?.timeoutMs !== undefined ? { timeoutMs: init.timeoutMs } : undefined;
 
-  return apiClient.request<T>(path, { method, headers, body }, opts);
+  // Tier 3.2: stamp `X-Active-Tenant` alongside the Authorization header the
+  // shared client injects. `request()` is the single chokepoint for every
+  // `api.*` call, so adding it here covers the whole surface.
+  const tenantHeader = await activeTenantHeader();
+
+  return apiClient.request<T>(
+    path,
+    { method, headers: { ...headers, ...tenantHeader }, body },
+    opts,
+  );
 }
 
 export const api = {
@@ -120,9 +145,15 @@ export const api = {
     // ``Bearer [object Promise]`` and the backend bounces it as
     // "Not enough segments". Surfaced during PR #44 QA.
     const token = await getAccessToken();
+    // Tier 3.2: this upload uses a bespoke fetch (FormData body bypasses the
+    // shared client), so stamp the `X-Active-Tenant` header here too.
+    const tenantHeader = await activeTenantHeader();
     const resp = await fetch(`${BASE}/uploads`, {
       method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...tenantHeader,
+      },
       body: form,
     });
     if (!resp.ok) {
