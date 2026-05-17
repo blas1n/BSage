@@ -7,7 +7,8 @@
     "importsExports": "Imports & Exports",
     "settings": "Settings",
     "newSession": "New Session",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "canonicalization": "Canon queue"
   },
   "common": {
     "loading": "Loading...",
@@ -18,7 +19,7 @@
     "search": "Search"
   },
   "header": {
-    "pendingApprovals": "{{count}} pending",
+    "pendingApprovals": "{count} pending",
     "help": "Help",
     "language": "Language"
   },
@@ -58,8 +59,7 @@
     "newSession": "New session",
     "noSessions": "No sessions yet",
     "noSessionsHint": "Start a conversation to create one",
-    "messageCount_one": "{{count}} message",
-    "messageCount_other": "{{count}} messages"
+    "messageCount": "{count, plural, one {{count} message} other {{count} messages}}"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -76,9 +76,9 @@
     "systemStatus": "System Status",
     "websocket": "WebSocket",
     "pluginStatus": "Plugin Status",
-    "running": "{{count}} running",
-    "stopped": "{{count}} stopped",
-    "errors": "{{count}} errors"
+    "running": "{count} running",
+    "stopped": "{count} stopped",
+    "errors": "{count} errors"
   },
   "plugins": {
     "title": "Plugins",
@@ -98,7 +98,7 @@
     "running": "Running...",
     "triggerType": "Trigger Type",
     "schedule": "Schedule",
-    "toggleAria": "Toggle {{name}}"
+    "toggleAria": "Toggle {name}"
   },
   "vault": {
     "title": "Vault Explorer",
@@ -114,13 +114,13 @@
     "selectFile": "Select a file to view its contents",
     "createSeed": "Create Seed",
     "metadataYaml": "Metadata (YAML)",
-    "fields": "{{count}} fields",
-    "relatedNodes": "{{count}} Nodes",
+    "fields": "{count} fields",
+    "relatedNodes": "{count} Nodes",
     "related": "Related",
     "tags": "Tags",
     "searching": "Searching...",
     "noResults": "No results",
-    "backlinks": "Backlinks ({{count}})"
+    "backlinks": "Backlinks ({count})"
   },
   "graph": {
     "searchPlaceholder": "Explore network...",
@@ -176,9 +176,9 @@
     "progress": {
       "compiling": "Compiling import…",
       "done": "Import complete",
-      "chunks": "{{done}} / {{total}} chunks",
-      "notes": "{{count}} notes",
-      "failed": "{{count}} failed"
+      "chunks": "{done} / {total} chunks",
+      "notes": "{count} notes",
+      "failed": "{count} failed"
     }
   },
   "actions": {

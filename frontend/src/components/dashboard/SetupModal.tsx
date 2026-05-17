@@ -1,6 +1,6 @@
 import { KeyRound, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 import { api } from "../../api/client";
 import type { CredentialField } from "../../api/types";
 
@@ -11,7 +11,7 @@ interface SetupModalProps {
 }
 
 export function SetupModal({ entryName, onClose, onSuccess }: SetupModalProps) {
-  const { t } = useTranslation();
+  const t = useT("sage");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [fields, setFields] = useState<CredentialField[]>([]);

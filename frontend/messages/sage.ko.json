@@ -7,7 +7,8 @@
     "importsExports": "가져오기 / 내보내기",
     "settings": "설정",
     "newSession": "새 세션",
-    "signOut": "로그아웃"
+    "signOut": "로그아웃",
+    "canonicalization": "정규화 큐"
   },
   "common": {
     "loading": "로딩 중...",
@@ -18,7 +19,7 @@
     "search": "검색"
   },
   "header": {
-    "pendingApprovals": "{{count}}건 대기 중",
+    "pendingApprovals": "{count}건 대기 중",
     "help": "도움말",
     "language": "언어"
   },
@@ -58,8 +59,7 @@
     "newSession": "새 세션",
     "noSessions": "아직 세션이 없습니다",
     "noSessionsHint": "대화를 시작해 세션을 만드세요",
-    "messageCount_one": "{{count}}개 메시지",
-    "messageCount_other": "{{count}}개 메시지"
+    "messageCount": "{count, plural, one {{count}개 메시지} other {{count}개 메시지}}"
   },
   "dashboard": {
     "title": "대시보드",
@@ -76,9 +76,9 @@
     "systemStatus": "시스템 상태",
     "websocket": "WebSocket",
     "pluginStatus": "플러그인 상태",
-    "running": "{{count}}개 실행 중",
-    "stopped": "{{count}}개 중지됨",
-    "errors": "{{count}}개 오류"
+    "running": "{count}개 실행 중",
+    "stopped": "{count}개 중지됨",
+    "errors": "{count}개 오류"
   },
   "plugins": {
     "title": "플러그인",
@@ -98,7 +98,7 @@
     "running": "실행 중...",
     "triggerType": "트리거 유형",
     "schedule": "스케줄",
-    "toggleAria": "{{name}} 토글"
+    "toggleAria": "{name} 토글"
   },
   "vault": {
     "title": "볼트 탐색기",
@@ -114,13 +114,13 @@
     "selectFile": "파일을 선택해 내용을 보세요",
     "createSeed": "씨앗 생성",
     "metadataYaml": "메타데이터 (YAML)",
-    "fields": "{{count}}개 필드",
-    "relatedNodes": "{{count}}개 노드",
+    "fields": "{count}개 필드",
+    "relatedNodes": "{count}개 노드",
     "related": "관련",
     "tags": "태그",
     "searching": "검색 중...",
     "noResults": "결과가 없습니다",
-    "backlinks": "역참조 ({{count}})"
+    "backlinks": "역참조 ({count})"
   },
   "graph": {
     "searchPlaceholder": "네트워크 탐색...",
@@ -176,9 +176,9 @@
     "progress": {
       "compiling": "임포트 컴파일 중…",
       "done": "임포트 완료",
-      "chunks": "청크 {{done}} / {{total}}",
-      "notes": "노트 {{count}}개",
-      "failed": "{{count}}개 실패"
+      "chunks": "청크 {done} / {total}",
+      "notes": "노트 {count}개",
+      "failed": "{count}개 실패"
     }
   },
   "actions": {

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 import type { WSEvent } from "../../api/types";
 import { Icon } from "../common/Icon";
 import { EventItem } from "./EventItem";
@@ -10,7 +10,7 @@ interface EventPanelProps {
 }
 
 export function EventPanel({ events, onClear }: EventPanelProps) {
-  const { t } = useTranslation();
+  const t = useT("sage");
   const [expanded, setExpanded] = useState(false);
 
   return (

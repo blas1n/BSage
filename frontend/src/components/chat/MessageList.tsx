@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 import type { ChatMessage } from "../../api/types";
 import { Icon } from "../common/Icon";
 import { MessageBubble } from "./MessageBubble";
@@ -11,7 +11,7 @@ interface MessageListProps {
 }
 
 export function MessageList({ messages, isLoading }: MessageListProps) {
-  const { t } = useTranslation();
+  const t = useT("sage");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

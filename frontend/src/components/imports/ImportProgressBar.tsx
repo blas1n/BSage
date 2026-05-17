@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 import { Icon } from "../common/Icon";
 import type { ImportProgress } from "../../hooks/useImportProgress";
 
@@ -15,7 +15,7 @@ export interface ImportProgressBarProps {
  * is normal not exceptional.
  */
 export function ImportProgressBar({ progress }: ImportProgressBarProps) {
-  const { t } = useTranslation();
+  const t = useT("sage");
   const elapsed = useElapsedSeconds(progress.startedAt, progress.completedAt);
 
   const total = Math.max(progress.chunkCount, 1);

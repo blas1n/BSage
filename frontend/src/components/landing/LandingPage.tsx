@@ -1,9 +1,9 @@
 import { Brain, Network, Search, Puzzle, Leaf } from "lucide-react";
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 import { useAuth } from "../../hooks/useAuth";
 
 export function LandingPage() {
-  const { t } = useTranslation();
+  const t = useT("sage");
   const { login, signup } = useAuth({ probeRemoteSession: false });
 
   const features = [

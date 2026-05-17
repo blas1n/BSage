@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useTranslation } from "react-i18next";
+import { usePathname, useRouter } from "next/navigation";
+import { useT, useCurrentLocale } from "@bsvibe/i18n";
 import {
   LanguageToggle,
   ResponsiveSidebar,
@@ -10,13 +11,47 @@ import {
   type SidebarItem,
 } from "@bsvibe/layout";
 import { useAuth } from "../../hooks/useAuth";
-import { setLanguage, SUPPORTED_LANGS, type SupportedLang } from "../../i18n";
 import { Icon } from "../common/Icon";
 
 interface SidebarProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   onClose: () => void;
+}
+
+/**
+ * Locale switcher — replaces the legacy react-i18next `changeLanguage` +
+ * localStorage toggle. Mirrors the BSupervisor `SidebarLocaleSwitcher`:
+ * strips any leading `/ko` or `/en` segment, then re-prefixes only for the
+ * non-default locale (`ko`). Default `en` is bare-rooted because middleware
+ * uses `localePrefix: 'as-needed'` with default `en`.
+ */
+function SidebarLocaleSwitcher() {
+  const router = useRouter();
+  const pathname = usePathname() ?? "/";
+  const current = useCurrentLocale();
+  const t = useT("sage");
+
+  const onChange = (next: string) => {
+    if (next === current) return;
+    const stripped = pathname.replace(/^\/(ko|en)(?=\/|$)/, "") || "/";
+    const nextPath =
+      next === "ko" ? `/ko${stripped === "/" ? "" : stripped}` : stripped;
+    router.replace(nextPath);
+  };
+
+  return (
+    <LanguageToggle
+      value={current}
+      options={[
+        { value: "en", label: "EN" },
+        { value: "ko", label: "KO" },
+      ]}
+      onChange={onChange}
+      ariaLabel={t("header.language")}
+      dataTestId="lang-switcher"
+    />
+  );
 }
 
 /**
@@ -30,10 +65,9 @@ interface SidebarProps {
  * only supplies path `href`s and no longer tracks routing state.
  */
 export function Sidebar({ isOpen, onOpenChange, onClose }: SidebarProps) {
-  const { t, i18n } = useTranslation();
+  const t = useT("sage");
   const { user, logout, tenants, switchTenant } = useAuth();
   const userEmail = user?.email ?? "";
-  const currentLang = (i18n.resolvedLanguage ?? i18n.language) as SupportedLang;
 
   // Track desktop viewport so the sidebar is always rendered as visible
   // (and not flagged `aria-hidden=true`) on `md:` and up. Without this,
@@ -60,7 +94,7 @@ export function Sidebar({ isOpen, onOpenChange, onClose }: SidebarProps) {
     {
       path: "/canonicalization",
       icon: "rule",
-      label: t("nav.canonicalization", "Canon queue"),
+      label: t("nav.canonicalization"),
     },
     { path: "/plugins", icon: "extension", label: t("nav.plugins") },
     { path: "/imports", icon: "swap_horiz", label: t("nav.importsExports") },
@@ -109,13 +143,7 @@ export function Sidebar({ isOpen, onOpenChange, onClose }: SidebarProps) {
         onSwitchTenant={(id) => void switchTenant(id)}
         dataTestId="sidebar-tenant-switcher"
       />
-      <LanguageToggle
-        value={currentLang}
-        options={SUPPORTED_LANGS.map((l) => ({ value: l, label: l.toUpperCase() }))}
-        onChange={(next) => setLanguage(next as SupportedLang)}
-        ariaLabel={t("header.language")}
-        dataTestId="lang-switcher"
-      />
+      <SidebarLocaleSwitcher />
       <SidebarUserCard
         email={userEmail}
         onSignOut={() => {

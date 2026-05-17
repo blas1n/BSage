@@ -1,4 +1,4 @@
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 import type { ChatSession } from "../../hooks/useChat";
 import { Icon } from "../common/Icon";
 
@@ -26,7 +26,7 @@ function formatDate(ts: number): string {
 }
 
 export function SessionList({ sessions, activeSessionId, onSelect, onDelete, onNewSession }: SessionListProps) {
-  const { t } = useTranslation();
+  const t = useT("sage");
   return (
     <div className="flex flex-col h-full" data-testid="session-list">
       {/* Header */}

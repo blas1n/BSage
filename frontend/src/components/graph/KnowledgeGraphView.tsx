@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
 import { forceCollide, forceX, forceY } from "d3-force";
 import ReactMarkdown from "react-markdown";
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 import remarkGfm from "remark-gfm";
 import remarkObsidian from "@thecae/remark-obsidian";
 import rehypeRaw from "rehype-raw";
@@ -85,7 +85,7 @@ function splitFrontmatter(text: string): {
 }
 
 export function KnowledgeGraphView() {
-  const { t } = useTranslation();
+  const t = useT("sage");
   const [graphData, setGraphData] = useState<VaultGraph | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");

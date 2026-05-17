@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 import { api } from "../../api/client";
 import type { EntryMeta } from "../../api/types";
 import { Icon } from "../common/Icon";
@@ -117,7 +117,7 @@ function entryIcon(name: string): string {
 }
 
 export function ImportsExportsView() {
-  const { t } = useTranslation();
+  const t = useT("sage");
   const [entries, setEntries] = useState<EntryMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [target, setTarget] = useState<EntryMeta | null>(null);

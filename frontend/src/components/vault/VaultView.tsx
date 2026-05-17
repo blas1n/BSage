@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
@@ -58,7 +58,7 @@ function buildStemLookup(tree: VaultTreeEntry[]): Map<string, string> {
 }
 
 export function VaultView() {
-  const { t } = useTranslation();
+  const t = useT("sage");
   const [tree, setTree] = useState<VaultTreeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
