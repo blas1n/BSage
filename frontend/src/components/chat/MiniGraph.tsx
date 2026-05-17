@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import ForceGraph2D from "react-force-graph-2d";
+import { useT } from "@bsvibe/i18n";
 import { Icon } from "../common/Icon";
 import { api } from "../../api/client";
 import type { VaultGraph } from "../../api/types";
@@ -13,6 +14,7 @@ const GROUP_COLORS: Record<string, string> = {
 };
 
 export function MiniGraph() {
+  const t = useT("sage");
   const [graphData, setGraphData] = useState<VaultGraph | null>(null);
   const [loading, setLoading] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -62,24 +64,24 @@ export function MiniGraph() {
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-white/5">
         <Icon name="hub" className="text-accent-light" size={16} />
         <span className="text-xs font-medium text-gray-400">
-          Knowledge Graph
+          {t("chat.miniGraphTitle")}
         </span>
         <Link
           href="/graph"
           className="ml-auto text-[10px] text-accent-light hover:text-accent-light/80 transition-colors font-mono uppercase tracking-wider"
         >
-          Expand
+          {t("chat.miniGraphExpand")}
         </Link>
       </div>
       <div ref={containerRef} className="h-40 relative bg-surface-dim">
         {loading && (
           <div className="flex items-center justify-center h-full text-gray-500 text-xs">
-            Loading...
+            {t("common.loading")}
           </div>
         )}
         {!loading && (!forceData || forceData.nodes.length === 0) && (
           <div className="flex items-center justify-center h-full text-gray-500 text-xs">
-            No graph data
+            {t("chat.miniGraphEmpty")}
           </div>
         )}
         {showGraph && (

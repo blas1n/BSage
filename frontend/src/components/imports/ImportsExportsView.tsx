@@ -174,28 +174,27 @@ export function ImportsExportsView() {
       <div className="max-w-5xl mx-auto p-8">
         <header className="mb-10">
           <h1 className="text-4xl font-extrabold tracking-tight mb-2 text-on-surface font-headline">
-            Imports & Exports
+            {t("imports.title")}
           </h1>
           <p className="text-on-surface-variant font-medium">
-            One-shot data migration. For ongoing integrations (Slack, email,
-            calendar polling) see Plugins.
+            {t("imports.subtitle")}
           </p>
         </header>
 
         <Section
-          title="Imports"
-          subtitle="Bring data into your vault — ChatGPT/Claude/Obsidian exports, etc."
+          title={t("imports.sectionImports")}
+          subtitle={t("imports.sectionImportsSubtitle")}
           entries={imports}
-          actionLabel="Import"
+          actionLabel={t("imports.actionImport")}
           running={running}
           onClick={handleClick}
         />
 
         <Section
-          title="Exports"
-          subtitle="Push your vault content out to another tool."
+          title={t("imports.sectionExports")}
+          subtitle={t("imports.sectionExportsSubtitle")}
           entries={exports}
-          actionLabel="Export"
+          actionLabel={t("imports.actionExport")}
           running={running}
           onClick={handleClick}
         />
@@ -203,7 +202,7 @@ export function ImportsExportsView() {
         {entries.length === 0 && (
           <div className="text-center py-16 text-gray-500">
             <Icon name="swap_horiz" className="mx-auto mb-3 opacity-40" size={32} />
-            <p className="text-sm">No import/export plugins installed.</p>
+            <p className="text-sm">{t("imports.empty")}</p>
           </div>
         )}
       </div>
@@ -211,7 +210,11 @@ export function ImportsExportsView() {
       {target && (
         <PluginUploadModal
           pluginName={target.name}
-          title={`${target.category === "output" ? "Export via" : "Import via"} ${target.name}`}
+          title={
+            target.category === "output"
+              ? t("imports.exportVia", { name: target.name })
+              : t("imports.importVia", { name: target.name })
+          }
           subtitle={target.description}
           accept={entryAcceptHint(target.name)}
           instructions={PLUGIN_INSTRUCTIONS[target.name]}
@@ -241,6 +244,7 @@ function Section({
   running: string | null;
   onClick: (e: EntryMeta) => void;
 }) {
+  const t = useT("sage");
   if (entries.length === 0) return null;
   return (
     <section className="mb-12">
@@ -255,6 +259,7 @@ function Section({
             key={entry.name}
             entry={entry}
             actionLabel={actionLabel}
+            runningLabel={t("imports.running")}
             running={running === entry.name}
             onClick={() => onClick(entry)}
           />
@@ -267,11 +272,13 @@ function Section({
 function Card({
   entry,
   actionLabel,
+  runningLabel,
   running,
   onClick,
 }: {
   entry: EntryMeta;
   actionLabel: string;
+  runningLabel: string;
   running: boolean;
   onClick: () => void;
 }) {
@@ -298,7 +305,7 @@ function Card({
         className="w-full min-h-12 py-3 px-4 inline-flex items-center justify-center gap-1.5 text-xs font-bold text-accent-light border-t border-white/5 hover:bg-accent-light/10 transition-colors disabled:opacity-40"
       >
         <Icon name={entry.category === "output" ? "upload" : "download"} size={14} />
-        {running ? "Running…" : actionLabel}
+        {running ? runningLabel : actionLabel}
       </button>
     </div>
   );

@@ -40,8 +40,8 @@ export function ChatView() {
       <div className="flex-1 flex flex-col min-w-0">
         <div className="flex items-center justify-between px-6 h-12 border-b border-white/5 shrink-0">
           <div className="flex gap-3">
-            <span className="inline-flex min-h-10 items-center text-accent-light border-b-2 border-accent-light text-sm font-medium tracking-tight">Chat</span>
-            <Link href="/graph" className="inline-flex min-h-10 min-w-10 items-center justify-center text-gray-500 hover:text-gray-300 text-sm tracking-tight transition-colors">Graph</Link>
+            <span className="inline-flex min-h-10 items-center text-accent-light border-b-2 border-accent-light text-sm font-medium tracking-tight">{t("chat.tabChat")}</span>
+            <Link href="/graph" className="inline-flex min-h-10 min-w-10 items-center justify-center text-gray-500 hover:text-gray-300 text-sm tracking-tight transition-colors">{t("chat.tabGraph")}</Link>
           </div>
           {messages.length > 0 && (
             <button

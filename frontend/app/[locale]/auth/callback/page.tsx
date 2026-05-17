@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useT } from '@bsvibe/i18n';
 import { consumeAuthCallback } from '@/src/hooks/useAuth';
 
 /**
@@ -37,6 +38,7 @@ function readCallbackStatus(): CallbackStatus {
 
 export default function AuthCallbackPage() {
   const router = useRouter();
+  const t = useT('sage');
   const [status] = useState<CallbackStatus>(readCallbackStatus);
 
   useEffect(() => {
@@ -51,17 +53,17 @@ export default function AuthCallbackPage() {
         {status === 'failed' ? (
           <>
             <h1 className="text-xl font-bold mb-2 text-gray-100">
-              Sign-in failed
+              {t('auth.signInFailed')}
             </h1>
             <p className="text-sm mb-3">
-              No authentication token was found in the callback URL.
+              {t('auth.signInFailedDetail')}
             </p>
             <Link href="/" className="text-sm text-emerald-400 hover:underline">
-              Return to BSage
+              {t('auth.returnToBSage')}
             </Link>
           </>
         ) : (
-          <div className="text-gray-500">Signing you in…</div>
+          <div className="text-gray-500">{t('auth.signingIn')}</div>
         )}
       </div>
     </div>

@@ -10,7 +10,11 @@ interface SessionListProps {
   onNewSession: () => void;
 }
 
-function formatDate(ts: number): string {
+type Translate = ReturnType<typeof useT>;
+
+/** Format a timestamp as a localized relative-time label. Takes the
+ * translator so the relative-time strings come from the message catalog. */
+function formatDate(ts: number, t: Translate): string {
   const d = new Date(ts);
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
@@ -18,10 +22,10 @@ function formatDate(ts: number): string {
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
 
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffMins < 1) return t("time.justNow");
+  if (diffMins < 60) return t("time.minutesAgo", { count: diffMins });
+  if (diffHours < 24) return t("time.hoursAgo", { count: diffHours });
+  if (diffDays < 7) return t("time.daysAgo", { count: diffDays });
   return d.toLocaleDateString();
 }
 
@@ -71,7 +75,7 @@ export function SessionList({ sessions, activeSessionId, onSelect, onDelete, onN
                   {session.title}
                 </p>
                 <p className="text-[10px] text-gray-500 mt-0.5">
-                  {t("chat.messageCount", { count: session.messages.length })} &middot; {formatDate(session.updatedAt)}
+                  {t("chat.messageCount", { count: session.messages.length })} &middot; {formatDate(session.updatedAt, t)}
                 </p>
               </div>
               <button
@@ -79,7 +83,7 @@ export function SessionList({ sessions, activeSessionId, onSelect, onDelete, onN
                   e.stopPropagation();
                   onDelete(session.id);
                 }}
-                aria-label={`Delete session ${session.title}`}
+                aria-label={t("chat.deleteSession", { title: session.title })}
                 className="p-0.5 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all shrink-0 mt-0.5"
               >
                 <Icon name="close" size={14} />

@@ -1,17 +1,24 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useT } from "@bsvibe/i18n";
 import { api } from "../../api/client";
 import type { MCPAPIKey } from "../../api/types";
 import { Icon } from "../common/Icon";
 
 type ClientKind = "cursor" | "claude-desktop" | "generic";
 
-const CLIENT_LABELS: Record<ClientKind, string> = {
-  cursor: "Cursor",
-  "claude-desktop": "Claude Desktop",
-  generic: "Generic SSE",
+/** Stable client kinds in display order. Labels come from the `mcp.client*`
+ * i18n keys and are translated at the render site. */
+const CLIENT_KINDS: ClientKind[] = ["cursor", "claude-desktop", "generic"];
+
+const CLIENT_LABEL_KEYS: Record<ClientKind, string> = {
+  cursor: "mcp.clientCursor",
+  "claude-desktop": "mcp.clientClaudeDesktop",
+  generic: "mcp.clientGeneric",
 };
+
+type Translate = ReturnType<typeof useT>;
 
 function isHostedDeployment(): boolean {
   if (typeof window === "undefined") return false;
@@ -64,18 +71,18 @@ function snippetFor(kind: ClientKind, sseUrl: string, token: string): string {
   return [`SSE URL:  ${sseUrl}`, `Header:   Authorization: Bearer ${token}`].join("\n");
 }
 
-function relTime(iso: string | null): string {
-  if (!iso) return "never used";
+function relTime(iso: string | null, t: Translate): string {
+  if (!iso) return t("mcp.neverUsed");
   const d = new Date(iso).getTime();
   if (Number.isNaN(d)) return iso;
   const diff = Date.now() - d;
   const m = Math.floor(diff / 60000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m ago`;
+  if (m < 1) return t("time.justNow");
+  if (m < 60) return t("time.minutesAgo", { count: m });
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
+  if (h < 24) return t("time.hoursAgo", { count: h });
   const days = Math.floor(h / 24);
-  return `${days}d ago`;
+  return t("time.daysAgo", { count: days });
 }
 
 export interface McpServerSetupModalProps {
@@ -83,6 +90,7 @@ export interface McpServerSetupModalProps {
 }
 
 export function McpServerSetupModal({ onClose }: McpServerSetupModalProps) {
+  const t = useT("sage");
   const [keys, setKeys] = useState<MCPAPIKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
@@ -172,15 +180,15 @@ export function McpServerSetupModal({ onClose }: McpServerSetupModalProps) {
       >
         <div className="flex items-start justify-between mb-4">
           <div>
-            <h2 className="font-headline font-bold text-on-surface text-lg">BSage MCP Server</h2>
+            <h2 className="font-headline font-bold text-on-surface text-lg">{t("mcp.title")}</h2>
             <p className="text-xs text-gray-400 mt-1">
-              Issue an API key, paste the snippet into your AI client, done.
+              {t("mcp.subtitle")}
             </p>
           </div>
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-300"
-            aria-label="Close"
+            aria-label={t("common.close")}
           >
             <Icon name="close" size={20} />
           </button>
@@ -195,12 +203,12 @@ export function McpServerSetupModal({ onClose }: McpServerSetupModalProps) {
         {/* Active keys */}
         <section className="mb-5">
           <div className="text-xs font-medium text-gray-300 mb-2">
-            Active keys{" "}
+            {t("mcp.activeKeys")}{" "}
             <span className="text-gray-500">({loading ? "…" : keys.length})</span>
           </div>
           {!loading && keys.length === 0 && (
             <p className="text-xs text-gray-500 italic">
-              No keys yet — generate one below.
+              {t("mcp.noKeysHint")}
             </p>
           )}
           <div className="space-y-2">
@@ -212,7 +220,7 @@ export function McpServerSetupModal({ onClose }: McpServerSetupModalProps) {
                 <div className="min-w-0 flex-1">
                   <div className="text-sm text-on-surface truncate">{k.name}</div>
                   <div className="text-[10px] text-gray-500 font-mono">
-                    {relTime(k.last_used_at)} · created {relTime(k.created_at)}
+                    {relTime(k.last_used_at, t)} · {t("mcp.createdAt", { time: relTime(k.created_at, t) })}
                   </div>
                 </div>
                 <button
@@ -220,7 +228,7 @@ export function McpServerSetupModal({ onClose }: McpServerSetupModalProps) {
                   disabled={revokeBusy === k.id}
                   className="ml-3 min-h-10 px-3 py-1 text-xs rounded-lg text-red-300 hover:bg-red-400/10 disabled:opacity-40"
                 >
-                  {revokeBusy === k.id ? "…" : "Revoke"}
+                  {revokeBusy === k.id ? "…" : t("mcp.revoke")}
                 </button>
               </div>
             ))}
@@ -229,14 +237,14 @@ export function McpServerSetupModal({ onClose }: McpServerSetupModalProps) {
 
         {/* Generate */}
         <section className="mb-5">
-          <div className="text-xs font-medium text-gray-300 mb-2">Generate new key</div>
+          <div className="text-xs font-medium text-gray-300 mb-2">{t("mcp.generateHeading")}</div>
           <div className="flex gap-2">
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && void onGenerate()}
-              placeholder="Name (e.g. cursor-laptop)"
+              placeholder={t("mcp.namePlaceholder")}
               className="flex-1 min-h-10 rounded-lg border border-gray-700 bg-gray-850 px-3 py-2 text-sm text-on-surface outline-none focus:border-accent-light placeholder:text-gray-500"
               maxLength={80}
             />
@@ -245,7 +253,7 @@ export function McpServerSetupModal({ onClose }: McpServerSetupModalProps) {
               disabled={!name.trim() || generating}
               className="min-h-10 px-4 py-2 text-sm rounded-lg bg-accent-light text-gray-950 font-bold disabled:opacity-40"
             >
-              {generating ? "…" : "+ Generate"}
+              {generating ? "…" : t("mcp.generate")}
             </button>
           </div>
         </section>
@@ -254,7 +262,7 @@ export function McpServerSetupModal({ onClose }: McpServerSetupModalProps) {
         {freshToken && (
           <section className="mb-5 px-3 py-3 rounded-lg border border-amber-400/30 bg-amber-400/5">
             <div className="text-xs font-medium text-amber-200 mb-1.5">
-              ⚠ Copy this token now — it won't be shown again
+              {t("mcp.freshTokenWarning")}
             </div>
             <div className="flex items-center gap-2">
               <code className="flex-1 min-h-10 inline-flex items-center px-3 py-2 text-xs font-mono text-on-surface bg-gray-850 border border-gray-700 rounded-lg break-all">
@@ -264,7 +272,7 @@ export function McpServerSetupModal({ onClose }: McpServerSetupModalProps) {
                 onClick={() => copy("token", freshToken)}
                 className="min-h-10 px-3 py-2 text-xs rounded-lg border border-gray-700 bg-gray-850 text-gray-200 hover:bg-gray-800"
               >
-                {copied === "token" ? "Copied" : "Copy"}
+                {copied === "token" ? t("mcp.copied") : t("mcp.copy")}
               </button>
             </div>
           </section>
@@ -272,9 +280,9 @@ export function McpServerSetupModal({ onClose }: McpServerSetupModalProps) {
 
         {/* Connect */}
         <section>
-          <div className="text-xs font-medium text-gray-300 mb-2">Connect — pick your client</div>
+          <div className="text-xs font-medium text-gray-300 mb-2">{t("mcp.connectHeading")}</div>
           <div className="flex gap-1 mb-2">
-            {(Object.keys(CLIENT_LABELS) as ClientKind[]).map((k) => (
+            {CLIENT_KINDS.map((k) => (
               <button
                 key={k}
                 onClick={() => setClient(k)}
@@ -284,7 +292,7 @@ export function McpServerSetupModal({ onClose }: McpServerSetupModalProps) {
                     : "text-gray-400 hover:bg-white/5"
                 }`}
               >
-                {CLIENT_LABELS[k]}
+                {t(CLIENT_LABEL_KEYS[k])}
               </button>
             ))}
           </div>
@@ -293,21 +301,15 @@ export function McpServerSetupModal({ onClose }: McpServerSetupModalProps) {
           </pre>
           <div className="flex items-center justify-between mt-2">
             <p className="text-[10px] text-gray-500">
-              {client === "claude-desktop" && (
-                <>
-                  Claude Desktop is stdio-only — <code>uvx mcp-proxy</code> bridges to SSE.
-                </>
-              )}
-              {client === "cursor" && (
-                <>Edit <code>~/.cursor/mcp.json</code> (or use Cursor settings).</>
-              )}
-              {client === "generic" && <>For Codex CLI, custom clients.</>}
+              {client === "claude-desktop" && t("mcp.hintClaudeDesktop")}
+              {client === "cursor" && t("mcp.hintCursor")}
+              {client === "generic" && t("mcp.hintGeneric")}
             </p>
             <button
               onClick={() => copy("snippet", snippet)}
               className="min-h-10 px-3 py-1.5 text-xs rounded-lg border border-gray-700 bg-gray-850 text-gray-200 hover:bg-gray-800"
             >
-              {copied === "snippet" ? "Copied" : "Copy snippet"}
+              {copied === "snippet" ? t("mcp.copied") : t("mcp.copySnippet")}
             </button>
           </div>
         </section>

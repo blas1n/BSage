@@ -48,7 +48,7 @@ function DemoChrome({ children }: { children: ReactNode }) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-gray-950">
         <div className="text-gray-500">{t("common.loading")}</div>
-        <div className="text-gray-600 text-sm">Setting up your demo sandbox…</div>
+        <div className="text-gray-600 text-sm">{t("demo.settingUp")}</div>
       </div>
     );
   }
@@ -57,7 +57,7 @@ function DemoChrome({ children }: { children: ReactNode }) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-950">
         <div className="text-center text-gray-400 p-8">
-          <h1 className="text-xl font-bold mb-2 text-gray-100">Demo unavailable</h1>
+          <h1 className="text-xl font-bold mb-2 text-gray-100">{t("demo.unavailable")}</h1>
           <p className="text-sm">{error}</p>
         </div>
       </div>

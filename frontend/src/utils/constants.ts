@@ -19,24 +19,26 @@ export const EVENT_COLORS: Record<string, string> = {
   input_complete: "bg-secondary-container",
 };
 
-export const EVENT_LABELS: Record<string, string> = {
-  plugin_run_start: "Plugin Start",
-  plugin_run_complete: "Plugin Done",
-  plugin_run_error: "Plugin Error",
-  skill_run_start: "Skill Start",
-  skill_gather_complete: "Skill Gather",
-  skill_llm_response: "Skill LLM",
-  skill_apply_complete: "Skill Apply",
-  skill_run_complete: "Skill Done",
-  skill_run_error: "Skill Error",
-  seed_written: "Seed Written",
-  garden_written: "Garden Written",
-  action_logged: "Action Logged",
-  trigger_fired: "Trigger Fired",
-  tool_call_start: "Tool Start",
-  tool_call_complete: "Tool Done",
-  input_received: "Input Received",
-  input_complete: "Input Complete",
+/** Maps backend event types to their `events.label.*` i18n keys. Module-level
+ * (no hooks); translated at the render site. */
+export const EVENT_LABEL_KEYS: Record<string, string> = {
+  plugin_run_start: "events.label.pluginRunStart",
+  plugin_run_complete: "events.label.pluginRunComplete",
+  plugin_run_error: "events.label.pluginRunError",
+  skill_run_start: "events.label.skillRunStart",
+  skill_gather_complete: "events.label.skillGatherComplete",
+  skill_llm_response: "events.label.skillLlmResponse",
+  skill_apply_complete: "events.label.skillApplyComplete",
+  skill_run_complete: "events.label.skillRunComplete",
+  skill_run_error: "events.label.skillRunError",
+  seed_written: "events.label.seedWritten",
+  garden_written: "events.label.gardenWritten",
+  action_logged: "events.label.actionLogged",
+  trigger_fired: "events.label.triggerFired",
+  tool_call_start: "events.label.toolCallStart",
+  tool_call_complete: "events.label.toolCallComplete",
+  input_received: "events.label.inputReceived",
+  input_complete: "events.label.inputComplete",
 };
 
 export const CATEGORY_COLORS: Record<string, string> = {

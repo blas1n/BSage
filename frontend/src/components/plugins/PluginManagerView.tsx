@@ -37,12 +37,15 @@ const TRIGGER_ICONS: Record<string, string> = {
   write_event: "bolt",
 };
 
-const TRIGGER_LABELS: Record<string, string> = {
-  cron: "Cron",
-  webhook: "Webhook",
-  on_input: "On Input",
-  on_demand: "On Demand",
-  write_event: "Write Event",
+/** Maps backend trigger types to `plugins.trigger.*` i18n keys. The map
+ * itself is module-level (no hooks); the value is translated at the render
+ * site inside the component. */
+const TRIGGER_LABEL_KEYS: Record<string, string> = {
+  cron: "plugins.trigger.cron",
+  webhook: "plugins.trigger.webhook",
+  on_input: "plugins.trigger.onInput",
+  on_demand: "plugins.trigger.onDemand",
+  write_event: "plugins.trigger.writeEvent",
 };
 
 const CATEGORY_BADGE_STYLES: Record<string, string> = {
@@ -51,10 +54,13 @@ const CATEGORY_BADGE_STYLES: Record<string, string> = {
   output: "bg-tertiary-container/10 text-tertiary",
 };
 
-const STATUS_DOT_STYLES: Record<string, { bg: string; label: string }> = {
-  running: { bg: "bg-green-400", label: "Running" },
-  stopped: { bg: "bg-gray-500", label: "Stopped" },
-  error: { bg: "bg-red-500", label: "Error" },
+/** Status dot color + `plugins.statusLabel.*` i18n key per status. The
+ * label is translated at the render site (module-level maps cannot call
+ * hooks). */
+const STATUS_DOT_STYLES: Record<string, { bg: string; labelKey: string }> = {
+  running: { bg: "bg-green-400", labelKey: "plugins.statusLabel.running" },
+  stopped: { bg: "bg-gray-500", labelKey: "plugins.statusLabel.stopped" },
+  error: { bg: "bg-red-500", labelKey: "plugins.statusLabel.error" },
 };
 
 export function PluginManagerView() {
@@ -185,7 +191,13 @@ export function PluginManagerView() {
                   : "bg-surface-container-high text-on-surface-variant hover:text-on-surface"
               }`}
             >
-              {cat === "all" ? t("plugins.filterAll") : cat.charAt(0).toUpperCase() + cat.slice(1)}
+              {cat === "all"
+                ? t("plugins.filterAll")
+                : cat === "input"
+                  ? t("plugins.filterInput")
+                  : cat === "process"
+                    ? t("plugins.filterProcess")
+                    : t("plugins.filterOutput")}
             </button>
           ))}
 
@@ -276,7 +288,7 @@ export function PluginManagerView() {
       {uploadTarget && (
         <PluginUploadModal
           pluginName={uploadTarget.name}
-          title={`Import via ${uploadTarget.name}`}
+          title={t("plugins.importVia", { name: uploadTarget.name })}
           subtitle={uploadTarget.description}
           accept={entryAcceptHint(uploadTarget.name)}
           onClose={() => setUploadTarget(null)}
@@ -340,7 +352,7 @@ function PluginCard({
             </span>
             <div className="flex items-center gap-1.5 ml-2">
               <span className={`w-2 h-2 rounded-full ${statusInfo.bg}`} />
-              <span className="text-xs text-on-surface-variant font-mono uppercase">{statusInfo.label}</span>
+              <span className="text-xs text-on-surface-variant font-mono uppercase">{t(statusInfo.labelKey)}</span>
             </div>
           </div>
           {entry.is_dangerous && (
@@ -371,7 +383,7 @@ function PluginCard({
           <span>{t("plugins.triggerType")}</span>
           <span className="flex items-center gap-1.5">
             <Icon name={triggerIcon} size={14} />
-            {TRIGGER_LABELS[triggerType] ?? triggerType}
+            {TRIGGER_LABEL_KEYS[triggerType] ? t(TRIGGER_LABEL_KEYS[triggerType]) : triggerType}
           </span>
         </div>
         {triggerType === "cron" && entry.trigger?.schedule && (

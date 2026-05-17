@@ -100,10 +100,10 @@ export function DashboardView() {
     );
   }
 
-  const WS_STATE_STYLES: Record<ConnectionState, { dot: string; label: string }> = {
-    connected: { dot: "bg-accent-light", label: "Connected" },
-    disconnected: { dot: "bg-gray-500", label: "Offline" },
-    reconnecting: { dot: "bg-tertiary animate-pulse", label: "Reconnecting" },
+  const WS_STATE_STYLES: Record<ConnectionState, { dot: string; labelKey: string }> = {
+    connected: { dot: "bg-accent-light", labelKey: "status.connected" },
+    disconnected: { dot: "bg-gray-500", labelKey: "status.offline" },
+    reconnecting: { dot: "bg-tertiary animate-pulse", labelKey: "status.reconnecting" },
   };
 
   const wsStyle = WS_STATE_STYLES[wsState];
@@ -190,7 +190,7 @@ export function DashboardView() {
               <div className="flex items-center gap-2">
                 <span className={`w-2 h-2 rounded-full ${wsStyle.dot}`} />
                 <span className="text-xs font-mono text-on-surface-variant uppercase">
-                  {wsStyle.label}
+                  {t(wsStyle.labelKey)}
                 </span>
               </div>
             </div>
