@@ -1,10 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useT } from "@bsvibe/i18n";
+import { ResponsiveTable } from "@bsvibe/ui";
+import type { ResponsiveTableColumn } from "@bsvibe/ui";
 import { api } from "../../api/client";
 import type { EntryMeta, VaultTreeEntry } from "../../api/types";
 import { type ConnectionState, wsManager } from "../../api/websocket";
 import { Icon } from "../common/Icon";
+
+/** A recent vault file split into its display name and parent directory. */
+interface RecentFile {
+  /** Full path — used as the stable row key. */
+  path: string;
+  /** Leaf file name. */
+  name: string;
+  /** Parent directory, or "" for vault root. */
+  location: string;
+}
 
 interface DashboardStats {
   totalNotes: number;
@@ -47,7 +59,7 @@ export function DashboardView() {
     stopped: 0,
     errors: 0,
   });
-  const [recentFiles, setRecentFiles] = useState<string[]>([]);
+  const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
   const [wsState, setWsState] = useState<ConnectionState>(wsManager.state);
   const [loading, setLoading] = useState(true);
 
@@ -68,9 +80,14 @@ export function DashboardView() {
       setStats({ totalNotes, activePlugins, activeSkills, knowledgeEntries });
       setPluginStatus(computePluginStatus(plugins));
 
-      // Collect all file paths for recent activity
-      const allFiles = tree.flatMap((entry) =>
-        entry.files.map((f) => (entry.path ? `${entry.path}/${f}` : f)),
+      // Collect all files for recent activity — split into name + location
+      // so the dashboard can render them as a real two-column table.
+      const allFiles: RecentFile[] = tree.flatMap((entry) =>
+        entry.files.map((f) => ({
+          path: entry.path ? `${entry.path}/${f}` : f,
+          name: f,
+          location: entry.path ?? "",
+        })),
       );
       setRecentFiles(allFiles.slice(0, 8));
     } catch {
@@ -107,6 +124,30 @@ export function DashboardView() {
   };
 
   const wsStyle = WS_STATE_STYLES[wsState];
+
+  // Recent-files table — file name + parent location. Desktop renders a
+  // real <table>; mobile collapses to the default key/value card stack.
+  const recentColumns: ResponsiveTableColumn<RecentFile>[] = [
+    {
+      key: "file",
+      header: t("dashboard.col.file"),
+      cell: (f) => (
+        <span className="flex items-center gap-2 text-on-surface">
+          <Icon name="draft" size={16} className="text-on-surface-variant" />
+          <span className="font-mono text-xs">{f.name}</span>
+        </span>
+      ),
+    },
+    {
+      key: "location",
+      header: t("dashboard.col.location"),
+      cell: (f) => (
+        <span className="font-mono text-xs text-on-surface-variant">
+          {f.location || "/"}
+        </span>
+      ),
+    },
+  ];
 
   return (
     <div className="h-full overflow-y-auto scrollbar-thin">
@@ -161,20 +202,12 @@ export function DashboardView() {
             {t("dashboard.recentActivity")}
           </h2>
           <div className="bg-surface-container-low rounded-xl border border-white/5 p-5">
-            {recentFiles.length === 0 ? (
-              <p className="text-sm text-on-surface-variant text-center py-4">
-                {t("dashboard.noRecentFiles")}
-              </p>
-            ) : (
-              <ul className="space-y-2">
-                {recentFiles.map((file) => (
-                  <li key={file} className="flex items-center gap-2 text-sm text-on-surface">
-                    <Icon name="draft" size={16} className="text-on-surface-variant" />
-                    <span className="font-mono text-xs">{file}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <ResponsiveTable<RecentFile>
+              columns={recentColumns}
+              rows={recentFiles}
+              rowKey={(f) => f.path}
+              emptyMessage={t("dashboard.noRecentFiles")}
+            />
           </div>
         </section>
 

@@ -21,6 +21,7 @@
     "@bsvibe/i18n": "0.2.0",
     "@bsvibe/layout": "^0.7.0",
     "@bsvibe/types": "0.1.0",
+    "@bsvibe/ui": "0.2.0",
     "@thecae/remark-obsidian": "^1.1.1",
     "@types/d3-force": "^3.0.10",
     "d3-force": "^3.0.0",

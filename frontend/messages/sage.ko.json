@@ -84,7 +84,11 @@
     "pluginStatus": "플러그인 상태",
     "running": "{count}개 실행 중",
     "stopped": "{count}개 중지됨",
-    "errors": "{count}개 오류"
+    "errors": "{count}개 오류",
+    "col": {
+      "file": "파일",
+      "location": "위치"
+    }
   },
   "status": {
     "connected": "연결됨",
@@ -131,6 +135,13 @@
       "running": "실행 중",
       "stopped": "중지됨",
       "error": "오류"
+    },
+    "col": {
+      "name": "이름",
+      "type": "유형",
+      "trigger": "트리거",
+      "status": "상태",
+      "actions": "작업"
     }
   },
   "vault": {
@@ -238,7 +249,12 @@
     "clientGeneric": "Generic SSE",
     "hintClaudeDesktop": "Claude Desktop은 stdio 전용입니다 — uvx mcp-proxy가 SSE로 연결합니다.",
     "hintCursor": "~/.cursor/mcp.json을 편집하세요 (또는 Cursor 설정 사용).",
-    "hintGeneric": "Codex CLI, 커스텀 클라이언트용."
+    "hintGeneric": "Codex CLI, 커스텀 클라이언트용.",
+    "col": {
+      "key": "키",
+      "status": "상태",
+      "actions": "작업"
+    }
   },
   "upload": {
     "source": "소스",

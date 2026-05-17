@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useT } from "@bsvibe/i18n";
+import { ResponsiveTable } from "@bsvibe/ui";
+import type { ResponsiveTableColumn } from "@bsvibe/ui";
 import { api } from "../../api/client";
 import type { MCPAPIKey } from "../../api/types";
 import { Icon } from "../common/Icon";
@@ -169,6 +171,46 @@ export function McpServerSetupModal({ onClose }: McpServerSetupModalProps) {
   const tokenForSnippet = freshToken ?? "<paste-token-here>";
   const snippet = snippetFor(client, sseUrl, tokenForSnippet);
 
+  // Active-keys table columns. Desktop renders a real <table>; mobile keeps
+  // the original two-line card via renderMobileCard. Revoke behaviour and
+  // the per-key busy state are preserved.
+  const keyColumns = useMemo<ResponsiveTableColumn<MCPAPIKey>[]>(
+    () => [
+      {
+        key: "key",
+        header: t("mcp.col.key"),
+        cell: (k) => (
+          <span className="text-sm text-on-surface">{k.name}</span>
+        ),
+      },
+      {
+        key: "status",
+        header: t("mcp.col.status"),
+        cell: (k) => (
+          <span className="text-[10px] text-gray-500 font-mono">
+            {relTime(k.last_used_at, t)} ·{" "}
+            {t("mcp.createdAt", { time: relTime(k.created_at, t) })}
+          </span>
+        ),
+      },
+      {
+        key: "actions",
+        header: t("mcp.col.actions"),
+        cellClassName: "text-right",
+        cell: (k) => (
+          <button
+            onClick={() => onRevoke(k.id)}
+            disabled={revokeBusy === k.id}
+            className="min-h-8 px-3 py-1 text-xs rounded-lg text-red-300 hover:bg-red-400/10 disabled:opacity-40"
+          >
+            {revokeBusy === k.id ? "…" : t("mcp.revoke")}
+          </button>
+        ),
+      },
+    ],
+    [t, revokeBusy, onRevoke],
+  );
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur p-4"
@@ -206,33 +248,37 @@ export function McpServerSetupModal({ onClose }: McpServerSetupModalProps) {
             {t("mcp.activeKeys")}{" "}
             <span className="text-gray-500">({loading ? "…" : keys.length})</span>
           </div>
-          {!loading && keys.length === 0 && (
-            <p className="text-xs text-gray-500 italic">
-              {t("mcp.noKeysHint")}
-            </p>
-          )}
-          <div className="space-y-2">
-            {keys.map((k) => (
-              <div
-                key={k.id}
-                className="flex items-center justify-between px-3 py-2 rounded-lg border border-white/5 bg-surface-container-low"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm text-on-surface truncate">{k.name}</div>
-                  <div className="text-[10px] text-gray-500 font-mono">
-                    {relTime(k.last_used_at, t)} · {t("mcp.createdAt", { time: relTime(k.created_at, t) })}
-                  </div>
-                </div>
-                <button
-                  onClick={() => onRevoke(k.id)}
-                  disabled={revokeBusy === k.id}
-                  className="ml-3 min-h-10 px-3 py-1 text-xs rounded-lg text-red-300 hover:bg-red-400/10 disabled:opacity-40"
+          {!loading && (
+            <ResponsiveTable<MCPAPIKey>
+              columns={keyColumns}
+              rows={keys}
+              rowKey={(k) => k.id}
+              emptyMessage={
+                <span className="italic">{t("mcp.noKeysHint")}</span>
+              }
+              renderMobileCard={(k) => (
+                <div
+                  data-testid="bsvibe-table-card"
+                  className="flex items-center justify-between px-3 py-2 rounded-lg border border-white/5 bg-surface-container-low"
                 >
-                  {revokeBusy === k.id ? "…" : t("mcp.revoke")}
-                </button>
-              </div>
-            ))}
-          </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm text-on-surface truncate">{k.name}</div>
+                    <div className="text-[10px] text-gray-500 font-mono">
+                      {relTime(k.last_used_at, t)} ·{" "}
+                      {t("mcp.createdAt", { time: relTime(k.created_at, t) })}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => onRevoke(k.id)}
+                    disabled={revokeBusy === k.id}
+                    className="ml-3 min-h-10 px-3 py-1 text-xs rounded-lg text-red-300 hover:bg-red-400/10 disabled:opacity-40"
+                  >
+                    {revokeBusy === k.id ? "…" : t("mcp.revoke")}
+                  </button>
+                </div>
+              )}
+            />
+          )}
         </section>
 
         {/* Generate */}
