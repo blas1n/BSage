@@ -315,7 +315,7 @@ export function SettingsView() {
               type="text"
               value={embeddingModel}
               onChange={(e) => setEmbeddingModel(e.target.value)}
-              placeholder="e.g. ollama/nomic-embed-text"
+              placeholder={t("settings.embeddingModelPlaceholder")}
               className="min-h-10 flex-1 rounded-lg border border-gray-700 bg-gray-850 px-3 py-2 text-sm text-gray-100 outline-none focus:border-accent placeholder:text-gray-600"
             />
             <button
@@ -327,21 +327,20 @@ export function SettingsView() {
             </button>
           </div>
           <p className="text-xs text-gray-600 mt-1">
-            Used by the canonicalization balanced proposer + vector
-            search. Empty disables both.
+            {t("settings.embeddingModelHint")}
           </p>
         </section>
 
         <section>
           <h3 className="text-sm font-medium text-gray-300 mb-3">
-            Embedding API base
+            {t("settings.embeddingApiBaseHeading")}
           </h3>
           <div className="flex gap-2">
             <input
               type="text"
               value={embeddingApiBase}
               onChange={(e) => setEmbeddingApiBase(e.target.value)}
-              placeholder="http://bsserver:11434 (Ollama via Tailscale)"
+              placeholder={t("settings.embeddingApiBasePlaceholder")}
               className="min-h-10 flex-1 rounded-lg border border-gray-700 bg-gray-850 px-3 py-2 text-sm text-gray-100 outline-none focus:border-accent placeholder:text-gray-600"
             />
             <button
@@ -355,13 +354,13 @@ export function SettingsView() {
             </button>
           </div>
           <p className="text-xs text-gray-600 mt-1">
-            Override for self-hosted Ollama / OpenAI-compatible servers.
+            {t("settings.embeddingApiBaseHint")}
           </p>
         </section>
 
         <section>
           <h3 className="text-sm font-medium text-gray-300 mb-3">
-            Embedding API key
+            {t("settings.embeddingApiKeyHeading")}
           </h3>
           <div className="flex gap-2">
             <div className="relative flex-1">
@@ -369,7 +368,7 @@ export function SettingsView() {
                 type={showEmbeddingApiKey ? "text" : "password"}
                 value={embeddingApiKey}
                 onChange={(e) => setEmbeddingApiKey(e.target.value)}
-                placeholder="paste once; stored encrypted"
+                placeholder={t("settings.embeddingApiKeyPlaceholder")}
                 className="min-h-10 w-full rounded-lg border border-gray-700 bg-gray-850 px-3 py-2 pr-10 text-sm text-gray-100 outline-none focus:border-accent placeholder:text-gray-600"
               />
               <button
@@ -400,8 +399,8 @@ export function SettingsView() {
             />
             <span className="text-xs text-gray-500">
               {config.has_embedding_api_key
-                ? "Configured"
-                : "Not set (leave empty for local Ollama)"}
+                ? t("settings.embeddingApiKeyConfigured")
+                : t("settings.embeddingApiKeyMissing")}
             </span>
           </div>
         </section>
@@ -430,6 +429,7 @@ export function SettingsView() {
 }
 
 function McpServerSection() {
+  const t = useT("sage");
   const [open, setOpen] = useState(false);
   const [keyCount, setKeyCount] = useState<number | null>(null);
 
@@ -447,10 +447,10 @@ function McpServerSection() {
 
   const status =
     keyCount === null
-      ? "Loading…"
+      ? t("settings.mcpLoading")
       : keyCount === 0
-        ? "No keys yet"
-        : `${keyCount} active key${keyCount === 1 ? "" : "s"}`;
+        ? t("settings.mcpNoKeys")
+        : t("settings.mcpActiveKeys", { count: keyCount });
 
   return (
     <>
@@ -458,12 +458,9 @@ function McpServerSection() {
         data-testid="mcp-server-section"
         className="border-t border-white/5 pt-6"
       >
-        <h3 className="text-sm font-medium text-gray-300 mb-3">MCP Server</h3>
+        <h3 className="text-sm font-medium text-gray-300 mb-3">{t("settings.mcpHeading")}</h3>
         <p className="text-xs text-gray-500 mb-4">
-          Let Claude Desktop, Cursor, Codex CLI and other AI clients use your
-          BSage vault — search, read notes, run import plugins. MCP is the
-          inbound channel for external AI; for outbound integrations
-          (Slack, email, etc.) use Plugins.
+          {t("settings.mcpDescription")}
         </p>
         <div className="flex items-center justify-between gap-4 px-4 py-3 rounded-lg bg-surface-container-low border border-white/5">
           <div className="flex items-center gap-2 min-w-0">
@@ -479,7 +476,7 @@ function McpServerSection() {
             className="min-h-10 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-accent-light/15 text-accent-light hover:bg-accent-light/25 transition-colors font-bold"
           >
             <Icon name="settings" size={14} />
-            Manage keys & connect
+            {t("settings.mcpManage")}
           </button>
         </div>
       </section>
@@ -496,6 +493,7 @@ interface CanonicalizationSectionProps {
 }
 
 function CanonicalizationSection({ config, saving, onChange }: CanonicalizationSectionProps) {
+  const t = useT("sage");
   const [busy, setBusy] = useState(false);
   const [expireCron, setExpireCron] = useState(config?.canon_expire_cron ?? "0 * * * *");
   const [lintCron, setLintCron] = useState(config?.canon_lint_cron ?? "0 0 * * 0");
@@ -526,17 +524,15 @@ function CanonicalizationSection({ config, saving, onChange }: CanonicalizationS
 
   return (
     <section className="border-t border-white/5 pt-6">
-      <h3 className="text-sm font-medium text-gray-300 mb-3">Canonicalization automation</h3>
+      <h3 className="text-sm font-medium text-gray-300 mb-3">{t("settings.canonHeading")}</h3>
       <p className="text-xs text-gray-500 mb-4">
-        Background jobs that keep the canon layer healthy. All three are off by default —
-        enable per deployment. Watcher = filesystem daemon for external Obsidian/git edits;
-        expire/lint = scheduled cron jobs.
+        {t("settings.canonDescription")}
       </p>
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="text-sm text-gray-200">canon-watcher</div>
-            <div className="text-xs text-gray-500">Detect external edits under concepts/, proposals/, actions/, decisions/.</div>
+            <div className="text-xs text-gray-500">{t("settings.canonWatcherDescription")}</div>
           </div>
           <Toggle
             checked={Boolean(config?.canon_watcher_enabled)}
@@ -548,7 +544,7 @@ function CanonicalizationSection({ config, saving, onChange }: CanonicalizationS
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="text-sm text-gray-200">canon-expire</div>
-            <div className="text-xs text-gray-500">Mark stale draft/pending actions and proposals as expired.</div>
+            <div className="text-xs text-gray-500">{t("settings.canonExpireDescription")}</div>
           </div>
           <Toggle
             checked={Boolean(config?.canon_expire_enabled)}
@@ -558,7 +554,7 @@ function CanonicalizationSection({ config, saving, onChange }: CanonicalizationS
           />
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-xs text-gray-500 w-28">Expire cron</label>
+          <label className="text-xs text-gray-500 w-28">{t("settings.canonExpireCron")}</label>
           <input
             type="text"
             value={expireCron}
@@ -579,7 +575,7 @@ function CanonicalizationSection({ config, saving, onChange }: CanonicalizationS
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="text-sm text-gray-200">canon-lint</div>
-            <div className="text-xs text-gray-500">Detect orphan tags, alias collisions, and redirect anomalies.</div>
+            <div className="text-xs text-gray-500">{t("settings.canonLintDescription")}</div>
           </div>
           <Toggle
             checked={Boolean(config?.canon_lint_enabled)}
@@ -589,7 +585,7 @@ function CanonicalizationSection({ config, saving, onChange }: CanonicalizationS
           />
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-xs text-gray-500 w-28">Lint cron</label>
+          <label className="text-xs text-gray-500 w-28">{t("settings.canonLintCron")}</label>
           <input
             type="text"
             value={lintCron}

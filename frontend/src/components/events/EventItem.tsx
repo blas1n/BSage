@@ -1,5 +1,6 @@
+import { useT } from "@bsvibe/i18n";
 import type { WSEvent } from "../../api/types";
-import { EVENT_COLORS, EVENT_LABELS } from "../../utils/constants";
+import { EVENT_COLORS, EVENT_LABEL_KEYS } from "../../utils/constants";
 import { formatTime } from "../../utils/formatters";
 
 interface EventItemProps {
@@ -7,8 +8,10 @@ interface EventItemProps {
 }
 
 export function EventItem({ event }: EventItemProps) {
+  const t = useT("sage");
   const color = EVENT_COLORS[event.event_type] ?? "bg-gray-600";
-  const label = EVENT_LABELS[event.event_type] ?? event.event_type;
+  const labelKey = EVENT_LABEL_KEYS[event.event_type];
+  const label = labelKey ? t(labelKey) : event.event_type;
   const name = (event.payload.plugin_name ?? event.payload.skill_name ?? event.payload.name ?? "") as string;
 
   return (

@@ -59,7 +59,13 @@
     "newSession": "New session",
     "noSessions": "No sessions yet",
     "noSessionsHint": "Start a conversation to create one",
-    "messageCount": "{count, plural, one {{count} message} other {{count} messages}}"
+    "messageCount": "{count, plural, one {{count} message} other {{count} messages}}",
+    "tabChat": "Chat",
+    "tabGraph": "Graph",
+    "deleteSession": "Delete session {title}",
+    "miniGraphTitle": "Knowledge Graph",
+    "miniGraphExpand": "Expand",
+    "miniGraphEmpty": "No graph data"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -80,11 +86,25 @@
     "stopped": "{count} stopped",
     "errors": "{count} errors"
   },
+  "status": {
+    "connected": "Connected",
+    "offline": "Offline",
+    "reconnecting": "Reconnecting"
+  },
+  "time": {
+    "justNow": "Just now",
+    "minutesAgo": "{count}m ago",
+    "hoursAgo": "{count}h ago",
+    "daysAgo": "{count}d ago"
+  },
   "plugins": {
     "title": "Plugins",
     "subtitle": "Extend your kinetic knowledge graph capabilities.",
     "install": "Install Plugin",
     "filterAll": "All",
+    "filterInput": "Input",
+    "filterProcess": "Process",
+    "filterOutput": "Output",
     "filterAllTypes": "All Types",
     "filterPlugins": "Plugins",
     "filterSkills": "Skills",
@@ -98,7 +118,20 @@
     "running": "Running...",
     "triggerType": "Trigger Type",
     "schedule": "Schedule",
-    "toggleAria": "Toggle {name}"
+    "toggleAria": "Toggle {name}",
+    "importVia": "Import via {name}",
+    "trigger": {
+      "cron": "Cron",
+      "webhook": "Webhook",
+      "onInput": "On Input",
+      "onDemand": "On Demand",
+      "writeEvent": "Write Event"
+    },
+    "statusLabel": {
+      "running": "Running",
+      "stopped": "Stopped",
+      "error": "Error"
+    }
   },
   "vault": {
     "title": "Vault Explorer",
@@ -120,7 +153,9 @@
     "tags": "Tags",
     "searching": "Searching...",
     "noResults": "No results",
-    "backlinks": "Backlinks ({count})"
+    "backlinks": "Backlinks ({count})",
+    "loadFileFailed": "Failed to load file.",
+    "breadcrumbRoot": "Vault"
   },
   "graph": {
     "searchPlaceholder": "Explore network...",
@@ -135,7 +170,8 @@
     "systemMetadata": "System Metadata",
     "previewContent": "Preview Content",
     "relatedNodes": "Related Nodes",
-    "closeInspector": "Close Inspector"
+    "closeInspector": "Close Inspector",
+    "groupOther": "Other"
   },
   "settings": {
     "title": "Settings",
@@ -157,7 +193,135 @@
     "testing": "Testing...",
     "embeddingModel": "Embedding Model",
     "account": "Account",
-    "saving": "Saving..."
+    "saving": "Saving...",
+    "embeddingModelPlaceholder": "e.g. ollama/nomic-embed-text",
+    "embeddingModelHint": "Used by the canonicalization balanced proposer + vector search. Empty disables both.",
+    "embeddingApiBaseHeading": "Embedding API base",
+    "embeddingApiBasePlaceholder": "http://bsserver:11434 (Ollama via Tailscale)",
+    "embeddingApiBaseHint": "Override for self-hosted Ollama / OpenAI-compatible servers.",
+    "embeddingApiKeyHeading": "Embedding API key",
+    "embeddingApiKeyPlaceholder": "paste once; stored encrypted",
+    "embeddingApiKeyConfigured": "Configured",
+    "embeddingApiKeyMissing": "Not set (leave empty for local Ollama)",
+    "mcpHeading": "MCP Server",
+    "mcpDescription": "Let Claude Desktop, Cursor, Codex CLI and other AI clients use your BSage vault — search, read notes, run import plugins. MCP is the inbound channel for external AI; for outbound integrations (Slack, email, etc.) use Plugins.",
+    "mcpLoading": "Loading…",
+    "mcpNoKeys": "No keys yet",
+    "mcpActiveKeys": "{count, plural, one {{count} active key} other {{count} active keys}}",
+    "mcpManage": "Manage keys & connect",
+    "canonHeading": "Canonicalization automation",
+    "canonDescription": "Background jobs that keep the canon layer healthy. All three are off by default — enable per deployment. Watcher = filesystem daemon for external Obsidian/git edits; expire/lint = scheduled cron jobs.",
+    "canonWatcherDescription": "Detect external edits under concepts/, proposals/, actions/, decisions/.",
+    "canonExpireDescription": "Mark stale draft/pending actions and proposals as expired.",
+    "canonLintDescription": "Detect orphan tags, alias collisions, and redirect anomalies.",
+    "canonExpireCron": "Expire cron",
+    "canonLintCron": "Lint cron"
+  },
+  "mcp": {
+    "title": "BSage MCP Server",
+    "subtitle": "Issue an API key, paste the snippet into your AI client, done.",
+    "activeKeys": "Active keys",
+    "noKeysHint": "No keys yet — generate one below.",
+    "revoke": "Revoke",
+    "neverUsed": "never used",
+    "createdAt": "created {time}",
+    "generateHeading": "Generate new key",
+    "namePlaceholder": "Name (e.g. cursor-laptop)",
+    "generate": "+ Generate",
+    "freshTokenWarning": "⚠ Copy this token now — it won't be shown again",
+    "copy": "Copy",
+    "copied": "Copied",
+    "connectHeading": "Connect — pick your client",
+    "copySnippet": "Copy snippet",
+    "clientCursor": "Cursor",
+    "clientClaudeDesktop": "Claude Desktop",
+    "clientGeneric": "Generic SSE",
+    "hintClaudeDesktop": "Claude Desktop is stdio-only — uvx mcp-proxy bridges to SSE.",
+    "hintCursor": "Edit ~/.cursor/mcp.json (or use Cursor settings).",
+    "hintGeneric": "For Codex CLI, custom clients."
+  },
+  "upload": {
+    "source": "Source",
+    "howToGet": "How to get this file",
+    "uploading": "Uploading {name}…",
+    "running": "Running {name}…",
+    "dropHint": "Drop file here or click to choose",
+    "accepted": "Accepted: {accept}",
+    "importComplete": "Import complete",
+    "notesWritten": "{count, plural, one {{count} note} other {{count} notes}} written",
+    "working": "Working…",
+    "import": "Import",
+    "fileSize": "{size} KB"
+  },
+  "imports": {
+    "title": "Imports & Exports",
+    "subtitle": "One-shot data migration. For ongoing integrations (Slack, email, calendar polling) see Plugins.",
+    "sectionImports": "Imports",
+    "sectionImportsSubtitle": "Bring data into your vault — ChatGPT/Claude/Obsidian exports, etc.",
+    "sectionExports": "Exports",
+    "sectionExportsSubtitle": "Push your vault content out to another tool.",
+    "actionImport": "Import",
+    "actionExport": "Export",
+    "running": "Running…",
+    "empty": "No import/export plugins installed.",
+    "importVia": "Import via {name}",
+    "exportVia": "Export via {name}",
+    "progress": {
+      "compiling": "Compiling import…",
+      "done": "Import complete",
+      "chunks": "{done} / {total} chunks",
+      "notes": "{count} notes",
+      "failed": "{count} failed"
+    }
+  },
+  "canon": {
+    "title": "Canonicalization queue",
+    "subtitle": "Pending-approval actions. Source-aware evidence rendering per Handoff §13.",
+    "refresh": "Refresh",
+    "loading": "Loading…",
+    "empty": "No actions awaiting approval. Drafts apply directly when Safe Mode is OFF.",
+    "pendingApproval": "pending_approval",
+    "stability": "stability {score}",
+    "riskReasons": "Risk reasons",
+    "evidence": "Evidence",
+    "willAffect": "Will affect",
+    "approveApply": "Approve & apply",
+    "reject": "Reject",
+    "rejectPrompt": "Optional rejection reason:",
+    "evidenceFallback": "evidence",
+    "source": {
+      "deterministic": "DET",
+      "model": "MODEL",
+      "human": "HUMAN",
+      "system": "SYS"
+    }
+  },
+  "events": {
+    "title": "Events",
+    "empty": "No events yet",
+    "label": {
+      "pluginRunStart": "Plugin Start",
+      "pluginRunComplete": "Plugin Done",
+      "pluginRunError": "Plugin Error",
+      "skillRunStart": "Skill Start",
+      "skillGatherComplete": "Skill Gather",
+      "skillLlmResponse": "Skill LLM",
+      "skillApplyComplete": "Skill Apply",
+      "skillRunComplete": "Skill Done",
+      "skillRunError": "Skill Error",
+      "seedWritten": "Seed Written",
+      "gardenWritten": "Garden Written",
+      "actionLogged": "Action Logged",
+      "triggerFired": "Trigger Fired",
+      "toolCallStart": "Tool Start",
+      "toolCallComplete": "Tool Done",
+      "inputReceived": "Input Received",
+      "inputComplete": "Input Complete"
+    }
+  },
+  "demo": {
+    "settingUp": "Setting up your demo sandbox…",
+    "unavailable": "Demo unavailable"
   },
   "approval": {
     "title": "Approval Required",
@@ -168,22 +332,15 @@
     "credentials": "Setup Credentials",
     "noFields": "This entry has no credential fields to configure."
   },
-  "events": {
-    "title": "Events",
-    "empty": "No events yet"
-  },
-  "imports": {
-    "progress": {
-      "compiling": "Compiling import…",
-      "done": "Import complete",
-      "chunks": "{done} / {total} chunks",
-      "notes": "{count} notes",
-      "failed": "{count} failed"
-    }
-  },
   "actions": {
     "title": "Action Log",
     "empty": "No actions recorded yet"
+  },
+  "auth": {
+    "signInFailed": "Sign-in failed",
+    "signInFailedDetail": "No authentication token was found in the callback URL.",
+    "returnToBSage": "Return to BSage",
+    "signingIn": "Signing you in…"
   },
   "help": {
     "title": "Help",

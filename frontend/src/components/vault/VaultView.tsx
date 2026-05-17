@@ -87,7 +87,7 @@ export function VaultView() {
       const res = await api.vaultFile(path);
       setFileContent(res.content);
     } catch {
-      setFileContent("Failed to load file.");
+      setFileContent(t("vault.loadFileFailed"));
     } finally {
       setFileLoading(false);
     }
@@ -97,7 +97,7 @@ export function VaultView() {
     } catch {
       setBacklinks([]);
     }
-  }, []);
+  }, [t]);
 
   const resolveWikiLink = useCallback(
     (target: string): string | null => {
@@ -228,7 +228,7 @@ export function VaultView() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-500">Loading...</div>
+      <div className="flex items-center justify-center h-full text-gray-500">{t("common.loading")}</div>
     );
   }
 
@@ -343,7 +343,7 @@ export function VaultView() {
                   >
                     <Icon name="arrow_back" size={20} />
                   </button>
-                  <span className="hidden md:inline">Vault</span>
+                  <span className="hidden md:inline">{t("vault.breadcrumbRoot")}</span>
                   {breadcrumb.map((part, i) => (
                     <span key={i} className="flex items-center gap-2 truncate">
                       <Icon name="chevron_right" size={12} className="hidden md:inline" />

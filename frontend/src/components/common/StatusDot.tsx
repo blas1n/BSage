@@ -1,3 +1,4 @@
+import { useT } from "@bsvibe/i18n";
 import type { ConnectionState } from "../../api/websocket";
 
 const COLORS: Record<ConnectionState, string> = {
@@ -6,10 +7,12 @@ const COLORS: Record<ConnectionState, string> = {
   reconnecting: "bg-tertiary animate-pulse",
 };
 
-const LABELS: Record<ConnectionState, string> = {
-  connected: "Connected",
-  disconnected: "Offline",
-  reconnecting: "Reconnecting...",
+/** Maps connection state to its `status.*` i18n key. The label is
+ * translated at the render site (module-level maps cannot call hooks). */
+const LABEL_KEYS: Record<ConnectionState, string> = {
+  connected: "status.connected",
+  disconnected: "status.offline",
+  reconnecting: "status.reconnecting",
 };
 
 interface StatusDotProps {
@@ -17,10 +20,11 @@ interface StatusDotProps {
 }
 
 export function StatusDot({ state }: StatusDotProps) {
+  const t = useT("sage");
   return (
     <div className="flex items-center gap-1.5">
       <div className={`w-1.5 h-1.5 rounded-full ${COLORS[state]}`} />
-      <span className="text-[10px] font-mono text-gray-400 uppercase">{LABELS[state]}</span>
+      <span className="text-[10px] font-mono text-gray-400 uppercase">{t(LABEL_KEYS[state])}</span>
     </div>
   );
 }

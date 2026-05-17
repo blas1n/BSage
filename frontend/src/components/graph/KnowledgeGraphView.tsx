@@ -47,8 +47,10 @@ const GROUP_ICON_HINTS: Record<string, string> = {
   preferences: "favorite",
 };
 
-function humanizeGroup(group: string): string {
-  if (!group) return "Other";
+/** Humanize a backend group id for display. Returns null for the empty
+ * group so the caller can substitute a translated "Other" label. */
+function humanizeGroup(group: string): string | null {
+  if (!group) return null;
   const cleaned = group.replace(/^_/, "").replace(/[-_]/g, " ");
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
@@ -152,11 +154,11 @@ export function KnowledgeGraphView() {
       .map(([group, count], idx) => ({
         group,
         count,
-        label: humanizeGroup(group),
+        label: humanizeGroup(group) ?? t("graph.groupOther"),
         color: GROUP_PALETTE[idx % GROUP_PALETTE.length],
         icon: GROUP_ICON_HINTS[group] ?? "folder_open",
       }));
-  }, [graphData]);
+  }, [graphData, t]);
 
   const groupColorMap = useMemo(() => {
     const map: Record<string, string> = {};

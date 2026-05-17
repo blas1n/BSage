@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { useT } from "@bsvibe/i18n";
 import { api } from "../../api/client";
 import { useLatestImportProgress } from "../../hooks/useImportProgress";
 import { ImportProgressBar } from "../imports/ImportProgressBar";
@@ -41,6 +42,7 @@ export function PluginUploadModal({
   onClose,
   onComplete,
 }: PluginUploadModalProps) {
+  const t = useT("sage");
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -75,11 +77,11 @@ export function PluginUploadModal({
     setResult(null);
     try {
       setStatus("uploading");
-      setProgress(`Uploading ${file.name}…`);
+      setProgress(t("upload.uploading", { name: file.name }));
       const upload = await api.uploadFile(file);
 
       setStatus("running");
-      setProgress(`Running ${pluginName}…`);
+      setProgress(t("upload.running", { name: pluginName }));
       const payload: Record<string, unknown> = {
         upload_id: upload.upload_id,
         path: upload.path,
@@ -110,7 +112,7 @@ export function PluginUploadModal({
       setStatus("error");
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [file, pluginName, source, onComplete]);
+  }, [file, pluginName, source, onComplete, t]);
 
   const busy = status === "uploading" || status === "running";
 
@@ -134,7 +136,7 @@ export function PluginUploadModal({
             onClick={onClose}
             disabled={busy}
             className="text-gray-500 hover:text-gray-300 disabled:opacity-40"
-            aria-label="Close"
+            aria-label={t("common.close")}
           >
             <Icon name="close" size={20} />
           </button>
@@ -142,7 +144,7 @@ export function PluginUploadModal({
 
         {sourceOptions && sourceOptions.length > 0 && (
           <div className="mb-4">
-            <div className="text-[11px] font-medium text-gray-400 mb-2">Source</div>
+            <div className="text-[11px] font-medium text-gray-400 mb-2">{t("upload.source")}</div>
             <div className="flex flex-wrap gap-1.5">
               {sourceOptions.map((opt) => (
                 <button
@@ -165,7 +167,7 @@ export function PluginUploadModal({
           <details className="mb-4 group" open>
             <summary className="cursor-pointer text-[11px] text-accent-light hover:underline list-none flex items-center gap-1">
               <Icon name="help_outline" size={12} />
-              <span>How to get this file</span>
+              <span>{t("upload.howToGet")}</span>
             </summary>
             <pre className="text-[10px] font-mono text-gray-300 bg-gray-850 border border-gray-700 rounded-lg p-3 mt-2 whitespace-pre-wrap">
               {helpText}
@@ -190,14 +192,14 @@ export function PluginUploadModal({
             <>
               <p className="text-sm text-on-surface truncate">{file.name}</p>
               <p className="text-[10px] text-gray-500 mt-1">
-                {(file.size / 1024).toFixed(1)} KB
+                {t("upload.fileSize", { size: (file.size / 1024).toFixed(1) })}
               </p>
             </>
           ) : (
             <>
-              <p className="text-sm text-gray-300">Drop file here or click to choose</p>
+              <p className="text-sm text-gray-300">{t("upload.dropHint")}</p>
               {accept && (
-                <p className="text-[10px] text-gray-500 mt-1">Accepted: {accept}</p>
+                <p className="text-[10px] text-gray-500 mt-1">{t("upload.accepted", { accept })}</p>
               )}
             </>
           )}
@@ -232,10 +234,10 @@ export function PluginUploadModal({
         )}
         {status === "done" && (
           <div className="mt-4 px-3 py-2 rounded-lg border border-accent-light/30 bg-accent-light/10 text-xs text-accent-light">
-            <div className="font-bold mb-0.5">Import complete</div>
+            <div className="font-bold mb-0.5">{t("upload.importComplete")}</div>
             {result && typeof result.imported === "number" && (
               <div className="text-[10px] opacity-80 font-mono">
-                {result.imported} note{result.imported === 1 ? "" : "s"} written
+                {t("upload.notesWritten", { count: result.imported })}
                 {typeof result.source === "string" && ` · source=${result.source}`}
               </div>
             )}
@@ -248,7 +250,7 @@ export function PluginUploadModal({
             disabled={busy}
             className="px-4 py-2 rounded-lg text-sm text-gray-300 hover:bg-white/5 disabled:opacity-40"
           >
-            {status === "done" ? "Close" : "Cancel"}
+            {status === "done" ? t("common.close") : t("common.cancel")}
           </button>
           {status !== "done" && (
             <button
@@ -256,7 +258,7 @@ export function PluginUploadModal({
               disabled={!file || busy}
               className="px-4 py-2 rounded-lg bg-accent-light text-gray-950 font-bold text-sm disabled:opacity-40"
             >
-              {busy ? "Working…" : "Import"}
+              {busy ? t("upload.working") : t("upload.import")}
             </button>
           )}
         </div>
