@@ -194,14 +194,20 @@ typed registry — they're bridged on demand.
 
 ## 4. Transports
 
-### HTTP (`/mcp` on the gateway)
-Mounted in the gateway lifespan via `bsage.mcp.sse.create_sse_routes`:
+### Streamable HTTP (`/mcp` on the gateway)
+Built in the gateway lifespan via
+`bsage.mcp.streamable_http.build_streamable_http_app` and mounted at
+`/mcp` — the same transport (and path) the other three BSVibe products
+serve.
 
 | Endpoint | Auth | Purpose |
 |---|---|---|
 | `GET /mcp/health` | none | Liveness probe + tool count |
-| `GET /mcp/sse` | bsvibe-authz | SSE event stream (server → client) |
-| `POST /mcp/messages/{path}` | bsvibe-authz | SSE POST half (client → server) |
+| `/mcp` | bsvibe-authz | Streamable HTTP transport (stateless, JSON response) |
+
+An unauthenticated request to `/mcp` returns `401` + a
+`WWW-Authenticate: Bearer resource_metadata="..."` challenge (RFC 9728),
+not `404`. `/mcp/health` stays unauthenticated.
 
 Health response:
 
@@ -209,10 +215,10 @@ Health response:
 { "status": "ok", "server": "bsage", "tool_count": 30 }
 ```
 
-`tool_count` reflects the **same** `ToolRegistry` the SSE transport
-serves — domain (9) + canon read (8) + canon mutation (4 if enabled)
-+ admin (13) + any plugin-bridge tools — so probes are honest, not
-stubbed.
+`tool_count` reflects the **same** `ToolRegistry` the Streamable HTTP
+transport serves — domain (9) + canon read (8) + canon mutation (4 if
+enabled) + admin (13) + any plugin-bridge tools — so probes are honest,
+not stubbed.
 
 ### CLI (`bsage mcp`)
 
@@ -220,7 +226,7 @@ stubbed.
 # Boot the stdio transport (Claude Desktop, IDE bridges)
 bsage mcp serve --transport stdio
 
-# Boot the gateway + /mcp/sse (HTTP transport)
+# Boot the gateway + /mcp (Streamable HTTP transport)
 bsage mcp serve --transport http --host 0.0.0.0 --port 8000
 
 # Inspect the catalog without booting any transport
@@ -241,13 +247,8 @@ The `bsage-mcp` console script (entry point) also points at
 
 | Transport | Mechanism |
 |---|---|
-| `stdio` | Trusted local process. Principal is read from env via `BSAGE_PAT`. |
-| `http` (SSE) | `state.get_current_user(request)` — bsvibe-authz dispatch (opaque introspection → JWT). |
-
-EventSource cannot send `Authorization` headers, so `GET /mcp/sse`
-also accepts `?token=<bearer>` and injects it as a `Bearer` header
-before delegating to the same dispatcher. Documented under memory
-`eventsource-sse-auth-trap`.
+| `stdio` | Trusted local process. No HTTP request — `ctx.user` is `None`; `required_permission` tools are stdio-unreachable, domain read tools work. |
+| Streamable HTTP | The ASGI shim resolves the principal from the per-request `Authorization` header (`bsvibe_authz` opaque → user-JWT → PAT-introspection dispatch) and stashes it on a context-var the dispatcher reads. |
 
 `required_permission` enforcement happens **per tool** inside
 `ToolRegistry.call_tool`, running the same OpenFGA
@@ -256,13 +257,17 @@ uses. Connection-time auth is necessary but not sufficient — each
 permissioned tool re-checks the resolved principal against the OpenFGA
 model.
 
-> **Known gap (out of Tier 5 Phase 3a scope):** the `stdio` / SSE
-> transports authenticate the *connection* but do not yet thread the
-> resolved principal into the per-call `ToolContext`, so `ctx.user` is
-> `None` on those transports today. Tools with `required_permission`
-> therefore deny over `stdio`/SSE until per-connection principal
-> threading lands; `required_permission=None` tools (all domain read
-> tools) are unaffected.
+> **Principal threading (fixed).** Streamable HTTP carries the
+> `Authorization` header on *every* request, so
+> `bsage.mcp.streamable_http` resolves the principal per-request and
+> threads it into the per-call `ToolContext` via a context-var that
+> `bsage.mcp.server._resolve_principal` reads. `ctx.user` is therefore
+> the real principal over HTTP and `required_permission` tools
+> authorize correctly. (The legacy SSE transport authenticated only
+> the *connection* and left `ctx.user = None` — that bug is gone with
+> SSE.) The `stdio` transport has no HTTP request, so `ctx.user`
+> stays `None` there; that path is a single trusted local process and
+> only exposes `required_permission=None` tools in practice.
 
 ---
 
@@ -275,7 +280,7 @@ bsage/mcp/
 ├── domain_tools.py    # 9 knowledge tools
 ├── admin_tools.py     # 13 admin tools (mirrors CLI sub-apps)
 ├── plugin_bridge.py   # dynamic plugin → MCP tool adapter
-├── sse.py             # FastAPI router: /mcp/health, /mcp/sse, /mcp/messages/
+├── streamable_http.py # Streamable HTTP transport (build_streamable_http_app, principal resolution)
 ├── stdio.py           # stdio transport entry (run_stdio_server)
 └── README.md          # this file
 
@@ -293,4 +298,3 @@ bsage/cli/commands/mcp.py
 - `~/Docs/BSVibe_AI_Native_Control_Plane_Plan_2026-05-06.md` — overall plan
 - `~/Docs/BSVibe_Phase1_Decisions_2026-05-07.md` — introspection conventions
 - Memory `mcp-python-sdk-testing` — test pattern for first-class MCP tools
-- Memory `eventsource-sse-auth-trap` — `?token=` fallback for SSE auth

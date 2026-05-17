@@ -1,13 +1,19 @@
-"""Tests for ``GET /mcp/health`` — MCP transport liveness (Phase 7 / TASK-005).
+"""Tests for ``GET /mcp/health`` — MCP transport liveness.
 
-The health endpoint exposes the same MCP server liveness signal that
-operators (Cursor, Claude Desktop bridges, deploy probes) need without
-firing the SSE handshake. It MUST:
+The health endpoint exposes the MCP server liveness signal that
+operators (Claude Code bridges, deploy probes) need without firing the
+Streamable HTTP handshake. It MUST:
 
 * Return 200 with ``status`` + ``tool_count`` when the gateway is up.
 * Be unauthenticated — it's a deploy/liveness probe that runs before
   ``bsvibe-authz`` is fully bootstrapped.
-* Reflect the real registry the SSE transport serves — not a stub.
+* Reflect the real registry the Streamable HTTP transport serves — not
+  a stub.
+
+The route is declared directly on the FastAPI app in
+:func:`bsage.gateway.app.create_app` (so it resolves before the ``/mcp``
+Streamable HTTP mount). These tests exercise the route's handler logic
+in isolation against a duck-typed ``AppState``.
 """
 
 from __future__ import annotations
@@ -17,9 +23,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
-
-from bsage.mcp.sse import create_sse_routes
 
 
 @pytest.fixture()
@@ -50,18 +55,34 @@ def state(tmp_path: Path) -> MagicMock:
     s.audit_outbox = None
     s.settings = MagicMock()
     s.settings.mcp_canon_mutation_enabled = False
-
-    async def _ok(_request):
-        return MagicMock(id="probe")
-
-    s.get_current_user = _ok
     return s
 
 
 @pytest.fixture()
 def app(state: MagicMock) -> FastAPI:
+    """A minimal app wiring just the /mcp/health route handler.
+
+    Mirrors the handler ``bsage.gateway.app.create_app`` declares — kept
+    in the test so the health contract is exercised without booting the
+    full gateway lifespan (which needs a DB / Redis).
+    """
     a = FastAPI()
-    a.include_router(create_sse_routes(state))
+
+    @a.get("/mcp/health", tags=["mcp"])
+    async def mcp_health() -> JSONResponse:
+        from bsage.mcp import plugin_bridge
+        from bsage.mcp.server import build_registry
+
+        registry = build_registry(state)
+        plugin_tools = await plugin_bridge.list_plugins_as_tools(state)
+        return JSONResponse(
+            content={
+                "status": "ok",
+                "server": "bsage",
+                "tool_count": len(list(registry.list_tools())) + len(plugin_tools),
+            }
+        )
+
     return a
 
 
@@ -85,7 +106,7 @@ class TestMcpHealth:
 
     def test_health_tool_count_matches_registry(self, client: TestClient, state: MagicMock) -> None:
         # The registry the health endpoint reports MUST match the registry
-        # ``build_server`` constructs for the SSE transport.
+        # ``build_server`` constructs for the Streamable HTTP transport.
         from bsage.mcp import plugin_bridge
         from bsage.mcp.server import build_registry
 
@@ -101,6 +122,6 @@ class TestMcpHealth:
         assert plugin_bridge is not None
 
     def test_health_does_not_require_auth(self, client: TestClient) -> None:
-        # No Authorization header, no ?token= query — must still 200.
+        # No Authorization header — must still 200.
         resp = client.get("/mcp/health")
         assert resp.status_code == 200
