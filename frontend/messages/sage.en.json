@@ -84,7 +84,11 @@
     "pluginStatus": "Plugin Status",
     "running": "{count} running",
     "stopped": "{count} stopped",
-    "errors": "{count} errors"
+    "errors": "{count} errors",
+    "col": {
+      "file": "File",
+      "location": "Location"
+    }
   },
   "status": {
     "connected": "Connected",
@@ -131,6 +135,13 @@
       "running": "Running",
       "stopped": "Stopped",
       "error": "Error"
+    },
+    "col": {
+      "name": "Name",
+      "type": "Type",
+      "trigger": "Trigger",
+      "status": "Status",
+      "actions": "Actions"
     }
   },
   "vault": {
@@ -238,7 +249,12 @@
     "clientGeneric": "Generic SSE",
     "hintClaudeDesktop": "Claude Desktop is stdio-only — uvx mcp-proxy bridges to SSE.",
     "hintCursor": "Edit ~/.cursor/mcp.json (or use Cursor settings).",
-    "hintGeneric": "For Codex CLI, custom clients."
+    "hintGeneric": "For Codex CLI, custom clients.",
+    "col": {
+      "key": "Key",
+      "status": "Status",
+      "actions": "Actions"
+    }
   },
   "upload": {
     "source": "Source",

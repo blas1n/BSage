@@ -5,6 +5,11 @@
  * bg-gray-950, etc.) are present in the generated CSS. */
 @source "../../node_modules/@bsvibe/layout/dist/**/*.js";
 
+/* Same scan for @bsvibe/ui's compiled JS so ResponsiveTable's utility
+ * classes (sm:table, overflow-x-auto, border-gray-800, etc.) survive
+ * Tailwind 4's content purge. */
+@source "../../node_modules/@bsvibe/ui/dist/**/*.js";
+
 /* ── BSage Stitch Design System tokens ── */
 @theme {
   --color-gray-950: #0a0b0f;

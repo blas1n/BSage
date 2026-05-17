@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "@bsvibe/i18n";
+import { ResponsiveTable } from "@bsvibe/ui";
+import type { ResponsiveTableColumn } from "@bsvibe/ui";
 import { api } from "../../api/client";
 import type { EntryMeta } from "../../api/types";
 import { Icon } from "../common/Icon";
@@ -154,6 +156,181 @@ export function PluginManagerView() {
     [refreshData],
   );
 
+  const pluginRows = useMemo(
+    () => filtered.filter((e) => e.entry_type === "plugin"),
+    [filtered],
+  );
+  const skillRows = useMemo(
+    () => filtered.filter((e) => e.entry_type === "skill"),
+    [filtered],
+  );
+
+  // Desktop table columns for plugins. Mobile keeps the PluginCard look via
+  // ResponsiveTable's renderMobileCard — these columns only drive the
+  // sm:+ <table>. All behaviour (run / toggle / setup) is preserved.
+  const pluginColumns = useMemo<ResponsiveTableColumn<EntryMeta>[]>(
+    () => [
+      {
+        key: "name",
+        header: t("plugins.col.name"),
+        cell: (entry) => (
+          <span className="font-bold text-on-surface">
+            {entry.name}
+            <span className="text-xs font-mono text-on-surface-variant/60 ml-1">
+              v{entry.version}
+            </span>
+            {entry.is_dangerous && (
+              <span className="ml-2 px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase bg-red-500/10 text-red-400">
+                {t("plugins.isDangerous")}
+              </span>
+            )}
+          </span>
+        ),
+      },
+      {
+        key: "type",
+        header: t("plugins.col.type"),
+        cell: (entry) => {
+          const catStyle =
+            CATEGORY_BADGE_STYLES[entry.category] ??
+            "bg-surface-container text-on-surface";
+          return (
+            <span
+              className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase ${catStyle}`}
+            >
+              {entry.category}
+            </span>
+          );
+        },
+      },
+      {
+        key: "trigger",
+        header: t("plugins.col.trigger"),
+        cell: (entry) => {
+          const triggerType = entry.trigger?.type ?? "on_demand";
+          const triggerIcon = TRIGGER_ICONS[triggerType] ?? "auto_awesome";
+          return (
+            <span className="flex items-center gap-1.5 font-mono text-on-surface-variant">
+              <Icon name={triggerIcon} size={14} />
+              {TRIGGER_LABEL_KEYS[triggerType]
+                ? t(TRIGGER_LABEL_KEYS[triggerType])
+                : triggerType}
+            </span>
+          );
+        },
+      },
+      {
+        key: "status",
+        header: t("plugins.col.status"),
+        cell: (entry) => {
+          const needsSetup =
+            entry.has_credentials && !entry.credentials_configured;
+          const status = needsSetup
+            ? "stopped"
+            : entry.enabled
+              ? "running"
+              : "stopped";
+          const statusInfo = STATUS_DOT_STYLES[status];
+          return (
+            <span className="flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full ${statusInfo.bg}`} />
+              <span className="text-xs text-on-surface-variant font-mono uppercase">
+                {t(statusInfo.labelKey)}
+              </span>
+            </span>
+          );
+        },
+      },
+      {
+        key: "actions",
+        header: t("plugins.col.actions"),
+        cellClassName: "text-right",
+        cell: (entry) => {
+          const needsSetup =
+            entry.has_credentials && !entry.credentials_configured;
+          const running = runningName === entry.name;
+          return (
+            <span className="inline-flex items-center gap-2 justify-end">
+              {!needsSetup && (
+                <Toggle
+                  checked={entry.enabled}
+                  onChange={() => handleToggle(entry.name)}
+                  label={t("plugins.toggleAria", { name: entry.name })}
+                />
+              )}
+              {needsSetup ? (
+                <button
+                  onClick={() => setSetupTarget(entry.name)}
+                  className="min-h-8 px-3 py-1.5 rounded-lg bg-tertiary/10 text-tertiary text-xs font-bold hover:bg-tertiary/20 transition-colors"
+                >
+                  {t("plugins.configure")}
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleRun(entry.name)}
+                  disabled={running || !entry.enabled}
+                  className="min-h-8 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-accent-light hover:bg-surface-container-high transition-colors disabled:opacity-40"
+                >
+                  <Icon name="play_arrow" size={14} />
+                  {running ? t("plugins.running") : t("plugins.run")}
+                </button>
+              )}
+            </span>
+          );
+        },
+      },
+    ],
+    [t, runningName, handleRun, handleToggle],
+  );
+
+  const skillColumns = useMemo<ResponsiveTableColumn<EntryMeta>[]>(
+    () => [
+      {
+        key: "name",
+        header: t("plugins.col.name"),
+        cell: (entry) => (
+          <span className="font-bold text-on-surface">{entry.name}</span>
+        ),
+      },
+      {
+        key: "type",
+        header: t("plugins.col.type"),
+        cell: (entry) => (
+          <span className="font-mono text-xs uppercase text-on-surface-variant">
+            {entry.category}
+          </span>
+        ),
+      },
+      {
+        key: "status",
+        header: t("plugins.col.status"),
+        cell: () => (
+          <span className="px-3 py-1 rounded-full text-xs font-bold bg-accent/10 text-accent-light">
+            {t("plugins.alwaysSafe")}
+          </span>
+        ),
+      },
+      {
+        key: "actions",
+        header: t("plugins.col.actions"),
+        cellClassName: "text-right",
+        cell: (entry) => {
+          const running = runningName === entry.name;
+          return (
+            <button
+              onClick={() => handleRun(entry.name)}
+              disabled={running || !entry.enabled}
+              className="inline-flex min-h-8 items-center text-xs font-bold text-accent-light hover:underline disabled:opacity-40"
+            >
+              {running ? t("plugins.running") : t("plugins.run")}
+            </button>
+          );
+        },
+      },
+    ],
+    [t, runningName, handleRun],
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full text-gray-500">
@@ -232,44 +409,50 @@ export function PluginManagerView() {
           </div>
         </div>
 
-        {/* Plugin Grid */}
-        {filtered.length === 0 ? (
-          <div className="text-center py-16 text-gray-500">
-            <Icon name="extension" className="mx-auto mb-3 opacity-40" size={32} />
-            <p className="text-sm">{t("plugins.noMatch")}</p>
-          </div>
-        ) : (
-          <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
-            {filtered.filter(e => e.entry_type === "plugin").map((entry) => (
+        {/* Plugin table — desktop <table>, mobile card stack (PluginCard) */}
+        <section className="mb-16">
+          <ResponsiveTable<EntryMeta>
+            columns={pluginColumns}
+            rows={pluginRows}
+            rowKey={(e) => e.name}
+            emptyMessage={
+              <span className="inline-flex flex-col items-center gap-3">
+                <Icon name="extension" className="opacity-40" size={32} />
+                {t("plugins.noMatch")}
+              </span>
+            }
+            renderMobileCard={(entry) => (
               <PluginCard
-                key={entry.name}
                 entry={entry}
                 onRun={handleRun}
                 onToggle={handleToggle}
                 onSetup={setSetupTarget}
                 running={runningName === entry.name}
               />
-            ))}
-          </section>
-        )}
+            )}
+          />
+        </section>
 
         {/* Skills Section */}
-        {filtered.filter(e => e.entry_type === "skill").length > 0 && (
+        {skillRows.length > 0 && (
           <section className="max-w-4xl">
             <div className="flex items-center gap-4 mb-8">
               <h2 className="text-2xl font-bold text-on-surface font-headline">{t("plugins.skillsHeading")}</h2>
               <div className="h-px flex-1 bg-outline-variant/30" />
             </div>
-            <div className="grid grid-cols-1 gap-4">
-              {filtered.filter(e => e.entry_type === "skill").map((entry) => (
+            <ResponsiveTable<EntryMeta>
+              columns={skillColumns}
+              rows={skillRows}
+              rowKey={(e) => e.name}
+              emptyMessage={t("plugins.noMatch")}
+              renderMobileCard={(entry) => (
                 <SkillCard
-                  key={entry.name}
                   entry={entry}
                   onRun={handleRun}
                   running={runningName === entry.name}
                 />
-              ))}
-            </div>
+              )}
+            />
           </section>
         )}
       </div>
@@ -329,7 +512,8 @@ function PluginCard({
 
   return (
     <div
-      data-testid="plugin-card"
+      data-testid="bsvibe-table-card"
+      data-card-kind="plugin-card"
       className={`bg-gray-900 rounded-xl border overflow-hidden flex flex-col transition-all group ${
         entry.is_dangerous
           ? "border-white/5 hover:border-error/30"
@@ -449,7 +633,11 @@ function SkillCard({
   const skillStyle = SKILL_ICONS[entry.category] ?? SKILL_ICONS.process;
 
   return (
-    <div className="bg-surface-container-low p-5 rounded-lg border border-outline-variant/10 flex items-center justify-between group hover:bg-surface-container transition-colors">
+    <div
+      data-testid="bsvibe-table-card"
+      data-card-kind="skill-card"
+      className="bg-surface-container-low p-5 rounded-lg border border-outline-variant/10 flex items-center justify-between group hover:bg-surface-container transition-colors"
+    >
       <div className="flex items-center gap-4">
         <div className={`w-10 h-10 rounded flex items-center justify-center ${
           entry.category === "input" ? "bg-secondary/10" :
