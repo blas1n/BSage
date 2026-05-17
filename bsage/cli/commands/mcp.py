@@ -5,8 +5,9 @@ Subcommands:
 * ``serve [--transport stdio|http]`` — bring up the MCP server.
   ``stdio`` hands off to :func:`bsage.mcp.stdio.run_stdio_server`
   (the same path Claude Desktop hits via the ``bsage-mcp`` console
-  script). ``http`` runs ``uvicorn.run(create_app(...))`` so the SSE
-  transport mounted at ``/mcp/sse`` shares the gateway lifespan.
+  script). ``http`` runs ``uvicorn.run(create_app(...))`` so the
+  Streamable HTTP transport mounted at ``/mcp`` shares the gateway
+  lifespan.
 * ``list-tools`` — build the in-process :class:`ToolRegistry` and emit
   the catalog (name + description + required_permission) via
   :class:`OutputFormatter`.
@@ -75,7 +76,7 @@ def serve_cmd(
         "stdio",
         "--transport",
         "-t",
-        help="Transport: stdio (Claude Desktop) or http (gateway + /mcp/sse).",
+        help="Transport: stdio (Claude Desktop) or http (gateway + /mcp).",
         case_sensitive=False,
     ),
     host: str | None = typer.Option(

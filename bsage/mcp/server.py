@@ -1,4 +1,4 @@
-"""Real MCP protocol server (stdio + SSE).
+"""Real MCP protocol server (stdio + Streamable HTTP).
 
 Builds a transport-agnostic ``mcp.server.Server`` instance backed by the
 first-class :class:`bsage.mcp.api.ToolRegistry` (Phase 7 / TASK-002).
@@ -126,8 +126,8 @@ def build_registry(state: Any) -> ToolRegistry:
     """Public alias for :func:`_build_registry`.
 
     Other transports (HTTP ``/mcp/health``, ``bsage mcp list-tools``)
-    introspect the same registry the SSE server serves — exposing the
-    builder as a public symbol keeps that contract explicit.
+    introspect the same registry the Streamable HTTP server serves —
+    exposing the builder as a public symbol keeps that contract explicit.
     """
     return _build_registry(state)
 
@@ -164,6 +164,24 @@ def _authz_context() -> tuple[Any, Any, Any]:
     )
 
 
+def _resolve_principal(state: Any) -> Any | None:
+    """Return the principal for the current MCP call.
+
+    The Streamable HTTP transport resolves the principal from the
+    request's ``Authorization`` header and stashes it on a context-var;
+    we read it back here so ``ToolContext.user`` is the real principal.
+    Outside an HTTP request (stdio transport, tests) the context-var is
+    unset and we fall back to ``state.mcp_principal`` if a caller set
+    one, else ``None``.
+    """
+    from bsage.mcp.streamable_http import get_request_principal
+
+    principal = get_request_principal()
+    if principal is not None:
+        return principal
+    return getattr(state, "mcp_principal", None)
+
+
 async def _dispatch_via_registry(
     state: Any,
     registry: ToolRegistry,
@@ -172,17 +190,17 @@ async def _dispatch_via_registry(
 ) -> Any:
     if name in registry:
         authz_settings, fga, cache = _authz_context()
-        # NOTE: the SSE / stdio transports authenticate the *connection*
-        # (sse.py::_resolve_principal) but do not yet thread the resolved
-        # principal into per-call ToolContext — so ``ctx.user`` is None
-        # here. Tools with a ``required_permission`` therefore deny over
-        # these transports (a permissioned tool needs a principal); tools
-        # with ``required_permission=None`` (every domain read tool) are
-        # unaffected. Threading the per-connection principal is a
-        # transport concern tracked separately from this Tier 5 migration.
+        # The Streamable HTTP transport (bsage.mcp.streamable_http) carries
+        # the ``Authorization`` header on every request, resolves the
+        # principal per-request, and stashes it on a context-var that
+        # ``_resolve_principal`` reads here — so ``ctx.user`` is the real
+        # principal and permissioned tools authorize correctly over HTTP.
+        # The stdio transport has no HTTP request; its principal resolves
+        # to ``None`` (a single trusted local process — domain read tools,
+        # which have ``required_permission=None``, are unaffected).
         ctx = ToolContext(
             state=state,
-            user=getattr(state, "mcp_principal", None),
+            user=_resolve_principal(state),
             settings=authz_settings,
             fga=fga,
             cache=cache,

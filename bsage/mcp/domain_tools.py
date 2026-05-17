@@ -11,8 +11,9 @@ existing transport-agnostic service layer in
 service implementations.
 
 ``required_permission`` is ``None`` for every static tool: the gateway
-already authenticates the SSE / stdio connection before a single tool
-runs (see ``bsage/mcp/sse.py::_resolve_principal``), and the contract is
+already authenticates the request (the Streamable HTTP transport
+resolves the principal from the ``Authorization`` header per-request —
+see ``bsage/mcp/streamable_http.py``), and the contract is
 "any authenticated principal may call any read tool."  ``create_note``
 adds an ``audit_event`` because it's the one mutating tool in this
 catalog. (Tier 5 Phase 3a renamed the legacy ``required_scopes`` list to

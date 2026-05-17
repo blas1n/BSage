@@ -12,7 +12,8 @@ from bsvibe_fastapi.settings import FastApiSettings
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.routing import Mount
+from starlette.types import Receive, Scope, Send
 
 from bsage.core.config import Settings
 from bsage.gateway.dependencies import AppState
@@ -24,7 +25,7 @@ from bsage.mcp.oauth_protected_resource import (
     build_protected_resource_metadata,
     wrap_mcp_with_oauth_401,
 )
-from bsage.mcp.sse import create_sse_routes
+from bsage.mcp.streamable_http import build_streamable_http_app
 
 logger = structlog.get_logger(__name__)
 
@@ -50,7 +51,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await state.initialize()
-        yield
+        # Streamable HTTP MCP transport — the SDK's session manager owns a
+        # task group that must be live before the first /mcp request. The
+        # ASGI shim (mounted below) forwards requests into it; the manager
+        # is built here so the lifespan owns its run() context.
+        mcp_manager, mcp_asgi = build_streamable_http_app(state)
+        app.state.mcp_asgi_app = mcp_asgi
+        async with mcp_manager.run():
+            logger.info("mcp_streamable_transport_started")
+            yield
+        app.state.mcp_asgi_app = None
         await state.shutdown()
 
     app = FastAPI(
@@ -92,7 +102,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Register API + MCP + WebSocket routes
     app.include_router(create_routes(state))
     app.include_router(create_mcp_routes(state))
-    app.include_router(create_sse_routes(state))
 
     # RFC 9728 protected-resource discovery — MCP clients (Claude Code,
     # IDE plugins) bootstrap OAuth by hitting /mcp/* with no Authorization
@@ -112,29 +121,54 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             headers={"Cache-Control": "public, max-age=300"},
         )
 
-    # Wrap the MCP transport surface (`/mcp/sse`, `/mcp/messages/*`) so
-    # unauthenticated requests return a 401 + WWW-Authenticate Bearer
-    # challenge pointing at the metadata URL above. `/mcp/health` stays
-    # unauthenticated (deploy probe). The /api/mcp/* REST router is on
-    # a different prefix and unaffected.
-    class _McpOAuthDiscoveryMiddleware:
-        def __init__(self, inner_app: ASGIApp) -> None:
-            self._inner = inner_app
-            self._guarded = wrap_mcp_with_oauth_401(inner_app)
+    # MCP server liveness — unauthenticated deploy probe. Declared as an
+    # explicit route so it resolves BEFORE the /mcp Streamable HTTP mount
+    # (a Mount swallows everything under its prefix). The /api/mcp/* REST
+    # router is on a different prefix and unaffected.
+    @app.get("/mcp/health", tags=["mcp"])
+    async def mcp_health() -> JSONResponse:
+        """MCP transport liveness + tool count — unauthenticated by design.
 
-        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-            if scope.get("type") != "http":
-                await self._inner(scope, receive, send)
-                return
-            path = scope.get("path") or ""
-            # Only guard the MCP transport endpoints — leave /mcp/health
-            # and everything else (REST, frontend, /api/*) alone.
-            if path == "/mcp/sse" or path.startswith("/mcp/messages"):
-                await self._guarded(scope, receive, send)
-                return
-            await self._inner(scope, receive, send)
+        Deploy probes (Claude Code bridges, k8s readiness) run before the
+        auth backend is reachable. Reports the same registry the
+        Streamable HTTP transport serves so the count is honest.
+        """
+        from bsage.mcp import plugin_bridge
+        from bsage.mcp.server import build_registry
 
-    app.add_middleware(_McpOAuthDiscoveryMiddleware)
+        registry = build_registry(state)
+        plugin_tools = await plugin_bridge.list_plugins_as_tools(state)
+        return JSONResponse(
+            content={
+                "status": "ok",
+                "server": "bsage",
+                "tool_count": len(list(registry.list_tools())) + len(plugin_tools),
+            }
+        )
+
+    # Streamable HTTP MCP transport — mounted at /mcp. The lifespan owns
+    # the session manager's run() context; this ASGI shim only forwards
+    # requests into the manager stashed on app.state. Guarded by
+    # wrap_mcp_with_oauth_401 so an unauthenticated request returns a
+    # 401 + WWW-Authenticate Bearer challenge (RFC 9728) pointing at the
+    # /.well-known/oauth-protected-resource metadata above — exactly the
+    # posture the other three BSVibe products serve.
+    async def _mcp_transport(scope: Scope, receive: Receive, send: Send) -> None:
+        asgi = getattr(app.state, "mcp_asgi_app", None)
+        if asgi is None:
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 503,
+                    "headers": [(b"content-type", b"application/json")],
+                }
+            )
+            await send({"type": "http.response.body", "body": b'{"error":"mcp_unavailable"}'})
+            return
+        await asgi(scope, receive, send)
+
+    _mcp_transport_with_401 = wrap_mcp_with_oauth_401(_mcp_transport)
+    app.router.routes.append(Mount("/mcp", app=_mcp_transport_with_401))
 
     # Demo mode (separate deployment, BSVIBE_DEMO_MODE=true)
     from bsvibe_demo import is_demo_mode
