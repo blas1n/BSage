@@ -1,6 +1,6 @@
 import { Eye, EyeOff } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 import { api } from "../../api/client";
 import type { ConfigUpdate, LlmTestResult, RuntimeConfig } from "../../api/types";
 import { useAuth } from "../../hooks/useAuth";
@@ -9,7 +9,7 @@ import { Toggle } from "../common/Toggle";
 import { McpServerSetupModal } from "../plugins/McpServerSetupModal";
 
 export function SettingsView() {
-  const { t } = useTranslation();
+  const t = useT("sage");
   const { logout } = useAuth();
   const [config, setConfig] = useState<RuntimeConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -308,7 +308,7 @@ export function SettingsView() {
 
         <section className="border-t border-white/5 pt-6">
           <h3 className="text-sm font-medium text-gray-300 mb-3">
-            {t("settings.embeddingModel", "Embedding model")}
+            {t("settings.embeddingModel")}
           </h3>
           <div className="flex gap-2">
             <input

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 import { api } from "../../api/client";
 import type { EntryMeta } from "../../api/types";
 import { Icon } from "../common/Icon";
@@ -58,7 +58,7 @@ const STATUS_DOT_STYLES: Record<string, { bg: string; label: string }> = {
 };
 
 export function PluginManagerView() {
-  const { t } = useTranslation();
+  const t = useT("sage");
   const [plugins, setPlugins] = useState<EntryMeta[]>([]);
   const [skills, setSkills] = useState<EntryMeta[]>([]);
   const [loading, setLoading] = useState(true);
@@ -307,7 +307,7 @@ function PluginCard({
   onSetup: (name: string) => void;
   running: boolean;
 }) {
-  const { t } = useTranslation();
+  const t = useT("sage");
   const needsSetup = entry.has_credentials && !entry.credentials_configured;
   const triggerType = entry.trigger?.type ?? "on_demand";
   const triggerIcon = TRIGGER_ICONS[triggerType] ?? "auto_awesome";
@@ -428,7 +428,7 @@ function SkillCard({
   onRun: (name: string) => void;
   running: boolean;
 }) {
-  const { t } = useTranslation();
+  const t = useT("sage");
   const SKILL_ICONS: Record<string, { icon: string; color: string }> = {
     process: { icon: "auto_graph", color: "text-accent-light" },
     input: { icon: "memory", color: "text-secondary" },

@@ -1,5 +1,5 @@
 import { usePathname } from "next/navigation";
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 
 interface HelpSection {
   titleKey: string;
@@ -44,7 +44,7 @@ interface HelpPanelProps {
 }
 
 export function HelpPanel({ isOpen, onClose }: HelpPanelProps) {
-  const { t } = useTranslation();
+  const t = useT("sage");
   const pathname = usePathname();
   const section = HELP_CONTENT[pathname ?? "/"] ?? DEFAULT_HELP;
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 import { api } from "../../api/client";
 import type { EntryMeta, VaultTreeEntry } from "../../api/types";
 import { type ConnectionState, wsManager } from "../../api/websocket";
@@ -35,7 +35,7 @@ function computePluginStatus(plugins: EntryMeta[]): PluginStatusSummary {
 }
 
 export function DashboardView() {
-  const { t } = useTranslation();
+  const t = useT("sage");
   const [stats, setStats] = useState<DashboardStats>({
     totalNotes: 0,
     activePlugins: 0,

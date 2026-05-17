@@ -1,6 +1,6 @@
 import { Hash } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 import { api } from "../../api/client";
 
 interface TagCloudProps {
@@ -9,7 +9,7 @@ interface TagCloudProps {
 }
 
 export function TagCloud({ activeTag, onSelectTag }: TagCloudProps) {
-  const { t } = useTranslation();
+  const t = useT("sage");
   const [tags, setTags] = useState<string[]>([]);
 
   useEffect(() => {

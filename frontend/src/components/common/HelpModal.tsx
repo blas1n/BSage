@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 import { Icon } from "./Icon";
 
 interface HelpModalProps {
@@ -16,7 +16,7 @@ const FEATURE_KEYS = [
 ] as const;
 
 export function HelpModal({ open, onClose }: HelpModalProps) {
-  const { t } = useTranslation();
+  const t = useT("sage");
   const overlayRef = useRef<HTMLDivElement>(null);
 
   const handleKeyDown = useCallback(

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 import { useChat } from "../../hooks/useChat";
 import { Icon } from "../common/Icon";
 import { ChatInput } from "./ChatInput";
@@ -8,7 +8,7 @@ import { MiniGraph } from "./MiniGraph";
 import { SessionList } from "./SessionList";
 
 export function ChatView() {
-  const { t } = useTranslation();
+  const t = useT("sage");
   const {
     messages,
     isLoading,

@@ -1,6 +1,6 @@
 import { FileText, Search, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 import { api } from "../../api/client";
 import type { VaultSearchResult } from "../../api/types";
 
@@ -9,7 +9,7 @@ interface SearchPanelProps {
 }
 
 export function SearchPanel({ onSelectFile }: SearchPanelProps) {
-  const { t } = useTranslation();
+  const t = useT("sage");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<VaultSearchResult[]>([]);
   const [searching, setSearching] = useState(false);

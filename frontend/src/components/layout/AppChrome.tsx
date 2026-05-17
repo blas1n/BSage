@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from "react";
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 import { DemoBanner, isDemoMode, useAutoDemoSession } from "@bsvibe/demo";
 import { useApproval } from "../../hooks/useApproval";
 import { injectDemoToken, useAuth } from "../../hooks/useAuth";
@@ -42,7 +42,7 @@ function DemoChrome({ children }: { children: ReactNode }) {
   });
   const { current: approvalRequest, respond: respondApproval, pendingCount } =
     useApproval();
-  const { t } = useTranslation();
+  const t = useT("sage");
 
   if (loading) {
     return (
@@ -87,7 +87,7 @@ function ProdChrome({ children }: { children: ReactNode }) {
   });
   const { current: approvalRequest, respond: respondApproval, pendingCount } =
     useApproval();
-  const { t } = useTranslation();
+  const t = useT("sage");
 
   if (loading) {
     return (

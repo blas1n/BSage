@@ -1,10 +1,10 @@
 import { ScrollText } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 import { api } from "../../api/client";
 
 export function ActionsView() {
-  const { t } = useTranslation();
+  const t = useT("sage");
   const [actions, setActions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 

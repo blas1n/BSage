@@ -1,5 +1,5 @@
 import { ShieldAlert } from "lucide-react";
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 import type { ApprovalRequest } from "../../api/types";
 
 interface ApprovalModalProps {
@@ -8,7 +8,7 @@ interface ApprovalModalProps {
 }
 
 export function ApprovalModal({ request, onRespond }: ApprovalModalProps) {
-  const { t } = useTranslation();
+  const t = useT("sage");
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="bg-gray-900 border border-gray-800 rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type KeyboardEvent } from "react";
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 import type { InputMode } from "../../hooks/useChat";
 import { Icon } from "../common/Icon";
 
@@ -11,7 +11,7 @@ interface ChatInputProps {
 }
 
 export function ChatInput({ onSend, disabled, mode, onModeChange }: ChatInputProps) {
-  const { t } = useTranslation();
+  const t = useT("sage");
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 

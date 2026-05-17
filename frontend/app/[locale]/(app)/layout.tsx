@@ -1,10 +1,5 @@
 'use client';
 
-// Initialize react-i18next before any view component calls `useTranslation`.
-// Kept exactly as the old SPA had it (`App.tsx` did `import './i18n'`); i18n
-// is intentionally NOT route-scoped in this PR.
-import '@/src/i18n';
-
 import type { ReactNode } from 'react';
 import { AppChrome } from '@/src/components/layout/AppChrome';
 

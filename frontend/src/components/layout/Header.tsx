@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useTranslation } from "react-i18next";
+import { useT } from "@bsvibe/i18n";
 import type { ConnectionState } from "../../api/websocket";
 import { HelpModal } from "../common/HelpModal";
 import { Icon } from "../common/Icon";
@@ -11,7 +11,7 @@ interface HeaderProps {
 }
 
 export function Header({ connectionState, pendingApprovals }: HeaderProps) {
-  const { t } = useTranslation();
+  const t = useT("sage");
   const [helpOpen, setHelpOpen] = useState(false);
 
   return (
