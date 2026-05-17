@@ -1,3 +1,4 @@
+import { usePathname } from "next/navigation";
 import { useTranslation } from "react-i18next";
 
 interface HelpSection {
@@ -6,26 +7,27 @@ interface HelpSection {
   docLink?: string;
 }
 
+// Keyed by App Router pathname. The root path `/` is the chat view.
 const HELP_CONTENT: Record<string, HelpSection> = {
-  "#chat": {
+  "/": {
     titleKey: "nav.currentChat",
     descriptionKey: "help.section.chat",
     docLink: "https://bsvibe.dev/bsage/getting-started",
   },
-  "#graph": {
+  "/graph": {
     titleKey: "nav.knowledgeBase",
     descriptionKey: "help.section.graph",
   },
-  "#plugins": {
+  "/plugins": {
     titleKey: "plugins.title",
     descriptionKey: "help.section.plugins",
     docLink: "https://bsvibe.dev/bsage/features/plugins",
   },
-  "#vault": {
+  "/vault": {
     titleKey: "nav.vaultBrowser",
     descriptionKey: "help.section.vault",
   },
-  "#dashboard": {
+  "/dashboard": {
     titleKey: "dashboard.title",
     descriptionKey: "help.section.dashboard",
   },
@@ -43,8 +45,8 @@ interface HelpPanelProps {
 
 export function HelpPanel({ isOpen, onClose }: HelpPanelProps) {
   const { t } = useTranslation();
-  const hash = typeof window !== "undefined" ? window.location.hash || "" : "";
-  const section = HELP_CONTENT[hash] ?? DEFAULT_HELP;
+  const pathname = usePathname();
+  const section = HELP_CONTENT[pathname ?? "/"] ?? DEFAULT_HELP;
 
   return (
     <>

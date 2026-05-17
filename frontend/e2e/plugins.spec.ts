@@ -2,7 +2,7 @@ import { test, expect } from "./fixtures";
 
 test.describe("Plugin Manager view", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/#/plugins");
+    await page.goto("/plugins");
   });
 
   test("shows Plugins page header", async ({ page }) => {
@@ -98,19 +98,19 @@ test.describe("Plugin Manager view", () => {
 
 test.describe("Skills section", () => {
   test("shows Skills heading with divider", async ({ page }) => {
-    await page.goto("/#/plugins");
+    await page.goto("/plugins");
     await expect(page.getByRole("heading", { name: "Skills" })).toBeVisible();
   });
 
   test("renders skill cards with name, description, and Always Safe badge", async ({ page }) => {
-    await page.goto("/#/plugins");
+    await page.goto("/plugins");
     await expect(page.getByText("weekly-digest")).toBeVisible();
     await expect(page.getByText("insight-linker")).toBeVisible();
     await expect(page.getByText("Always Safe").first()).toBeVisible();
   });
 
   test("skill cards show Run button", async ({ page }) => {
-    await page.goto("/#/plugins");
+    await page.goto("/plugins");
     // Skills section has Run buttons
     const skillSection = page.locator("section").filter({ has: page.getByRole("heading", { name: "Skills" }) });
     await expect(skillSection.getByText("Run").first()).toBeVisible();
@@ -119,7 +119,7 @@ test.describe("Skills section", () => {
 
 test.describe("Upload modal wiring (one-shot import) — Plugins still routes by handleRun", () => {
   test("plain plugin Run still calls /run directly (no modal)", async ({ page }) => {
-    await page.goto("/#/plugins");
+    await page.goto("/plugins");
 
     let ranDirectly = false;
     await page.route("**/api/run/shell-executor", (route) => {

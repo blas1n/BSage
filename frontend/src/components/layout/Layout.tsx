@@ -7,12 +7,11 @@ import { Sidebar } from "./Sidebar";
 
 interface LayoutProps {
   children: ReactNode;
-  currentHash: string;
   connectionState: ConnectionState;
   pendingApprovals: number;
 }
 
-export function Layout({ children, currentHash, connectionState, pendingApprovals }: LayoutProps) {
+export function Layout({ children, connectionState, pendingApprovals }: LayoutProps) {
   // Drawer state lives on the Layout because the Sidebar is rendered as a
   // sibling of `<main>` and the (mobile) hamburger trigger ships with the
   // shared `ResponsiveSidebar` component itself — no separate trigger
@@ -22,7 +21,6 @@ export function Layout({ children, currentHash, connectionState, pendingApproval
   return (
     <div className="flex h-screen bg-surface-dim text-on-surface font-sans selection:bg-accent-light/30 selection:text-accent-light">
       <Sidebar
-        currentHash={currentHash}
         isOpen={sidebarOpen}
         onOpenChange={setSidebarOpen}
         onClose={() => setSidebarOpen(false)}

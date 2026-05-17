@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import ForceGraph2D from "react-force-graph-2d";
 import { Icon } from "../common/Icon";
 import { api } from "../../api/client";
@@ -63,12 +64,12 @@ export function MiniGraph() {
         <span className="text-xs font-medium text-gray-400">
           Knowledge Graph
         </span>
-        <a
-          href="#/graph"
+        <Link
+          href="/graph"
           className="ml-auto text-[10px] text-accent-light hover:text-accent-light/80 transition-colors font-mono uppercase tracking-wider"
         >
           Expand
-        </a>
+        </Link>
       </div>
       <div ref={containerRef} className="h-40 relative bg-surface-dim">
         {loading && (

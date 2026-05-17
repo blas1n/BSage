@@ -334,7 +334,22 @@ export function useAuth({
   }
 
   function callbackUrl(): string {
-    // Hash-route callback so SPA can parse fragment tokens.
+    // TRANSITIONAL: emits the legacy HASH callback URL (`/#/auth/callback`).
+    //
+    // The App Router migration moved the callback to a real route segment
+    // (`/auth/callback`), but the `redirect_uri` allowlist registered for
+    // BSage on `auth.bsvibe.dev` still only contains the hash form. The
+    // auth server SILENTLY rejects any `redirect_uri` not on the allowlist
+    // (falls back to its site_url), so we must keep sending the registered
+    // hash URL until the allowlist entry is updated.
+    //
+    // The `HashRedirect` shim (app/layout.tsx) catches the returning
+    // `#/auth/callback` URL, preserves the token fragment, and forwards to
+    // the real `/auth/callback` route — so the migration is transparent.
+    //
+    // FOLLOW-UP: once `auth.bsvibe.dev` allowlists `${origin}/auth/callback`,
+    // change this to `${window.location.origin}/auth/callback` and the shim
+    // becomes dead code.
     return `${window.location.origin}/#/auth/callback`;
   }
 

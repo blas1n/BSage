@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { HashRedirect } from '@/src/components/routing/HashRedirect';
 
 export const metadata: Metadata = {
   title: 'BSage',
@@ -28,7 +29,13 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="bg-[#0a0b0f] text-[#e4e6ee]">{children}</body>
+      <body className="bg-[#0a0b0f] text-[#e4e6ee]">
+        {/* Transitional hash-route -> path-route redirect. Catches legacy
+            `#/...` URLs (old bookmarks + the still-hash-registered OAuth
+            `redirect_uri`) and replaces them with the canonical path. */}
+        <HashRedirect />
+        {children}
+      </body>
     </html>
   );
 }

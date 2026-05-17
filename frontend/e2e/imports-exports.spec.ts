@@ -13,21 +13,21 @@ test.describe("Imports & Exports tab", () => {
   });
 
   test("page lists chatgpt-memory-input under Imports", async ({ page }) => {
-    await page.goto("/#/imports");
+    await page.goto("/imports");
     await page.waitForSelector("text=Imports & Exports");
     await expect(page.locator('h2', { hasText: "Imports" })).toBeVisible();
     await expect(page.getByText("chatgpt-memory-input")).toBeVisible();
   });
 
   test("page lists obsidian-output under Exports", async ({ page }) => {
-    await page.goto("/#/imports");
+    await page.goto("/imports");
     await page.waitForSelector("text=Imports & Exports");
     await expect(page.locator('h2', { hasText: "Exports" })).toBeVisible();
     await expect(page.getByText("obsidian-output")).toBeVisible();
   });
 
   test("Plugins page no longer lists one-shot import plugins", async ({ page }) => {
-    await page.goto("/#/plugins");
+    await page.goto("/plugins");
     await page.waitForSelector("text=Plugins");
     await expect(page.getByText("chatgpt-memory-input")).not.toBeVisible();
     await expect(page.getByText("obsidian-output")).not.toBeVisible();
@@ -37,7 +37,7 @@ test.describe("Imports & Exports tab", () => {
   });
 
   test("Import button on a chatgpt card opens the upload modal", async ({ page }) => {
-    await page.goto("/#/imports");
+    await page.goto("/imports");
     await page.waitForSelector("text=chatgpt-memory-input");
     const card = page.locator("[data-testid='io-card']").filter({
       hasText: "chatgpt-memory-input",
@@ -60,7 +60,7 @@ test.describe("Imports & Exports tab", () => {
       });
     });
 
-    await page.goto("/#/imports");
+    await page.goto("/imports");
     await page.waitForSelector("text=obsidian-output");
     const card = page.locator("[data-testid='io-card']").filter({
       hasText: "obsidian-output",
@@ -77,14 +77,14 @@ test.describe("Imports & Exports tab", () => {
 test.describe("Imports & Exports visual snapshots", () => {
   test("desktop", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto("/#/imports");
+    await page.goto("/imports");
     await page.waitForSelector("text=chatgpt-memory-input");
     await page.screenshot({ path: "test-results/visual/imports-exports-desktop.png" });
   });
 
   test("mobile", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/#/imports");
+    await page.goto("/imports");
     await page.waitForSelector("text=chatgpt-memory-input");
     await page.screenshot({ path: "test-results/visual/imports-exports-mobile.png" });
   });
@@ -92,7 +92,7 @@ test.describe("Imports & Exports visual snapshots", () => {
 
 test.describe("ai-memory-input — instructions + source picker + result feedback", () => {
   test("modal shows source picker (Claude Code / Codex / opencode / Cursor / Custom)", async ({ page }) => {
-    await page.goto("/#/imports");
+    await page.goto("/imports");
     await page.waitForSelector("text=ai-memory-input");
     const card = page.locator("[data-testid='io-card']").filter({ hasText: "ai-memory-input" });
     await card.getByRole("button", { name: /Import/ }).click();
@@ -105,7 +105,7 @@ test.describe("ai-memory-input — instructions + source picker + result feedbac
   });
 
   test("instructions update when source changes", async ({ page }) => {
-    await page.goto("/#/imports");
+    await page.goto("/imports");
     const card = page.locator("[data-testid='io-card']").filter({ hasText: "ai-memory-input" });
     await card.getByRole("button", { name: /Import/ }).click();
     // Default = Claude Code
@@ -139,7 +139,7 @@ test.describe("ai-memory-input — instructions + source picker + result feedbac
       }),
     );
 
-    await page.goto("/#/imports");
+    await page.goto("/imports");
     const card = page.locator("[data-testid='io-card']").filter({ hasText: "ai-memory-input" });
     await card.getByRole("button", { name: /Import/ }).click();
 
@@ -178,7 +178,7 @@ test.describe("ai-memory-input — instructions + source picker + result feedbac
       }),
     );
 
-    await page.goto("/#/imports");
+    await page.goto("/imports");
     const card = page.locator("[data-testid='io-card']").filter({ hasText: "ai-memory-input" });
     await card.getByRole("button", { name: /Import/ }).click();
     await page.locator('input[type="file"]').setInputFiles({
@@ -194,7 +194,7 @@ test.describe("ai-memory-input — instructions + source picker + result feedbac
 test.describe("ai-memory-input visual snapshot", () => {
   test("modal with Claude Code source — desktop", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
-    await page.goto("/#/imports");
+    await page.goto("/imports");
     await page.waitForSelector("text=ai-memory-input");
     const card = page.locator("[data-testid='io-card']").filter({ hasText: "ai-memory-input" });
     await card.getByRole("button", { name: /Import/ }).click();

@@ -2,7 +2,7 @@ import { test, expect } from "./fixtures";
 
 test.describe("Knowledge Graph view", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/#/graph");
+    await page.goto("/graph");
   });
 
   test("renders the graph canvas container", async ({ page }) => {
@@ -51,7 +51,7 @@ test.describe("Knowledge Graph view", () => {
 
 test.describe("Node Inspector sidebar", () => {
   test("inspector is not visible by default", async ({ page }) => {
-    await page.goto("/#/graph");
+    await page.goto("/graph");
     await expect(page.getByText("Node Inspector")).not.toBeVisible();
   });
 
@@ -81,7 +81,7 @@ test.describe("Node Inspector sidebar", () => {
       }),
     );
 
-    await page.goto("/#/graph");
+    await page.goto("/graph");
     // Wait for the canvas to be ready
     await page.waitForTimeout(1000);
 
@@ -140,7 +140,7 @@ test.describe("Large graph rendering (Phase 1: physics + LOD)", () => {
       if (msg.type() === "error") consoleErrors.push(msg.text());
     });
 
-    await page.goto("/#/graph");
+    await page.goto("/graph");
     await expect(page.locator("canvas")).toBeVisible();
     // Let the simulation cool down
     await page.waitForTimeout(1500);
@@ -160,7 +160,7 @@ test.describe("Large graph rendering (Phase 1: physics + LOD)", () => {
 
 test.describe("Community visualization (Phase 1)", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/#/graph");
+    await page.goto("/graph");
     await page.waitForTimeout(500);
   });
 

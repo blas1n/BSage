@@ -2,7 +2,7 @@ import { test, expect } from "./fixtures";
 
 test.describe("Dashboard status overview", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/#/dashboard");
+    await page.goto("/dashboard");
   });
 
   test("shows Dashboard heading", async ({ page }) => {
@@ -50,17 +50,17 @@ test.describe("Dashboard status overview", () => {
 
   test("New Chat Session navigates to chat", async ({ page }) => {
     await page.getByRole("link", { name: "New Chat Session" }).click();
-    await expect(page).toHaveURL(/#\//);
+    await expect(page).toHaveURL(/\/$/);
   });
 
   test("Browse Vault navigates to vault", async ({ page }) => {
     await page.getByRole("link", { name: "Browse Vault" }).click();
-    await expect(page).toHaveURL(/#\/vault/);
+    await expect(page).toHaveURL(/\/vault$/);
   });
 
   test("View Graph navigates to graph", async ({ page }) => {
     await page.getByRole("link", { name: "View Graph" }).click();
-    await expect(page).toHaveURL(/#\/graph/);
+    await expect(page).toHaveURL(/\/graph$/);
   });
 
   // --- System Status ---
