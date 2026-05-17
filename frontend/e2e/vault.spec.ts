@@ -2,7 +2,7 @@ import { test, expect } from "./fixtures";
 
 test.describe("Vault Browser view", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/#/vault");
+    await page.goto("/vault");
   });
 
   test("shows Vault Explorer header", async ({ page }) => {
@@ -47,7 +47,7 @@ test.describe("Vault Browser view", () => {
 
 test.describe("Note viewer", () => {
   test("clicking a file in tree shows note content with breadcrumbs", async ({ page }) => {
-    await page.goto("/#/vault");
+    await page.goto("/vault");
 
     // Click on a file in the directory tree (index.md under garden)
     await page.getByText("index.md").click();
@@ -61,7 +61,7 @@ test.describe("Note viewer", () => {
   });
 
   test("note viewer shows title derived from filename", async ({ page }) => {
-    await page.goto("/#/vault");
+    await page.goto("/vault");
     await page.getByText("index.md").click();
 
     // Title is derived from the filename (index)
@@ -69,7 +69,7 @@ test.describe("Note viewer", () => {
   });
 
   test("shows metadata panel with YAML frontmatter", async ({ page }) => {
-    await page.goto("/#/vault");
+    await page.goto("/vault");
     await page.getByText("index.md").click();
 
     // Metadata section shows "Metadata (YAML)" label
@@ -77,7 +77,7 @@ test.describe("Note viewer", () => {
   });
 
   test("shows raw/rendered toggle button", async ({ page }) => {
-    await page.goto("/#/vault");
+    await page.goto("/vault");
     await page.getByText("index.md").click();
 
     // Raw button should be visible
@@ -85,7 +85,7 @@ test.describe("Note viewer", () => {
   });
 
   test("toggling to raw mode shows raw markdown content", async ({ page }) => {
-    await page.goto("/#/vault");
+    await page.goto("/vault");
     await page.getByText("index.md").click();
 
     // Click raw toggle
@@ -98,7 +98,7 @@ test.describe("Note viewer", () => {
   });
 
   test("shows footer metadata bar with key-value pairs", async ({ page }) => {
-    await page.goto("/#/vault");
+    await page.goto("/vault");
     await page.getByText("index.md").click();
 
     // Footer shows metadata from frontmatter
@@ -108,7 +108,7 @@ test.describe("Note viewer", () => {
   });
 
   test("shows Synced status indicator in breadcrumb bar", async ({ page }) => {
-    await page.goto("/#/vault");
+    await page.goto("/vault");
     await page.getByText("index.md").click();
 
     await expect(page.getByText("Synced")).toBeVisible();

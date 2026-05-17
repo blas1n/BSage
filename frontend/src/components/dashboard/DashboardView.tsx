@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
 import type { EntryMeta, VaultTreeEntry } from "../../api/types";
@@ -148,9 +149,9 @@ export function DashboardView() {
             {t("dashboard.quickActions")}
           </h2>
           <div className="flex flex-wrap gap-3">
-            <ActionLink href="#/" icon="chat" label={t("dashboard.newChatSession")} />
-            <ActionLink href="#/vault" icon="folder_open" label={t("dashboard.browseVault")} />
-            <ActionLink href="#/graph" icon="hub" label={t("dashboard.viewGraph")} />
+            <ActionLink href="/" icon="chat" label={t("dashboard.newChatSession")} />
+            <ActionLink href="/vault" icon="folder_open" label={t("dashboard.browseVault")} />
+            <ActionLink href="/graph" icon="hub" label={t("dashboard.viewGraph")} />
           </div>
         </section>
 
@@ -263,12 +264,12 @@ function ActionLink({
   label: string;
 }) {
   return (
-    <a
+    <Link
       href={href}
       className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-surface-container-low border border-white/5 text-sm font-bold text-on-surface hover:bg-surface-container transition-colors"
     >
       <Icon name={icon} size={18} />
       {label}
-    </a>
+    </Link>
   );
 }

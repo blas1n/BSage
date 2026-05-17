@@ -82,7 +82,7 @@ test.describe("MCP PAT flow — Settings MCP section → Setup modal", () => {
   });
 
   test("section → modal → empty state → tabs render", async ({ page }) => {
-    await page.goto("/#/settings");
+    await page.goto("/settings");
     await page.locator('[data-testid="mcp-server-section"]').waitFor();
     await page.getByRole("button", { name: /Manage keys & connect/ }).click();
 
@@ -96,7 +96,7 @@ test.describe("MCP PAT flow — Settings MCP section → Setup modal", () => {
   test("generate new key → token shown once + auto-injected into snippet", async ({
     page,
   }) => {
-    await page.goto("/#/settings");
+    await page.goto("/settings");
     await page.getByRole("button", { name: /Manage keys & connect/ }).click();
 
     await page.getByPlaceholder("Name (e.g. cursor-laptop)").fill("my-cursor");
@@ -117,7 +117,7 @@ test.describe("MCP PAT flow — Settings MCP section → Setup modal", () => {
   });
 
   test("switch to Claude Desktop tab → mcp-proxy bridge config", async ({ page }) => {
-    await page.goto("/#/settings");
+    await page.goto("/settings");
     await page.getByRole("button", { name: /Manage keys & connect/ }).click();
     await page.getByPlaceholder("Name (e.g. cursor-laptop)").fill("desktop");
     await page.getByRole("button", { name: /\+ Generate/ }).click();
@@ -130,7 +130,7 @@ test.describe("MCP PAT flow — Settings MCP section → Setup modal", () => {
   });
 
   test("revoke removes key from active list", async ({ page }) => {
-    await page.goto("/#/settings");
+    await page.goto("/settings");
     await page.getByRole("button", { name: /Manage keys & connect/ }).click();
     await page.getByPlaceholder("Name (e.g. cursor-laptop)").fill("revoke-me");
     await page.getByRole("button", { name: /\+ Generate/ }).click();
@@ -143,7 +143,7 @@ test.describe("MCP PAT flow — Settings MCP section → Setup modal", () => {
   });
 
   test("modal closes on backdrop click + reopens", async ({ page }) => {
-    await page.goto("/#/settings");
+    await page.goto("/settings");
     await page.getByRole("button", { name: /Manage keys & connect/ }).click();
     // "Generate new key" only renders inside the modal — uniquely identifies it
     await expect(page.getByText("Generate new key")).toBeVisible();
@@ -160,7 +160,7 @@ test.describe("Visual snapshots for new MCP card + modal", () => {
   test("modal with fresh token — desktop", async ({ page, pat }) => {
     void pat; // fixture installs the routes
     await page.setViewportSize({ width: 1280, height: 900 });
-    await page.goto("/#/settings");
+    await page.goto("/settings");
     await page.getByRole("button", { name: /Manage keys & connect/ }).click();
     await page.getByPlaceholder("Name (e.g. cursor-laptop)").fill("demo");
     await page.getByRole("button", { name: /\+ Generate/ }).click();
@@ -171,7 +171,7 @@ test.describe("Visual snapshots for new MCP card + modal", () => {
   test("modal — mobile", async ({ page, pat }) => {
     void pat;
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/#/settings");
+    await page.goto("/settings");
     await page.getByRole("button", { name: /Manage keys & connect/ }).click();
     await page.waitForSelector("text=Active keys");
     await page.screenshot({ path: "test-results/visual/mcp-modal-mobile.png" });

@@ -8,9 +8,8 @@ import { test, expect } from "./fixtures";
  * suite — this file focuses on responsive chrome and the canonical user
  * flow (dashboard → drawer-nav → vault) on a small viewport.
  *
- * BSage is SPA-wide `ssr: false` (per Phase Z constraint). The hash router
- * resolves the route on the client after hydration so we always navigate
- * via `/#/<route>`.
+ * BSage runs on the Next.js App Router with real route segments, so we
+ * navigate via path URLs (`/dashboard`, `/vault`, …).
  */
 
 test.describe("Mobile viewport: BSage core flow", () => {
@@ -18,7 +17,7 @@ test.describe("Mobile viewport: BSage core flow", () => {
     if (testInfo.project.name === "chromium") {
       testInfo.skip();
     }
-    await page.goto("/#/dashboard");
+    await page.goto("/dashboard");
   });
 
   test("dashboard renders without horizontal overflow on mobile", async ({ page }) => {
@@ -52,7 +51,7 @@ test.describe("Mobile viewport: BSage core flow", () => {
     await page.getByRole("link", { name: /vault browser/i }).click();
     // Backdrop is gone after navigation.
     await expect(page.getByTestId("bsvibe-sidebar-backdrop")).toHaveCount(0);
-    await expect(page).toHaveURL(/#\/vault/);
+    await expect(page).toHaveURL(/\/vault$/);
   });
 
   test("backdrop click closes the drawer", async ({ page }) => {
@@ -73,6 +72,6 @@ test.describe("Mobile viewport: BSage core flow", () => {
   test("vault browser is reachable via mobile drawer nav", async ({ page }) => {
     await page.getByRole("button", { name: /open navigation/i }).click();
     await page.getByRole("link", { name: /vault browser/i }).click();
-    await expect(page).toHaveURL(/#\/vault/);
+    await expect(page).toHaveURL(/\/vault$/);
   });
 });

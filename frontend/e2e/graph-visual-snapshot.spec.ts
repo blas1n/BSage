@@ -39,7 +39,7 @@ test.describe("Graph view visual snapshot (Phase 1)", () => {
 
   test("desktop with data", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto("/#/graph");
+    await page.goto("/graph");
     await page.waitForSelector("canvas");
     await page.waitForTimeout(2500); // let the simulation settle
     await page.screenshot({ path: "test-results/visual/graph-with-data-desktop.png" });
@@ -47,7 +47,7 @@ test.describe("Graph view visual snapshot (Phase 1)", () => {
 
   test("mobile with data", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/#/graph");
+    await page.goto("/graph");
     await page.waitForSelector("canvas");
     await page.waitForTimeout(2500);
     await page.screenshot({ path: "test-results/visual/graph-with-data-mobile.png" });
@@ -55,7 +55,7 @@ test.describe("Graph view visual snapshot (Phase 1)", () => {
 
   test("desktop community color mode", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto("/#/graph");
+    await page.goto("/graph");
     await page.waitForSelector("canvas");
     await page.waitForTimeout(1500);
     await page.locator(".absolute.bottom-6.left-6").getByRole("button", { name: "Community" }).click();
@@ -67,7 +67,7 @@ test.describe("Graph view visual snapshot (Phase 1)", () => {
 test.describe("Upload modal visual (Phase 5b)", () => {
   test("plugin manager with upload modal open", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto("/#/plugins");
+    await page.goto("/plugins");
     const card = page.locator("[data-testid='plugin-card']").filter({
       hasText: "chatgpt-memory-input",
     });
@@ -78,7 +78,7 @@ test.describe("Upload modal visual (Phase 5b)", () => {
 
   test("plugin manager with upload modal — mobile", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/#/plugins");
+    await page.goto("/plugins");
     const card = page.locator("[data-testid='plugin-card']").filter({
       hasText: "chatgpt-memory-input",
     });
@@ -101,7 +101,7 @@ test.describe("Settings MCP section visual (PAT keys flow)", () => {
 
   test("settings page shows MCP Server section — desktop", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto("/#/settings");
+    await page.goto("/settings");
     const heading = page.locator("text=MCP Server").first();
     await heading.waitFor();
     await heading.evaluate((el) => el.scrollIntoView({ block: "start" }));
@@ -111,7 +111,7 @@ test.describe("Settings MCP section visual (PAT keys flow)", () => {
 
   test("settings MCP section — mobile", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/#/settings");
+    await page.goto("/settings");
     const heading = page.locator("text=MCP Server").first();
     await heading.waitFor();
     await heading.evaluate((el) => el.scrollIntoView({ block: "start" }));
@@ -120,7 +120,7 @@ test.describe("Settings MCP section visual (PAT keys flow)", () => {
   });
 
   test("MCP section opens Manage modal with empty keys state", async ({ page }) => {
-    await page.goto("/#/settings");
+    await page.goto("/settings");
     await page.waitForSelector("text=MCP Server");
     await page.getByRole("button", { name: /Manage keys & connect/ }).click();
     await expect(page.getByText("BSage MCP Server")).toBeVisible();
@@ -131,7 +131,7 @@ test.describe("Settings MCP section visual (PAT keys flow)", () => {
   });
 
   test("plugins page no longer renders an MCP card", async ({ page }) => {
-    await page.goto("/#/plugins");
+    await page.goto("/plugins");
     await page.waitForSelector("text=Plugins", { timeout: 5000 }).catch(() => null);
     await expect(page.locator('[data-testid="mcp-server-card"]')).not.toBeVisible();
   });
