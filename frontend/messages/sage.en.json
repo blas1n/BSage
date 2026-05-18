@@ -246,10 +246,10 @@
     "copySnippet": "Copy snippet",
     "clientCursor": "Cursor",
     "clientClaudeDesktop": "Claude Desktop",
-    "clientGeneric": "Generic SSE",
-    "hintClaudeDesktop": "Claude Desktop is stdio-only — uvx mcp-proxy bridges to SSE.",
+    "clientGeneric": "Generic",
+    "hintClaudeDesktop": "Add bsage under mcpServers in your Claude Desktop config.",
     "hintCursor": "Edit ~/.cursor/mcp.json (or use Cursor settings).",
-    "hintGeneric": "For Codex CLI, custom clients.",
+    "hintGeneric": "For Codex CLI and custom Streamable HTTP clients.",
     "col": {
       "key": "Key",
       "status": "Status",
@@ -292,7 +292,7 @@
   },
   "canon": {
     "title": "Canonicalization queue",
-    "subtitle": "Pending-approval actions. Source-aware evidence rendering per Handoff §13.",
+    "subtitle": "Pending-approval actions. Review the evidence, then approve or dismiss.",
     "refresh": "Refresh",
     "loading": "Loading…",
     "empty": "No actions awaiting approval. Drafts apply directly when Safe Mode is OFF.",
@@ -383,7 +383,10 @@
       "plugins": "Enable and configure plugins.",
       "vault": "Browse files in your Vault.",
       "dashboard": "Inspect the overall BSage status.",
-      "default": "BSage is an ontology-based knowledge management AI assistant."
+      "default": "BSage is an ontology-based knowledge management AI assistant.",
+      "canonicalization": "Review and approve pending changes to your canonical knowledge layer.",
+      "imports": "Bring data into your vault or push it out — one-shot migrations.",
+      "settings": "Configure your LLM, embedding model, MCP server, and automation."
     }
   }
 }

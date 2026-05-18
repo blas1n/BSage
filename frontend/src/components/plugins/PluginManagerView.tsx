@@ -349,7 +349,20 @@ export function PluginManagerView() {
             <p className="text-on-surface-variant font-medium">{t("plugins.subtitle")}</p>
           </div>
           <div className="flex items-center gap-4">
-            <button className="flex min-h-10 items-center gap-2 rounded-lg bg-accent px-6 py-2.5 text-sm font-bold text-gray-950 shadow-lg shadow-accent/20 transition-all hover:brightness-110">
+            {/* Plugins/skills are installed server-side by dropping files into
+              * the `plugins/`/`skills/` directories — there is no in-app
+              * upload endpoint. The CTA opens the docs that explain how. */}
+            <button
+              type="button"
+              onClick={() =>
+                window.open(
+                  "https://bsvibe.dev/bsage/features/plugins",
+                  "_blank",
+                  "noopener,noreferrer",
+                )
+              }
+              className="flex min-h-10 items-center gap-2 rounded-lg bg-accent px-6 py-2.5 text-sm font-bold text-gray-950 shadow-lg shadow-accent/20 transition-all hover:brightness-110"
+            >
               <Icon name="extension" size={18} />
               {t("plugins.install")}
             </button>

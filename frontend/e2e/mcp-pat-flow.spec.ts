@@ -90,7 +90,7 @@ test.describe("MCP PAT flow — Settings MCP section → Setup modal", () => {
     await expect(page.getByText(/No keys yet — generate/)).toBeVisible();
     await expect(page.getByRole("button", { name: "Cursor" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Claude Desktop" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Generic SSE" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Generic" })).toBeVisible();
   });
 
   test("generate new key → token shown once + auto-injected into snippet", async ({
@@ -110,22 +110,26 @@ test.describe("MCP PAT flow — Settings MCP section → Setup modal", () => {
     // Cursor snippet (default tab) auto-injects the token
     const snippet = page.locator("pre").first();
     await expect(snippet).toContainText("bsg_mcp_key_1_secret_xxx");
-    await expect(snippet).toContainText("/mcp/sse");
+    await expect(snippet).toContainText("/mcp");
+    // The legacy SSE transport endpoint must no longer be advertised.
+    await expect(snippet).not.toContainText("/mcp/sse");
 
     // Active key now lists the generated entry
     await expect(page.getByText("my-cursor")).toBeVisible();
   });
 
-  test("switch to Claude Desktop tab → mcp-proxy bridge config", async ({ page }) => {
+  test("switch to Claude Desktop tab → Streamable HTTP url config", async ({ page }) => {
     await page.goto("/settings");
     await page.getByRole("button", { name: /Manage keys & connect/ }).click();
     await page.getByPlaceholder("Name (e.g. cursor-laptop)").fill("desktop");
     await page.getByRole("button", { name: /\+ Generate/ }).click();
 
+    // Since the SSE→Streamable HTTP migration, Claude Desktop connects to
+    // the remote `/mcp` endpoint directly — no `uvx mcp-proxy` stdio bridge.
     await page.getByRole("button", { name: "Claude Desktop" }).click();
     const snippet = page.locator("pre").first();
-    await expect(snippet).toContainText("uvx");
-    await expect(snippet).toContainText("mcp-proxy");
+    await expect(snippet).toContainText("/mcp");
+    await expect(snippet).not.toContainText("mcp-proxy");
     await expect(snippet).toContainText("bsg_mcp_key_1_secret_xxx");
   });
 
