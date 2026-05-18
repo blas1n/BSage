@@ -27,6 +27,18 @@ const HELP_CONTENT: Record<string, HelpSection> = {
     titleKey: "nav.vaultBrowser",
     descriptionKey: "help.section.vault",
   },
+  "/canonicalization": {
+    titleKey: "nav.canonicalization",
+    descriptionKey: "help.section.canonicalization",
+  },
+  "/imports": {
+    titleKey: "nav.importsExports",
+    descriptionKey: "help.section.imports",
+  },
+  "/settings": {
+    titleKey: "nav.settings",
+    descriptionKey: "help.section.settings",
+  },
   "/dashboard": {
     titleKey: "dashboard.title",
     descriptionKey: "help.section.dashboard",
@@ -45,8 +57,13 @@ interface HelpPanelProps {
 
 export function HelpPanel({ isOpen, onClose }: HelpPanelProps) {
   const t = useT("sage");
-  const pathname = usePathname();
-  const section = HELP_CONTENT[pathname ?? "/"] ?? DEFAULT_HELP;
+  // `usePathname()` includes the `/ko` locale prefix on Korean routes
+  // (`localePrefix: 'as-needed'` leaves the default `en` bare). Strip it so
+  // `HELP_CONTENT` — keyed by canonical, locale-less paths — matches on both
+  // locales. Mirrors the same prefix-strip in `SidebarLocaleSwitcher`.
+  const rawPath = usePathname() ?? "/";
+  const pathname = rawPath.replace(/^\/(ko|en)(?=\/|$)/, "") || "/";
+  const section = HELP_CONTENT[pathname] ?? DEFAULT_HELP;
 
   return (
     <>

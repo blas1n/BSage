@@ -28,20 +28,26 @@ function isHostedDeployment(): boolean {
   return h !== "localhost" && h !== "127.0.0.1" && !h.endsWith(".local");
 }
 
-function sseUrlFor(): string {
+/** BSage serves the Streamable HTTP MCP transport at `/mcp` (the legacy
+ * SSE transport at `/mcp/sse` was removed). On hosted deployments the API
+ * lives on the `api-` subdomain. */
+function mcpUrlFor(): string {
   const origin = typeof window === "undefined" ? "" : window.location.origin;
   return isHostedDeployment()
-    ? `${origin.replace("//", "//api-")}/mcp/sse`
-    : `${origin}/mcp/sse`;
+    ? `${origin.replace("//", "//api-")}/mcp`
+    : `${origin}/mcp`;
 }
 
-function snippetFor(kind: ClientKind, sseUrl: string, token: string): string {
-  if (kind === "cursor") {
+function snippetFor(kind: ClientKind, mcpUrl: string, token: string): string {
+  // Cursor and Claude Desktop both speak Streamable HTTP natively — a
+  // remote MCP server is configured with a `url` + auth header. No stdio
+  // bridge (mcp-proxy) is needed since the SSE-transport migration.
+  if (kind === "cursor" || kind === "claude-desktop") {
     return JSON.stringify(
       {
         mcpServers: {
           bsage: {
-            url: sseUrl,
+            url: mcpUrl,
             headers: { Authorization: `Bearer ${token}` },
           },
         },
@@ -50,27 +56,7 @@ function snippetFor(kind: ClientKind, sseUrl: string, token: string): string {
       2,
     );
   }
-  if (kind === "claude-desktop") {
-    return JSON.stringify(
-      {
-        mcpServers: {
-          bsage: {
-            command: "uvx",
-            args: [
-              "mcp-proxy",
-              "--headers",
-              "Authorization",
-              `Bearer ${token}`,
-              sseUrl,
-            ],
-          },
-        },
-      },
-      null,
-      2,
-    );
-  }
-  return [`SSE URL:  ${sseUrl}`, `Header:   Authorization: Bearer ${token}`].join("\n");
+  return [`HTTP URL:  ${mcpUrl}`, `Header:    Authorization: Bearer ${token}`].join("\n");
 }
 
 function relTime(iso: string | null, t: Translate): string {
@@ -103,7 +89,7 @@ export function McpServerSetupModal({ onClose }: McpServerSetupModalProps) {
   const [copied, setCopied] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const sseUrl = useMemo(() => sseUrlFor(), []);
+  const mcpUrl = useMemo(() => mcpUrlFor(), []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -169,7 +155,7 @@ export function McpServerSetupModal({ onClose }: McpServerSetupModalProps) {
   }, []);
 
   const tokenForSnippet = freshToken ?? "<paste-token-here>";
-  const snippet = snippetFor(client, sseUrl, tokenForSnippet);
+  const snippet = snippetFor(client, mcpUrl, tokenForSnippet);
 
   // Active-keys table columns. Desktop renders a real <table>; mobile keeps
   // the original two-line card via renderMobileCard. Revoke behaviour and

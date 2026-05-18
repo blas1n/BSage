@@ -181,7 +181,9 @@ export function SettingsView() {
 
   return (
     <div className="h-full overflow-y-auto p-6 scrollbar-thin">
-      <h2 className="text-lg font-semibold mb-6 text-gray-100">{t("settings.title")}</h2>
+      <h1 className="text-4xl font-extrabold tracking-tight mb-6 text-on-surface font-headline">
+        {t("settings.title")}
+      </h1>
 
       <div className="max-w-lg space-y-6">
         <section>
@@ -569,7 +571,7 @@ function CanonicalizationSection({ config, saving, onChange }: CanonicalizationS
             disabled={disabled || !expireCron.trim()}
             className="min-h-10 px-3 py-2 text-xs bg-accent-light/15 text-accent-light rounded-lg hover:bg-accent-light/25 transition-colors disabled:opacity-50"
           >
-            Save
+            {t("common.save")}
           </button>
         </div>
         <div className="flex items-center justify-between gap-4">
@@ -600,7 +602,7 @@ function CanonicalizationSection({ config, saving, onChange }: CanonicalizationS
             disabled={disabled || !lintCron.trim()}
             className="min-h-10 px-3 py-2 text-xs bg-accent-light/15 text-accent-light rounded-lg hover:bg-accent-light/25 transition-colors disabled:opacity-50"
           >
-            Save
+            {t("common.save")}
           </button>
         </div>
       </div>

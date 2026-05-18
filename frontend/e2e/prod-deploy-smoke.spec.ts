@@ -19,13 +19,16 @@ test.describe("Backend — Phase 4b / 2a routes registered", () => {
     expect((await res.json()).status).toBe("ok");
   });
 
-  test("OpenAPI lists /api/uploads + /mcp/sse + /mcp/messages", async ({ request }) => {
+  test("OpenAPI lists /api/uploads + /mcp/health", async ({ request }) => {
     const res = await request.get(`${API}/openapi.json`);
     expect(res.ok()).toBeTruthy();
     const paths = Object.keys((await res.json()).paths);
     expect(paths).toContain("/api/uploads");
-    expect(paths).toContain("/mcp/sse");
-    expect(paths).toContain("/mcp/messages/{path}");
+    // The MCP transport migrated from SSE to Streamable HTTP — the legacy
+    // `/mcp/sse` + `/mcp/messages/{path}` routes were removed. The Streamable
+    // HTTP transport is mounted at `/mcp` with a `/mcp/health` probe route.
+    expect(paths).toContain("/mcp/health");
+    expect(paths).not.toContain("/mcp/sse");
   });
 
   test("/api/uploads requires auth (401)", async ({ request }) => {
@@ -33,27 +36,12 @@ test.describe("Backend — Phase 4b / 2a routes registered", () => {
     expect(res.status()).toBe(401);
   });
 
-  test("/mcp/sse responds with text/event-stream + accepts ?token", async ({ request }) => {
-    const res = await request.get(`${API}/mcp/sse`, { timeout: 3000 }).catch((e) => e);
-    // SSE keeps the connection open; the request "fails" with a timeout.
-    // What we care about: the response object captured headers before the
-    // hang. Playwright's APIResponse is unavailable on a hard fail, so we
-    // re-issue with manual fetch from inside the page context.
-    void res;
-    // Use page-context fetch with abort for a header-only probe
-    const probe = await request.fetch(`${API}/mcp/sse?token=probe`, {
-      method: "GET",
-      timeout: 3000,
-      maxRedirects: 0,
-    }).catch(() => null);
-    if (probe) {
-      // If we managed to read headers, assert content-type
-      expect(probe.headers()["content-type"]).toContain("text/event-stream");
-    }
-    // Also confirm via OpenAPI that the token query parameter is wired
-    const oapi = await request.get(`${API}/openapi.json`);
-    const params = (await oapi.json()).paths["/mcp/sse"].get.parameters ?? [];
-    expect(params.map((p: { name: string }) => p.name)).toContain("token");
+  test("/mcp/health responds ok", async ({ request }) => {
+    const res = await request
+      .get(`${API}/mcp/health`, { timeout: 5000 })
+      .catch(() => null);
+    expect(res).not.toBeNull();
+    expect(res!.ok()).toBeTruthy();
   });
 });
 
