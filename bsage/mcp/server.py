@@ -195,9 +195,12 @@ async def _dispatch_via_registry(
         # principal per-request, and stashes it on a context-var that
         # ``_resolve_principal`` reads here — so ``ctx.user`` is the real
         # principal and permissioned tools authorize correctly over HTTP.
-        # The stdio transport has no HTTP request; its principal resolves
-        # to ``None`` (a single trusted local process — domain read tools,
-        # which have ``required_permission=None``, are unaffected).
+        # The stdio transport has no per-request HTTP headers; it pins
+        # the principal on ``state.mcp_principal`` at startup from
+        # ``$BSAGE_MCP_PAT`` (see ``bsage.mcp.stdio``) and
+        # ``_resolve_principal`` reads it back here. When the PAT is
+        # unset the principal is ``None`` — domain read tools
+        # (``required_permission=None``) still work; permissioned tools deny.
         ctx = ToolContext(
             state=state,
             user=_resolve_principal(state),
