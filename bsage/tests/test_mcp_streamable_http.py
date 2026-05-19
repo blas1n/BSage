@@ -147,6 +147,35 @@ class TestResolvePrincipalFromHeaders:
             )
         assert principal is None
 
+    @pytest.mark.asyncio
+    async def test_auth_rejection_logs_clean_line_not_a_traceback(self, state: MagicMock) -> None:
+        # An expired/invalid token surfaces as HTTPException(401) from
+        # get_current_user. resolve_principal_from_headers must degrade to
+        # None and log a single clean ``mcp_streamable_auth_rejected`` line
+        # — NOT ``mcp_streamable_auth_failed`` with a full traceback (that
+        # noise drowns real failures; found by the 2026-05-19 prod e2e
+        # log review).
+        from fastapi import HTTPException
+        from structlog.testing import capture_logs
+
+        with (
+            patch(
+                "bsvibe_authz.deps.get_current_user",
+                new=AsyncMock(
+                    side_effect=HTTPException(status_code=401, detail="token is not active")
+                ),
+            ),
+            capture_logs() as logs,
+        ):
+            principal = await resolve_principal_from_headers(
+                {"authorization": "Bearer expired"}, state
+            )
+
+        assert principal is None
+        events = {e["event"] for e in logs}
+        assert "mcp_streamable_auth_rejected" in events
+        assert "mcp_streamable_auth_failed" not in events
+
 
 class TestPrincipalThreadsIntoToolContext:
     """Regression guard — the SSE-era ``ctx.user = None`` bug is fixed.

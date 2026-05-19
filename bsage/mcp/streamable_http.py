@@ -29,6 +29,7 @@ from contextvars import ContextVar
 from typing import Any
 
 import structlog
+from fastapi import HTTPException
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
 logger = structlog.get_logger(__name__)
@@ -97,7 +98,20 @@ async def resolve_principal_from_headers(
             introspection_client=get_introspection_client(authz_settings),
             introspection_cache=get_introspection_cache(authz_settings),
         )
-    except Exception:  # noqa: BLE001 — auth failure → anonymous, never 500
+    except HTTPException as exc:
+        # Expected: a missing / expired / malformed token. The request
+        # proceeds anonymously (a permissioned tool then denies). This is
+        # a routine client error, NOT a server fault — log one clean line,
+        # never a traceback, so real failures stay visible in the logs.
+        logger.info(
+            "mcp_streamable_auth_rejected",
+            status=exc.status_code,
+            detail=str(exc.detail),
+        )
+        return None
+    except Exception:  # noqa: BLE001 — unexpected: anonymous, never 500
+        # An unexpected failure (not an auth rejection) — keep the
+        # traceback; this one is genuinely worth investigating.
         logger.warning("mcp_streamable_auth_failed", exc_info=True)
         return None
 
