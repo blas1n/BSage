@@ -6,6 +6,7 @@ import asyncio
 import dataclasses
 import hashlib
 import json
+import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -110,6 +111,39 @@ CREATE TABLE IF NOT EXISTS source_hashes (
 """
 
 
+def _expected_schema() -> dict[str, list[dict[str, str]]]:
+    """Per-table column list the current ``_SCHEMA_SQL`` declares.
+
+    Derived by materialising the schema in a throwaway in-memory
+    database, so it always tracks ``_SCHEMA_SQL`` with no hand-kept
+    duplicate. Each column carries an ``ADD COLUMN``-ready ``ddl``
+    fragment for :meth:`GraphStore._reconcile_schema`.
+    """
+    mem = sqlite3.connect(":memory:")
+    try:
+        mem.executescript(_SCHEMA_SQL)
+        tables = [
+            row[0]
+            for row in mem.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+        ]
+        schema: dict[str, list[dict[str, str]]] = {}
+        for table in tables:
+            cols: list[dict[str, str]] = []
+            for _cid, name, ctype, notnull, dflt, _pk in mem.execute(
+                f"PRAGMA table_info({table})"
+            ).fetchall():
+                ddl = f"{name} {ctype or 'TEXT'}"
+                if notnull:
+                    ddl += " NOT NULL"
+                if dflt is not None:
+                    ddl += f" DEFAULT {dflt}"
+                cols.append({"name": name, "ddl": ddl})
+            schema[table] = cols
+        return schema
+    finally:
+        mem.close()
+
+
 # Columns shared by both halves of the UNION ALL in query_neighbors.
 _NEIGHBOR_COLS = (
     "r.id, r.source_id, r.target_id, r.rel_type,"
@@ -142,6 +176,7 @@ class GraphStore(GraphBackend):
         await self._db.execute("PRAGMA foreign_keys=ON")
         await self._db.executescript(_SCHEMA_SQL)
         await self._db.commit()
+        await self._reconcile_schema()
         # All writes funnel through this single-writer queue; reads stay
         # on the same aiosqlite connection but bypass the queue. See
         # bsage/garden/write_queue.py for the design rationale.
@@ -152,6 +187,43 @@ class GraphStore(GraphBackend):
         )
         await self._write_queue.start()
         logger.info("graph_store_initialized", path=str(self._db_path))
+
+    async def _reconcile_schema(self) -> None:
+        """Add columns the current schema declares but an older on-disk
+        database is missing.
+
+        ``executescript(_SCHEMA_SQL)`` uses ``CREATE TABLE IF NOT
+        EXISTS``, which never alters an existing table — so a column
+        added to the schema after a database was first created (e.g. the
+        bi-temporal ``relationships.valid_from`` / ``valid_to`` set) is
+        silently absent on older databases, and writes fail with
+        ``table ... has no column named ...``. SQLite ``ALTER TABLE ADD
+        COLUMN`` is additive and lossless. A column SQLite cannot add to
+        a populated table (NOT NULL without a constant default, an
+        expression default like ``datetime('now')``) is skipped with a
+        warning rather than crashing startup.
+        """
+        assert self._db is not None
+        for table, columns in _expected_schema().items():
+            cursor = await self._db.execute(f"PRAGMA table_info({table})")
+            existing = {row[1] for row in await cursor.fetchall()}
+            await cursor.close()
+            if not existing:
+                continue  # table absent — executescript already created it fresh
+            for col in columns:
+                if col["name"] in existing:
+                    continue
+                try:
+                    await self._db.execute(f"ALTER TABLE {table} ADD COLUMN {col['ddl']}")
+                    logger.info("graph_schema_column_added", table=table, column=col["name"])
+                except (sqlite3.OperationalError, aiosqlite.Error) as exc:
+                    logger.warning(
+                        "graph_schema_column_unaddable",
+                        table=table,
+                        column=col["name"],
+                        error=str(exc),
+                    )
+        await self._db.commit()
 
     async def close(self) -> None:
         """Drain the write queue and close the database connection."""
