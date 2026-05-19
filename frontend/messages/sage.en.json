@@ -219,7 +219,7 @@
     "mcpLoading": "Loading…",
     "mcpNoKeys": "No keys yet",
     "mcpActiveKeys": "{count, plural, one {{count} active key} other {{count} active keys}}",
-    "mcpManage": "Manage keys & connect",
+    "mcpManage": "Connect an AI client",
     "canonHeading": "Canonicalization automation",
     "canonDescription": "Background jobs that keep the canon layer healthy. All three are off by default — enable per deployment. Watcher = filesystem daemon for external Obsidian/git edits; expire/lint = scheduled cron jobs.",
     "canonWatcherDescription": "Detect external edits under concepts/, proposals/, actions/, decisions/.",
@@ -230,7 +230,8 @@
   },
   "mcp": {
     "title": "BSage MCP Server",
-    "subtitle": "Issue an API key, paste the snippet into your AI client, done.",
+    "subtitle": "Point your AI client at BSage's MCP server with your BSVibe access token.",
+    "tokenNote": "Authenticate with your BSVibe access token — the same token you sign in with. Replace <your-bsvibe-token> in the snippet below with it.",
     "activeKeys": "Active keys",
     "noKeysHint": "No keys yet — generate one below.",
     "revoke": "Revoke",
