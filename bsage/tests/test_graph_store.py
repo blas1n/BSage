@@ -240,10 +240,18 @@ async def test_query_neighbors_filter_by_type(store: GraphStore):
 
 
 async def test_multi_hop_query(store: GraphStore):
-    # A -> B -> C (chain of 2 hops)
-    ea = GraphEntity(name="A", entity_type="concept", source_path="a.md")
-    eb = GraphEntity(name="B", entity_type="concept", source_path="a.md")
-    ec = GraphEntity(name="C", entity_type="concept", source_path="a.md")
+    # A -> B -> C (chain of 2 hops). knowledge_layer is set to the
+    # coalesced default the store persists, so a round-tripped entity
+    # compares equal to the in-memory one.
+    ea = GraphEntity(
+        name="A", entity_type="concept", source_path="a.md", knowledge_layer="semantic"
+    )
+    eb = GraphEntity(
+        name="B", entity_type="concept", source_path="a.md", knowledge_layer="semantic"
+    )
+    ec = GraphEntity(
+        name="C", entity_type="concept", source_path="a.md", knowledge_layer="semantic"
+    )
     id_a = await store.upsert_entity(ea)
     id_b = await store.upsert_entity(eb)
     id_c = await store.upsert_entity(ec)
@@ -504,3 +512,84 @@ async def test_count_entities_of_type(store: GraphStore):
     assert await store.count_entities_of_type("idea") == 2
     assert await store.count_entities_of_type("event") == 1
     assert await store.count_entities_of_type("nonexistent") == 0
+
+
+# ------------------------------------------------------------------
+# knowledge_layer NULL coalescing (prod regression 2026-05-19)
+# ------------------------------------------------------------------
+
+
+async def test_upsert_entity_coalesces_null_knowledge_layer(store: GraphStore, tmp_path):
+    """Most extractor entity kinds (tags, sources, wikilink targets, fact
+    subject/object) leave ``knowledge_layer`` None. The upsert must
+    coalesce it to the historical ``'semantic'`` default so the column is
+    never written NULL."""
+    import sqlite3
+
+    await store.upsert_entity(
+        GraphEntity(
+            name="layerless-node",
+            entity_type="concept",
+            source_path="garden/idea/x.md",
+            knowledge_layer=None,
+        )
+    )
+    await store.commit()
+
+    conn = sqlite3.connect(tmp_path / ".bsage" / "graph.db")
+    try:
+        rows = conn.execute(
+            "SELECT knowledge_layer FROM entities WHERE name = ?",
+            ("layerless-node",),
+        ).fetchall()
+    finally:
+        conn.close()
+    assert rows == [("semantic",)]
+
+
+async def test_upsert_entity_succeeds_against_legacy_not_null_schema(tmp_path):
+    """A database created before ``knowledge_layer`` was made nullable
+    still carries the original ``NOT NULL`` column — ``CREATE TABLE IF
+    NOT EXISTS`` never rewrites it. Upserting an entity whose
+    ``knowledge_layer`` is None must still succeed (prod 2026-05-19:
+    ``NOT NULL constraint failed: entities.knowledge_layer``)."""
+    import sqlite3
+
+    db_path = tmp_path / ".bsage" / "graph.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Pre-create `entities` with the OLD (NOT NULL) schema so GraphStore's
+    # CREATE TABLE IF NOT EXISTS leaves it intact.
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """CREATE TABLE entities (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            name_normalized TEXT NOT NULL,
+            entity_type TEXT NOT NULL,
+            source_path TEXT NOT NULL,
+            properties TEXT NOT NULL DEFAULT '{}',
+            confidence TEXT NOT NULL DEFAULT 'extracted',
+            knowledge_layer TEXT NOT NULL DEFAULT 'semantic',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )"""
+    )
+    conn.commit()
+    conn.close()
+
+    gs = GraphStore(db_path)
+    await gs.initialize()
+    try:
+        resolved_id = await gs.upsert_entity(
+            GraphEntity(
+                name="legacy-node",
+                entity_type="concept",
+                source_path="garden/idea/y.md",
+                knowledge_layer=None,
+            )
+        )
+        await gs.commit()
+        assert resolved_id
+    finally:
+        await gs.close()

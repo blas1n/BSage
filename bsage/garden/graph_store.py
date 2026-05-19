@@ -29,6 +29,17 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
+# ``knowledge_layer`` is a deprecated column (superseded by the bi-temporal
+# model). The current schema declares it nullable, but databases created
+# before that change still carry the original ``NOT NULL DEFAULT
+# 'semantic'`` definition — and ``CREATE TABLE IF NOT EXISTS`` never
+# rewrites an existing table. The extractor leaves the field ``None`` on
+# most entity kinds, so an insert against an old database fails with
+# ``NOT NULL constraint failed: entities.knowledge_layer``. Coalescing
+# every write to the historical default keeps both schema generations
+# happy without a risky SQLite table rebuild.
+_DEFAULT_KNOWLEDGE_LAYER = "semantic"
+
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS entities (
     id TEXT PRIMARY KEY,
@@ -209,7 +220,7 @@ class GraphStore(GraphBackend):
                     entity.source_path,
                     json.dumps(entity.properties),
                     entity.confidence,
-                    entity.knowledge_layer,
+                    entity.knowledge_layer or _DEFAULT_KNOWLEDGE_LAYER,
                     existing_id,
                 ),
             )
@@ -234,7 +245,7 @@ class GraphStore(GraphBackend):
                 entity.source_path,
                 json.dumps(entity.properties),
                 entity.confidence,
-                entity.knowledge_layer,
+                entity.knowledge_layer or _DEFAULT_KNOWLEDGE_LAYER,
             ),
         )
         # Record provenance for this source
