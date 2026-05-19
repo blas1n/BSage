@@ -219,7 +219,7 @@
     "mcpLoading": "로딩 중…",
     "mcpNoKeys": "아직 키가 없습니다",
     "mcpActiveKeys": "{count, plural, one {활성 키 {count}개} other {활성 키 {count}개}}",
-    "mcpManage": "키 관리 및 연결",
+    "mcpManage": "AI 클라이언트 연결",
     "canonHeading": "정규화 자동화",
     "canonDescription": "정규화 레이어를 건강하게 유지하는 백그라운드 작업입니다. 세 가지 모두 기본적으로 꺼져 있으며 — 배포별로 활성화하세요. Watcher = 외부 Obsidian/git 편집 감지 파일시스템 데몬, expire/lint = 예약 크론 작업.",
     "canonWatcherDescription": "concepts/, proposals/, actions/, decisions/ 아래의 외부 편집을 감지합니다.",
@@ -230,7 +230,8 @@
   },
   "mcp": {
     "title": "BSage MCP 서버",
-    "subtitle": "API 키를 발급하고 스니펫을 AI 클라이언트에 붙여넣으면 끝.",
+    "subtitle": "BSVibe 액세스 토큰으로 AI 클라이언트를 BSage MCP 서버에 연결하세요.",
+    "tokenNote": "BSVibe 액세스 토큰(로그인에 사용하는 토큰)으로 인증합니다. 아래 스니펫의 <your-bsvibe-token>을 그 토큰으로 바꾸세요.",
     "activeKeys": "활성 키",
     "noKeysHint": "아직 키가 없습니다 — 아래에서 하나 생성하세요.",
     "revoke": "취소",

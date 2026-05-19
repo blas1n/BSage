@@ -433,26 +433,6 @@ export function SettingsView() {
 function McpServerSection() {
   const t = useT("sage");
   const [open, setOpen] = useState(false);
-  const [keyCount, setKeyCount] = useState<number | null>(null);
-
-  useEffect(() => {
-    // setTimeout(0) defers setState out of the synchronous effect body —
-    // satisfies React 19's set-state-in-effect rule.
-    const id = window.setTimeout(() => {
-      api.mcpKeys
-        .list()
-        .then((ks) => setKeyCount(ks.length))
-        .catch(() => setKeyCount(0));
-    }, 0);
-    return () => window.clearTimeout(id);
-  }, [open]);
-
-  const status =
-    keyCount === null
-      ? t("settings.mcpLoading")
-      : keyCount === 0
-        ? t("settings.mcpNoKeys")
-        : t("settings.mcpActiveKeys", { count: keyCount });
 
   return (
     <>
@@ -464,23 +444,13 @@ function McpServerSection() {
         <p className="text-xs text-gray-500 mb-4">
           {t("settings.mcpDescription")}
         </p>
-        <div className="flex items-center justify-between gap-4 px-4 py-3 rounded-lg bg-surface-container-low border border-white/5">
-          <div className="flex items-center gap-2 min-w-0">
-            <span
-              className={`w-2 h-2 rounded-full shrink-0 ${
-                keyCount && keyCount > 0 ? "bg-accent-light" : "bg-gray-500"
-              }`}
-            />
-            <span className="text-xs text-gray-300 truncate">{status}</span>
-          </div>
-          <button
-            onClick={() => setOpen(true)}
-            className="min-h-10 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-accent-light/15 text-accent-light hover:bg-accent-light/25 transition-colors font-bold"
-          >
-            <Icon name="settings" size={14} />
-            {t("settings.mcpManage")}
-          </button>
-        </div>
+        <button
+          onClick={() => setOpen(true)}
+          className="min-h-10 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-accent-light/15 text-accent-light hover:bg-accent-light/25 transition-colors font-bold"
+        >
+          <Icon name="settings" size={14} />
+          {t("settings.mcpManage")}
+        </button>
       </section>
 
       {open && <McpServerSetupModal onClose={() => setOpen(false)} />}
