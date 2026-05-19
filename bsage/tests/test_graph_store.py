@@ -593,3 +593,63 @@ async def test_upsert_entity_succeeds_against_legacy_not_null_schema(tmp_path):
         assert resolved_id
     finally:
         await gs.close()
+
+
+async def test_initialize_reconciles_missing_columns(tmp_path):
+    """A database created before the bi-temporal columns were added still
+    lacks ``relationships.valid_from`` / ``valid_to`` / ``recorded_at`` —
+    ``CREATE TABLE IF NOT EXISTS`` never adds them. ``initialize()`` must
+    ALTER them in so the graph rebuild stops failing with ``no column
+    named valid_from`` (prod regression 2026-05-19)."""
+    import sqlite3
+
+    db_path = tmp_path / ".bsage" / "graph.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Pre-create `relationships` with the OLD (pre-bi-temporal) schema.
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """CREATE TABLE relationships (
+            id TEXT PRIMARY KEY,
+            source_id TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            rel_type TEXT NOT NULL,
+            source_path TEXT NOT NULL,
+            properties TEXT NOT NULL DEFAULT '{}',
+            confidence TEXT NOT NULL DEFAULT 'extracted',
+            weight REAL NOT NULL DEFAULT 0.5,
+            edge_type TEXT NOT NULL DEFAULT 'weak',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );"""
+    )
+    conn.commit()
+    conn.close()
+
+    gs = GraphStore(db_path)
+    await gs.initialize()
+    try:
+        # The bi-temporal columns were ALTERed into the legacy table.
+        probe = sqlite3.connect(db_path)
+        try:
+            cols = {r[1] for r in probe.execute("PRAGMA table_info(relationships)").fetchall()}
+        finally:
+            probe.close()
+        assert {"valid_from", "valid_to", "recorded_at"} <= cols
+
+        # A relationship upsert binds valid_from — before the reconcile it
+        # failed with `table relationships has no column named valid_from`.
+        id_a = await gs.upsert_entity(
+            GraphEntity(name="A", entity_type="concept", source_path="a.md")
+        )
+        id_b = await gs.upsert_entity(
+            GraphEntity(name="B", entity_type="concept", source_path="a.md")
+        )
+        rid = await gs.upsert_relationship(
+            GraphRelationship(
+                source_id=id_a, target_id=id_b, rel_type="related_to", source_path="a.md"
+            )
+        )
+        await gs.commit()
+        assert rid
+    finally:
+        await gs.close()
